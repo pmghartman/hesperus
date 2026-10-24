@@ -14,7 +14,7 @@ The publisher ID must equal `publisher` in `vscode/package.json` (`pmghartman`).
 
 ### 2. User-assigned managed identity
 
-It must be a managed identity. An app registration signs in but has no Azure DevOps profile, so the Marketplace cannot add it (`VSS011031: There is no profile for the authenticated user`).
+Microsoft's guide uses a user-assigned managed identity; this follows it. The setup run reads the identity's ID from Azure DevOps' `connectionData`, because an identity signed in from GitHub has no Azure DevOps profile for Microsoft's `profiles/me` lookup (`VSS011031`).
 
 1. Sign in at <https://portal.azure.com> with the same Microsoft account as the publisher. A managed identity lives in a subscription. Without one, create a free Azure subscription. The identity itself costs nothing. If the free trial ends, upgrade it to pay-as-you-go to keep the identity; nothing here is billed.
 2. **Managed Identities → Create.**
@@ -51,5 +51,5 @@ An app registration from an earlier attempt is no longer used and can be deleted
 
 - **Publish fails, nothing tagged.** The next run reuses the same version.
 - **`AADSTS700213` / no matching federated identity.** The credential's environment must be exactly `marketplace`, and the repository `pmghartman/hesperus`.
-- **`VSS011031: There is no profile`.** `AZURE_CLIENT_ID` is an app registration's. Use the managed identity's client ID.
+- **`VSS011031: There is no profile`.** Something called `profiles/me`; the setup run uses `connectionData` instead.
 - **401 from the Marketplace.** The identity is not a member of the publisher, or not a Contributor.
