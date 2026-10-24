@@ -1,36 +1,33 @@
 #!/usr/bin/env bash
 # Dev helper (macOS). Usage: scripts/dev.sh [build|test|qa|run]   (default: run)
-#   build  release CLI + extension
-#   test   cargo test + extension tests
+#   build  extension and CLI
+#   test   all tests (determinism, golden snapshots, extension)
 #   qa     rebuild the QA repo (a fixture copy) and index it
 #   run    build, qa, then open VS Code in an Extension Development Host
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 QA="${HESPERUS_QA_DIR:-$HOME/hesperus-qa}"
-CLI="$ROOT/target/release/hesperus"
+CLI="$ROOT/vscode/out/cli.js"
 
 build() {
-  (cd "$ROOT" && cargo build --release)
   (cd "$ROOT/vscode" && npm install --no-audit --no-fund && npm run build)
 }
 
 tests() {
-  (cd "$ROOT" && cargo test)
   (cd "$ROOT/vscode" && npm test)
 }
 
 qa() {
-  [ -x "$CLI" ] || build
+  [ -f "$CLI" ] || build
   rm -rf "$QA"
-  mkdir -p "$QA/.vscode"
+  mkdir -p "$QA"
   cp "$ROOT"/fixtures/go-basic/{go.mod,main.go} "$QA/"
-  printf '{ "hesperus.cliPath": "%s" }\n' "$CLI" > "$QA/.vscode/settings.json"
   # Cache header records the commit, so the QA repo must be a git repo.
   git -C "$QA" init -q
   git -C "$QA" add -A
   git -C "$QA" -c user.email=qa@local -c user.name=qa commit -qm qa
-  "$CLI" index "$QA" --scip "$ROOT/fixtures/go-basic/scip-go.index.scip"
+  node "$CLI" index "$QA" --scip "$ROOT/fixtures/go-basic/scip-go.index.scip"
 }
 
 run() {

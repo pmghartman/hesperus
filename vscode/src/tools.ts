@@ -3,14 +3,8 @@
 import { execFile } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-
-export type Install =
-  | { kind: "go"; package: string }
-  | { kind: "npm"; package_json: string; package_lock: string };
-
-export interface Tool { name: string; version: string; dir: string; bin: string | null; install: Install }
-export interface Language { id: string; files: number; tool: string }
-export interface Tools { languages: Language[]; tools: Tool[]; other_files: number }
+import type { Install } from "./core/frontend";
+import type { ToolStatus } from "./engine";
 
 const PREREQ: Record<Install["kind"], string> = {
   go: "the Go toolchain (`go`), which scip-go also needs to run. Install it from https://go.dev/dl",
@@ -27,8 +21,10 @@ function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.Pro
 }
 
 /** Installs into `<dir>.partial`, then renames, so a cancelled download never looks installed. */
-export async function install(t: Tool): Promise<void> {
-  const tmp = t.dir + ".partial";
+export async function install(t: ToolStatus): Promise<void> {
+  if (!t.dir) throw new Error(`no install directory for ${t.name}`);
+  const dir = t.dir;
+  const tmp = dir + ".partial";
   await fs.rm(tmp, { recursive: true, force: true });
   await fs.mkdir(tmp, { recursive: true });
   const i = t.install;
@@ -39,6 +35,6 @@ export async function install(t: Tool): Promise<void> {
     await fs.writeFile(path.join(tmp, "package-lock.json"), i.package_lock);
     await run("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], { cwd: tmp }, i.kind);
   }
-  await fs.rm(t.dir, { recursive: true, force: true });
-  await fs.rename(tmp, t.dir);
+  await fs.rm(dir, { recursive: true, force: true });
+  await fs.rename(tmp, dir);
 }

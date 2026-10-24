@@ -20,21 +20,22 @@ Target user: an engineer reviewing architecture, often of AI-written code, who d
 
 ## Architecture
 
-- `core`: Rust library. Owns the IR, merging, aggregation, cache, and canonical serialization.
-- `cli`: thin wrapper over core. Doubles as the test harness.
-- Language frontends emit the IR:
+- TypeScript on Node, one npm package in `vscode/`. No native code; tree-sitter runs as WebAssembly.
+- `vscode/src/core`: owns the IR, merging, aggregation, cache, and canonical serialization. Imports nothing from `vscode` or `src/lang`.
+- `vscode/src/cli.ts`: thin wrapper over core (`hesperus`). Doubles as the test harness. The extension runs it on the editor's own Node.
+- Language frontends (`vscode/src/lang`) emit the IR:
   - SCIP indexer output is the primary symbol resolver.
   - Headless LSP over stdio is the fallback where no SCIP indexer exists.
   - tree-sitter supplies syntax for def-use inside bodies, resolved through SCIP or LSP definitions.
   - Native per-language analyzers may be added later as optional frontends behind the same IR.
-- `vscode`: TypeScript extension with a webview. Reads the graph file. Layout is precomputed deterministically with ELK. Clicking a terminal node opens its source range.
+- Extension (`vscode/src/extension.ts`) with a webview. Reads the graph file. Layout is precomputed deterministically with ELK. Clicking a terminal node opens its source range.
 - `skill`: lets agents read the graph file.
 
 The analyzed language is independent of the implementation language. Many OOP languages and many repos must work. Any single repo, including phosphorus (Go and JS), is only a fixture. No language-specific logic in core.
 
 ## Graph model
 
-- Hierarchy is containment, taken from code structure: repo, package or module, file, class, method. Stable node IDs are fully qualified symbols. Content hashes mark staleness only.
+- Hierarchy is containment, taken from code structure: repo, directory, package or module, file, class, method. A directory with one child folds into its parent. Stable node IDs are fully qualified symbols. Content hashes mark staleness only.
 - The graph is not a DAG. Store cycles as cycles. SCC collapse is a view option.
 - Edge kinds include at least `contains`, `call`, `override`, and `flow`. Flow edges bind arguments to parameters and returns to assignments across call edges.
 - Container edges are weighted rollups of the underlying edges. Expanding a node splits its edges in place. Every rollup is inspectable down to the edges beneath it. Aggregation rules live once in core and every consumer shares them.
@@ -47,16 +48,17 @@ An untracked dot directory in the analyzed repo. It is a cache and safe to delet
 
 ## Determinism rules for code you write
 
-- Never iterate a `HashMap` into output. Use `BTreeMap` or sort.
+- Never let `Map`, `Set`, or object insertion order reach output unless it was inserted sorted. Sort with `cmpStr` (code point order, as UTF-8 bytes), never `<` or `localeCompare`.
+- Build output records with the constructors in `core/ir.ts`; key order is serialization order.
 - Servers answer asynchronously. Wait for indexing to finish, collect, then sort.
 - Normalize paths to repo-relative with forward slashes.
 - Keep a test that runs the pipeline twice, and on a fresh checkout, and diffs the bytes.
 
 ## Conventions
 
-- Schema first. The IR is defined as a versioned schema with shared or generated types for the TypeScript side. Change it deliberately.
+- Schema first. The IR is a versioned schema (`vscode/schema/graph.schema.json`) mirrored by `core/ir.ts`. Change both deliberately.
 - Golden snapshot tests on small fixture repos per language, plus hand-checked flow edges.
-- Few dependencies. Justify each. Prefer a small static binary.
+- Few dependencies. Justify each. No native modules.
 - Match existing project conventions once they exist.
 - Comment only where the reason is non-obvious. Two lines max, fragments.
 - Do not report work as done until the determinism test and the relevant snapshot tests have run and passed. State what ran.

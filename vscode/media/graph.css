@@ -1,11 +1,13 @@
 :root {
-  --call: var(--vscode-editor-foreground);
+  --call: color-mix(in srgb, var(--vscode-editor-foreground) 75%, var(--vscode-editor-background));
   --flow: var(--vscode-charts-blue);
   --override: var(--vscode-charts-orange);
   --unresolved: var(--vscode-errorForeground);
   --muted: var(--vscode-descriptionForeground);
   --box: var(--vscode-editorWidget-background);
   --border: var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  --line: color-mix(in srgb, var(--vscode-editor-foreground) 16%, transparent);
+  --group: color-mix(in srgb, var(--vscode-editor-foreground) 3%, transparent);
   --accent: var(--vscode-focusBorder);
 }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode-editor-background); color: var(--vscode-editor-foreground); font-family: var(--vscode-font-family); }
@@ -14,55 +16,60 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 
 /* Nodes */
 .node { cursor: pointer; }
-.node > rect.body { fill: var(--box); stroke: var(--border); stroke-width: 1; }
-.node:hover > rect.body { stroke: var(--accent); stroke-width: 2; }
-.node > rect.bar { stroke: none; }
 .node text { pointer-events: none; }
-.node .name { font-size: 13px; font-weight: 600; fill: var(--vscode-editor-foreground); }
+.node > rect.body { fill: var(--box); stroke: var(--line); stroke-width: 1; }
+.node:hover > rect.body { stroke: var(--accent); }
+.node .name { font-size: 12px; fill: var(--vscode-editor-foreground); }
 .node .kind { font-size: 11px; fill: var(--muted); }
-.node.container > rect.body { fill: color-mix(in srgb, var(--box) 35%, transparent); stroke-dasharray: 4 3; }
-.node.container .name { font-size: 12px; }
-.k-package, .k-external_package { --kc: var(--vscode-charts-purple); }
-.k-file { --kc: var(--vscode-charts-yellow); }
-.k-type { --kc: var(--vscode-charts-green); }
-.k-function, .k-method { --kc: var(--vscode-charts-blue); }
-.k-field, .k-variable { --kc: var(--muted); }
-.k-external { --kc: var(--vscode-charts-purple); }
+.node.container > rect.body { fill: var(--group); }
+.node.container .name { font-weight: 600; }
+.node .rule { stroke: var(--line); stroke-width: 1; }
+.node .chev { fill: none; stroke: var(--muted); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.node .glyph { fill: none; stroke: var(--kc, var(--muted)); stroke-width: 1.2; stroke-linejoin: round; }
+.node .letter { font: 600 11px var(--vscode-editor-font-family); fill: var(--kc, var(--muted)); }
+.k-directory { --kc: var(--vscode-symbolIcon-folderForeground, var(--muted)); }
+.k-package { --kc: var(--vscode-symbolIcon-packageForeground, var(--muted)); }
+.k-file { --kc: var(--vscode-symbolIcon-fileForeground, var(--muted)); }
+.k-type { --kc: var(--vscode-symbolIcon-classForeground, var(--vscode-charts-orange)); }
+.k-function, .k-method { --kc: var(--vscode-symbolIcon-functionForeground, var(--vscode-charts-purple)); }
+.k-field, .k-variable { --kc: var(--vscode-symbolIcon-fieldForeground, var(--vscode-charts-blue)); }
+.k-external, .k-external_package { --kc: var(--muted); }
 .k-unresolved { --kc: var(--unresolved); }
-.node > rect.bar { fill: var(--kc, var(--muted)); }
-.node.k-external_package > rect.body, .node.k-external > rect.body { stroke-dasharray: 2 2; }
+.node.k-external_package > rect.body, .node.k-external > rect.body, .node.k-unresolved > rect.body { stroke-dasharray: 3 2; }
 
 /* Wires */
-/* Strokes stay in screen pixels so a zoomed-out repo keeps visible edges. */
-.wire, .hit, .node > rect.body { vector-effect: non-scaling-stroke; }
-.wire { fill: none; stroke: var(--call); stroke-opacity: .45; }
+/* Width in screen pixels, scaled by --z (zoom, clamped) so zoomed-out views stay legible. */
+.wire, .hit, .node > rect.body, .node .rule { vector-effect: non-scaling-stroke; }
+.wire { fill: none; stroke: var(--call); stroke-opacity: var(--wo, .32); stroke-width: calc(var(--w, 1) * var(--z, 1) * 1px); }
 .wire.flow { stroke: var(--flow); }
 .wire.override { stroke: var(--override); }
-.wire.may { stroke-dasharray: 7 4; }
-.wire.unresolved { stroke: var(--unresolved); stroke-dasharray: 2 4; }
+.wire.may { stroke-dasharray: 6 3; }
+.wire.unresolved { stroke: var(--unresolved); stroke-dasharray: 2 3; }
 .wire.off { display: none; }
-.arrow { stroke: none; fill-opacity: .7; fill: var(--call); }
+.arrow { stroke: none; fill-opacity: .6; fill: var(--call); }
 .arrow.flow { fill: var(--flow); }
 .arrow.override { fill: var(--override); }
 .arrow.unresolved { fill: var(--unresolved); }
-.hit { fill: none; stroke: transparent; stroke-width: 10; pointer-events: stroke; }
+.hit { fill: none; stroke: transparent; stroke-width: 8; pointer-events: stroke; }
 
 /* Hover focus: everything not touching the hovered node fades */
-.focus .node:not(.hl) { opacity: .25; }
-.focus .wire:not(.hl) { stroke-opacity: .06; }
-.focus .wire.hl { stroke-opacity: .95; }
-.flash > rect.body { stroke: var(--accent); stroke-width: 3; }
+.focus .node:not(.hl) { opacity: .3; }
+.focus .wire:not(.hl) { stroke-opacity: .05; }
+.focus .wire.hl { stroke-opacity: .9; stroke-width: calc(var(--w, 1) * 1.4px); }
+.flash > rect.body { stroke: var(--accent); stroke-width: 2; }
 
 /* Chrome */
-#tools { position: fixed; top: 8px; right: 8px; display: flex; gap: 4px; align-items: center; background: var(--vscode-editorWidget-background); border: 1px solid var(--border); border-radius: 4px; padding: 3px; box-shadow: 0 2px 8px var(--vscode-widget-shadow); }
-#tools button { min-width: 26px; height: 24px; border: none; border-radius: 3px; background: transparent; color: var(--vscode-foreground); cursor: pointer; font: 13px var(--vscode-font-family); }
+#tools { position: fixed; top: 6px; right: 10px; display: flex; gap: 1px; align-items: center; background: var(--vscode-editorWidget-background); border: 1px solid var(--border); border-radius: 4px; padding: 2px; box-shadow: 0 0 8px 2px var(--vscode-widget-shadow); }
+#tools button { width: 22px; height: 22px; padding: 0; display: grid; place-items: center; border: none; border-radius: 3px; background: transparent; color: var(--vscode-icon-foreground, var(--vscode-foreground)); cursor: pointer; }
 #tools button:hover { background: var(--vscode-toolbar-hoverBackground); }
-#zoom { min-width: 44px; text-align: center; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-#hint { position: fixed; left: 8px; bottom: 8px; font-size: 11px; color: var(--muted); background: var(--vscode-editor-background); padding: 2px 6px; border-radius: 3px; opacity: .85; }
+#tools button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
+#tools svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+#zoom { min-width: 38px; text-align: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 #msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; white-space: pre-wrap; color: var(--muted); font-size: 13px; pointer-events: none; }
 #msg.err { color: var(--vscode-errorForeground); font-family: var(--vscode-editor-font-family); font-size: 12px; text-align: left; }
 #msg.over { background: color-mix(in srgb, var(--vscode-editor-background) 80%, transparent); }
 #msg[hidden] { display: none; }
-#tip { position: fixed; pointer-events: none; max-width: 420px; padding: 6px 8px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; background: var(--vscode-editorHoverWidget-background); color: var(--vscode-editorHoverWidget-foreground); border: 1px solid var(--vscode-editorHoverWidget-border); box-shadow: 0 2px 8px var(--vscode-widget-shadow); }
+#tip { position: fixed; pointer-events: none; max-width: 420px; padding: 4px 8px; border-radius: 3px; font-size: 12px; line-height: 1.45; white-space: pre-wrap; background: var(--vscode-editorHoverWidget-background); color: var(--vscode-editorHoverWidget-foreground); border: 1px solid var(--vscode-editorHoverWidget-border); box-shadow: 0 2px 8px var(--vscode-widget-shadow); }
 #tip[hidden] { display: none; }
-#tip b { font-family: var(--vscode-editor-font-family); }
+#tip b { font-family: var(--vscode-editor-font-family); font-weight: 600; }
+#tip .dim { color: var(--muted); }

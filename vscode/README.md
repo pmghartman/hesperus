@@ -35,7 +35,3 @@ Files in other languages are counted in the sidebar and not analyzed.
 - **Read-only.** Hesperus writes only its `.hesperus/` cache in the analyzed repo.
 - **Deterministic.** Same commit and same indexer versions give byte-identical output.
 - **Stale caches fail loudly.** A new commit, lockfile, or tool version re-indexes, and the sidebar says why.
-
-## Settings
-
-- `hesperus.cliPath`: use a different `hesperus` CLI than the one bundled with the extension.

@@ -1,4 +1,0 @@
-# Pinned so release binaries match across machines.
-[toolchain]
-channel = "1.98.1"
-profile = "minimal"

@@ -1,14 +1,18 @@
 import ELK from "elkjs/lib/elk.bundled.js";
-import { Graph, GraphNode, Rollup, View } from "./graph";
+import { Rollup, View } from "./core/aggregate";
+import { cmpStr, Graph, GraphNode } from "./core/ir";
 
 export interface Box { id: string; x: number; y: number; w: number; h: number; node: GraphNode; container: boolean; expandable: boolean }
-/** All rollups between one ordered pair of nodes share a wire; kinds stay listed for filtering. */
-/** `points` is start, cubic Bézier control triples, end (ELK spline sections). */
+/** All rollups between two nodes share one wire, both directions: returns run against their
+ *  calls, and routing them separately sends every one around the outside. Kinds stay listed for
+ *  filtering; each rollup keeps its own direction. `from` is the end most rollups leave.
+ *  `points` is start, cubic Bézier control triples, end (ELK spline sections). */
 export interface Wire { from: string; to: string; rollups: Rollup[]; points: { x: number; y: number }[] }
 export interface Layout { width: number; height: number; boxes: Box[]; wires: Wire[] }
 
 // Sizes come from character counts, not measured text, so layout never depends on fonts.
-const CHAR = 7.4, PAD = 28, MIN_W = 120, MAX_W = 300, LEAF_H = 44;
+// Must match media/graph.js. PAD holds the chevron, the kind mark, and margins.
+const CHAR = 6.6, PAD = 40, MIN_W = 72, MAX_W = 260, LEAF_H = 26;
 export const MAX_CHARS = Math.floor((MAX_W - PAD) / CHAR);
 
 interface ElkNode {
@@ -28,7 +32,7 @@ interface ElkEdge {
   sections?: { startPoint: { x: number; y: number }; endPoint: { x: number; y: number }; bendPoints?: { x: number; y: number }[] }[];
 }
 
-const width = (n: GraphNode) => Math.min(MAX_W, Math.max(MIN_W, Math.ceil(Math.max(n.name.length, n.kind.length + 2) * CHAR) + PAD));
+const width = (n: GraphNode) => Math.min(MAX_W, Math.max(MIN_W, Math.ceil(n.name.length * CHAR) + PAD + 14));
 
 // Positions come from ELK only; inputs are sorted and the seed is fixed so equal input
 // gives equal output.
@@ -55,17 +59,24 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
     const ch = kids.get(id);
     const node = byId.get(id);
     if (ch)
-      return { id, children: ch.map(mk), layoutOptions: { "elk.padding": "[top=36,left=16,bottom=16,right=16]" } };
+      return { id, children: ch.map(mk), layoutOptions: { "elk.padding": "[top=38,left=12,bottom=12,right=12]" } };
     return { id, width: node ? width(node) : MIN_W, height: LEAF_H };
   };
-  const pairs = new Map<string, Rollup[]>();
+  const byPair = new Map<string, Rollup[]>();
   for (const r of view.rollups) {
-    const k = r.from + "\0" + r.to;
-    if (!pairs.has(k)) pairs.set(k, []);
-    pairs.get(k)!.push(r);
+    const k = cmpStr(r.from, r.to) < 0 ? r.from + "\0" + r.to : r.to + "\0" + r.from;
+    if (!byPair.has(k)) byPair.set(k, []);
+    byPair.get(k)!.push(r);
+  }
+  // Orient each wire along its calls and overrides, else its heavier direction, else by id.
+  const pairs = new Map<string, Rollup[]>();
+  for (const [k, rs] of byPair) {
+    const [a, b] = k.split("\0");
+    const score = (from: string) => rs.reduce((s, r) => s + (r.from === from ? (r.kind === "flow" ? 1 : 1e6) * r.weight : 0), 0);
+    const [from, to] = score(b) > score(a) ? [b, a] : [a, b];
+    pairs.set(from + "\0" + to, rs.sort((x, y) => x.kind.localeCompare(y.kind) || (x.from === from ? 0 : 1) - (y.from === from ? 0 : 1)));
   }
   const keys = [...pairs.keys()].sort();
-  for (const k of keys) pairs.get(k)!.sort((a, b) => a.kind.localeCompare(b.kind));
   const root: ElkNode = {
     id: "root",
     children: roots.map(mk),
@@ -80,9 +91,14 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
       "elk.edgeRouting": "SPLINES",
       "elk.json.edgeCoords": "ROOT",
-      "elk.spacing.nodeNode": "28",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "64",
-      "elk.spacing.edgeNode": "16",
+      "elk.spacing.nodeNode": "14",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "48",
+      "elk.spacing.edgeNode": "10",
+      "elk.spacing.edgeEdge": "4",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "4",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "10",
+      // Edges sharing an end share a port, so a busy node fans out from one point.
+      "elk.layered.mergeEdges": "true",
       // Network-simplex placement is ~25x slower on repo-sized views.
       "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
     },

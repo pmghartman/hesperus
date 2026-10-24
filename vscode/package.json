@@ -30,6 +30,9 @@
     "Other"
   ],
   "main": "./out/extension.js",
+  "bin": {
+    "hesperus": "./out/cli.js"
+  },
   "activationEvents": [],
   "contributes": {
     "viewsContainers": {
@@ -69,31 +72,25 @@
           "group": "navigation"
         }
       ]
-    },
-    "configuration": {
-      "title": "Hesperus",
-      "properties": {
-        "hesperus.cliPath": {
-          "type": "string",
-          "default": "",
-          "description": "Path to a hesperus CLI to use instead of the one bundled with the extension. Leave empty to use the bundled CLI."
-        }
-      }
     }
   },
   "scripts": {
-    "build": "tsc -p .",
-    "test": "tsc -p . && node --test \"out/**/*.test.js\"",
-    "vscode:prepublish": "tsc -p .",
+    "build": "node scripts/grammars.js && tsc -p .",
+    "test": "npm run build && node --test \"out/**/*.test.js\"",
+    "vscode:prepublish": "npm run build",
     "package": "vsce package"
   },
   "dependencies": {
-    "elkjs": "0.9.3"
+    "elkjs": "0.9.3",
+    "web-tree-sitter": "0.25.10"
   },
   "devDependencies": {
     "@types/node": "20.14.10",
     "@types/vscode": "1.90.0",
     "@vscode/vsce": "3.2.1",
+    "tree-sitter-go": "0.25.0",
+    "tree-sitter-javascript": "0.25.0",
+    "tree-sitter-typescript": "0.23.2",
     "typescript": "5.5.4"
   }
 }

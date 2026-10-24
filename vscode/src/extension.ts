@@ -1,34 +1,21 @@
 import * as vscode from "vscode";
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import * as fs from "node:fs/promises";
-import { EdgeKind, Graph, GraphNode, View } from "./graph";
+import * as path from "node:path";
+import * as aggregate from "./core/aggregate";
+import { EdgeKind, Graph, GraphNode } from "./core/ir";
 import { layout } from "./layout";
-import { install, Tools } from "./tools";
+import type { Tools } from "./engine";
+import { install } from "./tools";
 
-let bundled: string | undefined;
-
-/** The CLI shipped in this platform's package, made executable once; zip extraction may drop the mode. */
-async function initBundled(ctx: vscode.ExtensionContext) {
-  const p = vscode.Uri.joinPath(ctx.extensionUri, "bin", process.platform === "win32" ? "hesperus.exe" : "hesperus").fsPath;
-  try {
-    await fs.access(p);
-    if (process.platform !== "win32") await fs.chmod(p, 0o755);
-    bundled = p;
-  } catch {
-    bundled = undefined;
-  }
-}
+// The CLI runs on the editor's own Node (Electron as Node), so nothing else needs installing,
+// and indexing never blocks the extension host.
+const CLI = path.join(__dirname, "cli.js");
 
 function cli(args: string[]): Promise<string> {
-  // An explicit setting wins (development builds); else the bundled binary; else PATH.
-  const bin = vscode.workspace.getConfiguration("hesperus").get<string>("cliPath") || bundled || "hesperus";
   return new Promise((resolve, reject) =>
-    execFile(bin, args, { maxBuffer: 1 << 29 }, (err, out, errOut) => {
-      if ((err as NodeJS.ErrnoException | null)?.code === "ENOENT")
-        return reject(new Error(`Hesperus CLI not found at "${bin}". This platform's package has no bundled CLI; set hesperus.cliPath in settings.`));
-      err ? reject(new Error(errOut.trim() || err.message)) : resolve(out);
-    }));
+    execFile(process.execPath, [CLI, ...args], { maxBuffer: 1 << 30, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } }, (err, out, errOut) =>
+      err ? reject(new Error(errOut.trim().replace(/^error: /, "") || err.message)) : resolve(out)));
 }
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -45,7 +32,7 @@ const STATUS = {
 } as const;
 
 /** Callable and structural nodes rank above variables and fields when names tie. */
-const FIND_RANK: Record<string, number> = { function: 0, method: 0, type: 1, package: 2, file: 3, external_package: 4 };
+const FIND_RANK: Record<string, number> = { function: 0, method: 0, type: 1, package: 2, directory: 3, file: 3, external_package: 4 };
 
 // One graph tab per window; the sidebar is its control panel (status, errors, view options).
 class Hesperus {
@@ -91,7 +78,7 @@ class Hesperus {
         { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
         { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [this.media] },
       );
-      p.iconPath = vscode.Uri.joinPath(this.media, "graph.svg");
+      p.iconPath = vscode.Uri.joinPath(this.media, "icon.svg");
       p.webview.html = page(p.webview, this.media, "graph", GRAPH_BODY);
       p.webview.onDidReceiveMessage((m) => this.onGraph(m));
       p.onDidDispose(() => (this.panel = undefined));
@@ -143,9 +130,8 @@ class Hesperus {
     const folder = this.folder;
     if (!this.panel || !this.graph || !folder) return;
     try {
-      const args = [...this.expanded].sort().flatMap((e) => ["--expand", e]);
-      const view: View = JSON.parse(await cli(["view", folder.uri.fsPath, ...args]));
-      this.panel.webview.postMessage({ type: "layout", layout: await layout(this.graph, view), hidden: [...this.hidden], ...extra });
+      const v = aggregate.view(this.graph, this.expanded);
+      this.panel.webview.postMessage({ type: "layout", layout: await layout(this.graph, v), hidden: [...this.hidden], ...extra });
     } catch (e) {
       this.setStatus({ state: "error", label: "Error", detail: msg(e) });
     }
@@ -227,8 +213,7 @@ class Hesperus {
   }
 }
 
-export async function activate(ctx: vscode.ExtensionContext) {
-  await initBundled(ctx);
+export function activate(ctx: vscode.ExtensionContext) {
   const h = new Hesperus(ctx);
   ctx.subscriptions.push(
     vscode.window.registerWebviewViewProvider("hesperus.graph", { resolveWebviewView: (v) => h.attachSidebar(v) }),
@@ -251,20 +236,17 @@ function page(webview: vscode.Webview, media: vscode.Uri, name: string, body: st
 }
 
 const GRAPH_BODY = `<svg id="view" xmlns="http://www.w3.org/2000/svg"><g id="scene"></g></svg>
-<div id="tools"><button id="out" title="Zoom out">−</button><span id="zoom">100%</span><button id="in" title="Zoom in">+</button><button id="fit" title="Fit to window">⤢</button></div>
-<div id="hint">Scroll to zoom · drag to pan · click to expand · ⌘/Ctrl-click or double-click opens source</div>
+<div id="tools"><button id="out" title="Zoom Out"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button><span id="zoom">100%</span><button id="in" title="Zoom In"><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9"/></svg></button><button id="fit" title="Fit to Window"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button></div>
 <div id="msg">Loading…</div><div id="tip" hidden></div>`;
 
-const SIDEBAR_BODY = `<section><div id="repo" class="repo"></div>
-<div id="state" class="state"></div><pre id="detail" hidden></pre>
-<div class="row"><button id="open">Open graph</button><button id="reindex" class="secondary" title="Re-run the indexers">Re-index</button></div></section>
-<section><h3>Find</h3><form id="find"><input id="q" type="search" placeholder="Function, type, package…" spellcheck="false"></form><div id="found" class="muted"></div></section>
-<section><h3>View</h3><div class="row"><button id="fit" class="secondary">Fit</button><button id="collapse" class="secondary">Collapse all</button></div>
+const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" class="state"></div></header>
+<pre id="detail" hidden></pre>
+<div class="actions"><button id="open">Open Graph</button><button id="reindex" class="secondary" title="Re-run the indexers">Re-index</button></div>
+<form id="find"><input id="q" type="search" placeholder="Find a function, type, or package" spellcheck="false" aria-label="Find"></form><div id="found" class="muted"></div>
+<section><h3>Show<span class="tools"><button id="fit" class="link" title="Fit the graph to the window">Fit</button><button id="collapse" class="link" title="Collapse every container">Collapse All</button></span></h3>
 <label><input type="checkbox" data-kind="call"><span class="swatch call"></span>Calls</label>
 <label><input type="checkbox" data-kind="flow"><span class="swatch flow"></span>Data flow</label>
-<label><input type="checkbox" data-kind="override"><span class="swatch override"></span>Overrides</label></section>
+<label><input type="checkbox" data-kind="override"><span class="swatch override"></span>Overrides</label>
+<div class="legend"><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l"/></svg>resolved</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l may"/></svg>may</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l unresolved"/></svg>unresolved</span></div></section>
 <section><h3>Languages</h3><ul id="langs" class="langs"></ul></section>
-<section><h3>Edge certainty</h3><div class="legend">
-<div><svg width="32" height="8"><line x1="0" y1="4" x2="32" y2="4" class="l"/></svg>resolved</div>
-<div><svg width="32" height="8"><line x1="0" y1="4" x2="32" y2="4" class="l may"/></svg>may (dynamic dispatch)</div>
-<div><svg width="32" height="8"><line x1="0" y1="4" x2="32" y2="4" class="l unresolved"/></svg>unresolved</div></div></section>`;
+<p class="hint">Click a box to expand it. ⌘/Ctrl-click or double-click opens its source. Hover to trace its edges.</p>`;

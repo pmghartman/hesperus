@@ -21,7 +21,7 @@
     const icon = document.createElement("span");
     icon.className = busy ? "spin" : s.state === "ready" ? "dot" : "";
     if (icon.className) st.append(icon);
-    st.append(s.state === "ready" ? `Ready · ${s.nodes.toLocaleString()} nodes · ${s.edges.toLocaleString()} edges` : s.label);
+    st.append(s.state === "ready" ? `${s.nodes.toLocaleString()} nodes · ${s.edges.toLocaleString()} edges` : s.label);
     const detail = s.state === "error" ? s.detail : s.reason ?? "";
     $("detail").hidden = !detail;
     $("detail").textContent = detail;
@@ -32,23 +32,30 @@
 
     const ul = $("langs");
     ul.replaceChildren();
-    const row = (a, b) => {
-      const li = document.createElement("li");
-      const l = document.createElement("span"), r = document.createElement("span");
-      l.textContent = a;
-      r.textContent = b;
-      r.className = "tool";
-      li.append(l, r);
-      ul.append(li);
+    const li = (name, count, tool, missing) => {
+      const row = document.createElement("li");
+      const n = document.createElement("span"), c = document.createElement("span");
+      n.className = "name";
+      n.textContent = name;
+      c.className = "count";
+      c.textContent = count;
+      row.append(n, c);
+      ul.append(row);
+      if (tool) {
+        const t = document.createElement("li");
+        t.className = "tool" + (missing ? " missing" : "");
+        t.textContent = tool;
+        ul.append(t);
+      }
     };
-    if (!m.tools) row("—", "");
+    if (!m.tools) li("—", "");
     else {
       for (const l of m.tools.languages) {
         const t = m.tools.tools.find((x) => x.name === l.tool);
-        row(`${LANG[l.id] ?? l.id} · ${l.files} files`, t ? `${t.name} ${t.version}${t.bin ? "" : " (not downloaded)"}` : "");
+        li(LANG[l.id] ?? l.id, `${l.files.toLocaleString()} files`, t && `${t.name} ${t.version}${t.bin ? "" : " · downloads on first index"}`, t && !t.bin);
       }
-      if (!m.tools.languages.length) row("No supported language found", "");
-      if (m.tools.other_files) row(`Other files · ${m.tools.other_files}`, "not analyzed");
+      if (!m.tools.languages.length) li("No supported language found", "");
+      if (m.tools.other_files) li("Other, not analyzed", `${m.tools.other_files.toLocaleString()} files`);
     }
   });
   vs.postMessage({ type: "ready" });

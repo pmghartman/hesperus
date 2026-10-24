@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { Graph, View } from "./graph";
+import { View } from "./core/aggregate";
+import { Graph } from "./core/ir";
 import { layout } from "./layout";
 
 const n = (id: string, kind: "package" | "function" = "function") => ({ id, kind, name: id });
@@ -40,4 +41,12 @@ test("rollups between one pair share a routed wire", async () => {
   const a1 = l.boxes.find((x) => x.id === "a1")!, B = l.boxes.find((x) => x.id === "B")!;
   const [s, e] = [l.wires[0].points[0], l.wires[0].points.at(-1)!];
   assert.ok(Math.abs(s.x - (a1.x + a1.w)) < 1 && Math.abs(e.x - B.x) < 1, JSON.stringify({ s, e, a1, B }));
+});
+
+test("both directions between a pair share one wire, oriented along the call", async () => {
+  const back = { ...view.rollups[0], from: "B", to: "a1", kind: "flow" as const };
+  const l = await layout(g, { ...view, rollups: [back, view.rollups[0]] });
+  assert.equal(l.wires.length, 1);
+  assert.equal(l.wires[0].from, "a1");
+  assert.deepEqual(l.wires[0].rollups.map((r) => [r.kind, r.from]), [["call", "a1"], ["flow", "B"]]);
 });

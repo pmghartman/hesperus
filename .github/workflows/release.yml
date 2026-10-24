@@ -1,9 +1,9 @@
 # manual release: one past the highest vMAJOR.MINOR tag (minor, or major with .0 when
-# checked), tested, built per platform with its own CLI, published to the VS Code
-# Marketplace through Microsoft Entra ID, then tagged and released on GitHub.
+# checked), tested, built as one VSIX (the CLI is JavaScript run on the editor's own Node),
+# published to the VS Code Marketplace through Microsoft Entra ID, then tagged and released on GitHub.
 # the version lives in tags only; files are stamped at build time, never committed
 # needs vars AZURE_CLIENT_ID (a user-assigned managed identity) and AZURE_TENANT_ID, and the
-# `marketplace` environment: docs/releasing.md
+# `marketplace` environment
 name: release
 
 on:
@@ -11,10 +11,6 @@ on:
     inputs:
       major:
         description: "Bump Major Version"
-        type: boolean
-        default: false
-      identity:
-        description: "Setup only: print the managed identity's Marketplace ID and check it may publish; release nothing"
         type: boolean
         default: false
 
@@ -27,46 +23,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # the ID to add as a publisher member, from the same login publishing uses, then
-  # whether that member may publish; a user-assigned managed identity, as an app
-  # registration's service principal has no Azure DevOps profile (VSS011031)
-  identity:
-    if: ${{ inputs.identity }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    environment: marketplace
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: vscode/package-lock.json
-      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          allow-no-subscriptions: true
-      # 499b84ac-… is Azure DevOps' resource. connectionData, not profiles/me: a managed
-      # identity signed in from GitHub has no Azure DevOps profile (VSS011031)
-      - name: marketplace ID
-        run: |
-          read -r id name < <(az rest -u https://app.vssps.visualstudio.com/_apis/connectionData --resource 499b84ac-1321-427f-aa17-267ca6975798 \
-            --query '[authenticatedUser.id, authenticatedUser.providerDisplayName]' -o tsv | paste -sd' ' -)
-          echo "Signed in as $name. Add this ID as a Contributor member of the publisher: \`$id\`" | tee -a "$GITHUB_STEP_SUMMARY"
-      # fails until the ID above is a Contributor; rerun after adding it
-      - name: may publish
-        working-directory: vscode
-        run: |
-          npm ci
-          p=$(node -p "require('./package.json').publisher")
-          npx vsce verify-pat "$p" --azure-credential
-          echo "The identity may publish as $p." | tee -a "$GITHUB_STEP_SUMMARY"
-
   version:
-    if: ${{ !inputs.identity }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -111,9 +68,8 @@ jobs:
             notes.md
           retention-days: 1
 
-  # tests gating the release; the determinism and golden snapshot tests are in cargo test
+  # tests gating the release, including the determinism and golden snapshot tests
   check:
-    if: ${{ !inputs.identity }}
     strategy:
       fail-fast: false
       matrix:
@@ -123,8 +79,6 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-      # rustup reads rust-toolchain.toml
-      - run: cargo test --locked
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
@@ -133,68 +87,36 @@ jobs:
       - working-directory: vscode
         run: npm ci && npm test
 
-  # one VSIX per platform around its own CLI binary; the Marketplace serves each machine its match
+  # one VSIX for every platform: no native code inside
   build:
     needs: [version]
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - { runner: macos-14, rust: aarch64-apple-darwin, vsce: darwin-arm64 }
-          - { runner: macos-14, rust: x86_64-apple-darwin, vsce: darwin-x64 }
-          # musl: a static binary for any Linux distro
-          - { runner: ubuntu-24.04, rust: x86_64-unknown-linux-musl, vsce: linux-x64, musl: true }
-          - { runner: ubuntu-24.04-arm, rust: aarch64-unknown-linux-musl, vsce: linux-arm64, musl: true }
-          - { runner: windows-2022, rust: x86_64-pc-windows-msvc, vsce: win32-x64, exe: .exe }
-    name: build (${{ matrix.vsce }})
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       VER: ${{ needs.version.outputs.ver }}.0
-    defaults:
-      run:
-        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: changelog
           path: ${{ runner.temp }}/changelog
-      - name: musl toolchain
-        if: matrix.musl
-        run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q musl-tools
-          # tree-sitter grammars are C: built against musl too
-          echo "CC_$(echo '${{ matrix.rust }}' | tr '-' '_')=musl-gcc" >> "$GITHUB_ENV"
-      # the version into both manifests; the CLI's goes into the cache header, so an update re-indexes
-      - name: stamp version
-        run: |
-          # first `version =` is [workspace.package]'s; awk, as BSD sed lacks GNU's 0,/re/
-          awk -v v="$VER" '!d && /^version = "/ { sub(/"[^"]*"/, "\"" v "\""); d = 1 } 1' Cargo.toml > Cargo.toml.new && mv Cargo.toml.new Cargo.toml
-          (cd vscode && npm version "$VER" --no-git-tag-version --allow-same-version)
-          cp "$RUNNER_TEMP/changelog/CHANGELOG.md" vscode/CHANGELOG.md
-      # not --locked: the stamp rewrites the workspace's own entries; check ran --locked on this commit
-      - name: CLI
-        run: |
-          rustup target add ${{ matrix.rust }}
-          cargo build --release -p hesperus --target ${{ matrix.rust }}
-          mkdir -p vscode/bin
-          cp target/${{ matrix.rust }}/release/hesperus${{ matrix.exe }} vscode/bin/
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: vscode/package-lock.json
+      # the version goes into the cache header too, so an update re-indexes
       - name: package
         working-directory: vscode
         run: |
+          npm version "$VER" --no-git-tag-version --allow-same-version
+          cp "$RUNNER_TEMP/changelog/CHANGELOG.md" CHANGELOG.md
           npm ci
-          npx vsce package --target ${{ matrix.vsce }} -o hesperus-${{ matrix.vsce }}-$VER.vsix
+          npx vsce package -o hesperus-$VER.vsix
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: vsix-${{ matrix.vsce }}
-          path: vscode/hesperus-${{ matrix.vsce }}-${{ env.VER }}.vsix
+          name: vsix
+          path: vscode/hesperus-${{ env.VER }}.vsix
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -216,8 +138,7 @@ jobs:
           cache-dependency-path: vscode/package-lock.json
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          pattern: vsix-*
-          merge-multiple: true
+          name: vsix
           path: dist
       - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
         with:
@@ -241,8 +162,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          pattern: vsix-*
-          merge-multiple: true
+          name: vsix
           path: dist
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:

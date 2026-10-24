@@ -4,7 +4,8 @@
   const NS = "http://www.w3.org/2000/svg";
   const $ = (id) => document.getElementById(id);
   const svg = $("view"), scene = $("scene"), msg = $("msg"), tip = $("tip");
-  const CHAR = 7.4, PAD = 28;
+  // Must match src/layout.ts.
+  const CHAR = 6.6, PAD = 40, HEAD = 26;
   const el = (tag, attrs, parent) => {
     const e = document.createElementNS(NS, tag);
     for (const k in attrs) e.setAttribute(k, attrs[k]);
@@ -18,6 +19,8 @@
   // ---- view transform ----
   const apply = () => {
     scene.setAttribute("transform", `translate(${t.x},${t.y}) scale(${t.k})`);
+    // Wires thin out as the view zooms out, so a whole repo reads as structure, not a solid mass.
+    svg.style.setProperty("--z", String(Math.min(1, Math.max(0.3, t.k))));
     $("zoom").textContent = Math.round(t.k * 100) + "%";
   };
   const fit = () => {
@@ -89,6 +92,19 @@
     return d;
   };
 
+  // Kind marks in the style of VS Code's symbol icons: outlines for structure, letters for symbols.
+  const ICON = {
+    directory: "M-6,-4h4l1.5,1.5h6.5v7.5h-12z",
+    package: "M-5.5,-5.5h11v11h-11zM-5.5,-1.5h11",
+    external_package: "M-5.5,-5.5h11v11h-11zM-5.5,-1.5h11",
+    file: "M-4.5,-6h6l3,3v9h-9zM1.5,-6v3h3",
+  };
+  const LETTER = { type: "T", function: "ƒ", method: "m", field: "•", variable: "v", external: "↗", unresolved: "?" };
+  function glyph(g, kind, x, cy) {
+    if (ICON[kind]) return el("path", { class: "glyph", d: ICON[kind], transform: `translate(${x + 6},${cy})` }, g);
+    el("text", { class: "letter", x: x + 6, y: cy + 4, "text-anchor": "middle" }, g).textContent = LETTER[kind] ?? "·";
+  }
+
   function draw(anchor) {
     const before = anchor && boxes.get(anchor);
     const screenBefore = before && { x: t.x + before.x * t.k, y: t.y + before.y * t.k };
@@ -96,9 +112,11 @@
     boxes = new Map(L.boxes.map((b) => [b.id, b]));
     const defs = el("defs", {}, scene);
     for (const k of ["call", "flow", "override", "unresolved"]) {
-      const m = el("marker", { id: "arrow-" + k, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "8", markerHeight: "8", markerUnits: "userSpaceOnUse", orient: "auto" }, defs);
+      const m = el("marker", { id: "arrow-" + k, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", markerUnits: "userSpaceOnUse", orient: "auto" }, defs);
       // CSP forbids style attributes; colours come from the stylesheet.
       el("path", { d: "M0,1L9,5L0,9z", class: "arrow " + k }, m);
+      const back = el("marker", { id: "back-" + k, viewBox: "0 0 10 10", refX: "1", refY: "5", markerWidth: "7", markerHeight: "7", markerUnits: "userSpaceOnUse", orient: "auto" }, defs);
+      el("path", { d: "M10,1L1,5L10,9z", class: "arrow " + k }, back);
     }
     // Containers first so their children paint on top.
     const order = [...L.boxes].sort((a, b) => (b.container - a.container) || a.id.localeCompare(b.id));
@@ -106,16 +124,22 @@
     const nodeEls = new Map();
     for (const b of order) {
       const g = el("g", { class: `node k-${b.node.kind}` + (b.container ? " container" : ""), "data-id": b.id }, nodeLayer);
-      el("rect", { class: "body", x: b.x, y: b.y, width: b.w, height: b.h, rx: 6 }, g);
-      if (!b.container) el("rect", { class: "bar", x: b.x, y: b.y + 6, width: 3, height: b.h - 12, rx: 1.5 }, g);
-      const caret = b.expandable ? (b.container ? "▾ " : "▸ ") : "";
+      el("rect", { class: "body", x: b.x, y: b.y, width: b.w, height: b.h, rx: b.container ? 6 : 4 }, g);
+      const cy = b.y + (b.container ? HEAD : b.h) / 2;
+      let x = b.x + 8;
+      if (b.expandable) {
+        // Chevron: right when collapsed, down when expanded.
+        el("path", { class: "chev", d: b.container ? `M${x},${cy - 2}l4,4l4,-4` : `M${x + 2},${cy - 4}l4,4l-4,4` }, g);
+        x += 14;
+      }
+      glyph(g, b.node.kind, x, cy);
+      x += 18;
       const kind = b.node.kind.replace("_", " ");
-      // Container headers share one line: the kind shows only when the full name still fits.
-      const kindW = b.container ? (kind.length + 2) * CHAR : 0;
-      const fits = (b.node.name.length + caret.length) * CHAR + PAD + kindW <= b.w;
-      el("text", { class: "name", x: b.x + 12, y: b.y + (b.container ? 20 : 19) }, g).textContent = caret + short(b.node.name, b.w - caret.length * CHAR);
-      if (!b.container) el("text", { class: "kind", x: b.x + 12, y: b.y + 35 }, g).textContent = kind;
-      else if (fits) el("text", { class: "kind", x: b.x + b.w - 10, y: b.y + 20, "text-anchor": "end" }, g).textContent = kind;
+      el("text", { class: "name", x, y: cy + 4 }, g).textContent = short(b.node.name, b.w - (x - b.x) + PAD - 12);
+      // Containers name their kind at the right of the header when it fits.
+      if (b.container && (x - b.x) + (b.node.name.length + kind.length + 3) * CHAR + 12 <= b.w)
+        el("text", { class: "kind", x: b.x + b.w - 10, y: cy + 4, "text-anchor": "end" }, g).textContent = kind;
+      if (b.container) el("line", { class: "rule", x1: b.x, x2: b.x + b.w, y1: b.y + HEAD, y2: b.y + HEAD }, g);
       nodeEls.set(b.id, g);
       g.addEventListener("click", (e) => {
         if (drag?.moved) return;
@@ -134,16 +158,18 @@
       const p = prov(w.rollups);
       const weight = w.rollups.reduce((a, r) => a + r.weight, 0);
       const d = pathOf(w.points);
-      const path = el("path", {
-        class: `wire ${main} ${p}`, d, "stroke-width": Math.min(1 + Math.log2(weight), 6),
-        "marker-end": `url(#arrow-${p === "unresolved" ? "unresolved" : main})`,
-      }, wireLayer);
+      const head = `url(#arrow-${p === "unresolved" ? "unresolved" : main})`;
+      const path = el("path", { class: `wire ${main} ${p}`, d, "marker-end": head }, wireLayer);
+      if (w.rollups.some((r) => r.from === w.to)) path.setAttribute("marker-start", head.replace("arrow-", "back-"));
+      path.style.setProperty("--w", String(Math.min(0.9 + Math.log2(weight) * 0.5, 3)));
       const hit = el("path", { class: "hit", d }, wireLayer);
       hit.addEventListener("mouseenter", (e) => focusWire(w, path, e));
       hit.addEventListener("mouseleave", unfocus);
       wireEls.push({ w, kinds, path, hit });
     }
     scene._wires = wireEls;
+    // Many overlapping wires add up; fade each one so the sum stays readable.
+    svg.style.setProperty("--wo", String(Math.min(0.4, Math.max(0.1, 3 / Math.sqrt(L.wires.length || 1)))));
     scene._nodes = nodeEls;
     applyHidden();
     if (screenBefore && boxes.get(anchor)) {
@@ -203,8 +229,12 @@
     scene._nodes.get(w.from)?.classList.add("hl");
     scene._nodes.get(w.to)?.classList.add("hl");
     const name = (id) => esc(boxes.get(id)?.node.name ?? id);
-    const rows = w.rollups.map((r) => `${r.kind} ×${r.weight}  (resolved ${r.resolved}, may ${r.may}, unresolved ${r.unresolved})`);
-    showTip(e, `<b>${name(w.from)}</b> → <b>${name(w.to)}</b>\n${rows.join("\n")}`);
+    const two = w.rollups.some((r) => r.from === w.to);
+    const rows = w.rollups.map((r) => {
+      const certainty = [["resolved", r.resolved], ["may", r.may], ["unresolved", r.unresolved]].filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ");
+      return `${two ? (r.from === w.from ? "→ " : "← ") : ""}${r.kind} ×${r.weight}  <span class="dim">${certainty}</span>`;
+    });
+    showTip(e, `<b>${name(w.from)}</b> ${two ? "↔" : "→"} <b>${name(w.to)}</b>\n${rows.join("\n")}`);
   }
   function unfocus() {
     scene.classList.remove("focus");

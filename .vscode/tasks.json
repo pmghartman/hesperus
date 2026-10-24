@@ -4,7 +4,7 @@
     {
       "label": "build hesperus extension",
       "type": "shell",
-      "command": "cargo build --release && cd vscode && npm install && npm run build",
+      "command": "cd vscode && npm install && npm run build",
       "options": { "cwd": "${workspaceFolder}" },
       "problemMatcher": []
     }
