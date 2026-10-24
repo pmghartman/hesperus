@@ -1,0 +1,37 @@
+{
+  "name": "hesperus-vscode",
+  "displayName": "Hesperus",
+  "description": "Zoomable structure and data-flow graph of a repo, read from the Hesperus cache.",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Visualization"],
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "commands": [{ "command": "hesperus.openGraph", "title": "Hesperus: Open Graph" }],
+    "configuration": {
+      "title": "Hesperus",
+      "properties": {
+        "hesperus.cliPath": {
+          "type": "string",
+          "default": "hesperus",
+          "description": "Path to the hesperus CLI. The extension only reads the cache through it."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "test": "tsc -p . && node --test out/"
+  },
+  "dependencies": {
+    "elkjs": "0.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "20.14.10",
+    "@types/vscode": "1.90.0",
+    "typescript": "5.5.4"
+  }
+}

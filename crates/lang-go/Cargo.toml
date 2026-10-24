@@ -1,0 +1,10 @@
+[package]
+name = "hesperus-lang-go"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+hesperus-core = { path = "../core" }
+# Syntax for call sites and parameters inside bodies.
+tree-sitter = "0.25"
+tree-sitter-go = "0.25"

@@ -1,0 +1,650 @@
+{
+  "schema_version": 1,
+  "nodes": [
+    {
+      "id": "ext:std",
+      "kind": "external_package",
+      "name": "std"
+    },
+    {
+      "id": "file:main.go",
+      "kind": "file",
+      "name": "main.go",
+      "path": "main.go",
+      "hash": "e3502257529fe198939886423f4deffbe03523428affd067f9a2482b23f22b63"
+    },
+    {
+      "id": "pkg:example.com/basic:example.com/basic",
+      "kind": "package",
+      "name": "example.com/basic"
+    },
+    {
+      "id": "repo",
+      "kind": "repo",
+      "name": "repo"
+    },
+    {
+      "id": "scip-go gomod example.com/basic . `example.com/basic`/Circle#",
+      "kind": "type",
+      "name": "Circle",
+      "path": "main.go",
+      "range": {
+        "start_line": 4,
+        "start_col": 27,
+        "end_line": 4,
+        "end_col": 33
+      },
+      "hash": "e3502257529fe198939886423f4deffbe03523428affd067f9a2482b23f22b63"
+    },
+    {
+      "id": "scip-go gomod example.com/basic . `example.com/basic`/Circle#Area().",
+      "kind": "method",
+      "name": "Area",
+      "path": "main.go",
+      "range": {
+        "start_line": 11,
+        "start_col": 16,
+        "end_line": 11,
+        "end_col": 20
+      },
+      "hash": "e3502257529fe198939886423f4deffbe03523428affd067f9a2482b23f22b63"
+    },
+    {
+      "id": "scip-go gomod example.com/basic . `example.com/basic`/Circle#r.",
+      "kind": "field",
+      "name": "r",
+      "path": "main.go",
+      "range": {
+        "start_line": 9,
+        "start_col": 20,
+        "end_line": 9,
+        "end_col": 21
+      },
+      "hash": "e3502257529fe198939886423f4deffbe03523428affd067f9a2482b23f22b63"
+    },
+    {
+      "id": "scip-go gomod example.com/basic . `example.com/basic`/Shape#",
+      "kind": "type",
+      "name": "Shape",
+      "path": "main.go",
+      "range": {
+        "start_line": 5,
+        "start_col": 5,
+        "end_line": 5,
+        "end_col": 10
+      },
+      "doc": "Shape is implemented by Circle.",
+      "hash": "e3502257529fe198939886423f4deffbe03523428affd067f9a2482b23f22b63"
+    },
+    {
+      "id": "scip-go gomod example.com/basic . `example.com/basic`/Shape#Area().",
+      "kind": "method",
+      "name": "Area",
+      "path": "main.go",
+      "range": {
+        "start_line": 6,
+        "start_col": 1,
+        "end_line": 6,
+        "end_col": 5
+      },
+      "hash": "e3502257529fe198939886423f4deffbe03523428affd067f9a2482b23f22b63"
+    },
+    {
+      "id": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "kind": "function",
+      "name": "apply",
+      "path": "main.go",
+      "range": {
+        "start_line": 15,
+        "start_col": 5,
+        "end_line": 15,
+        "end_col": 10
+      },
+      "hash": "e3502257529fe198939886423f4deffbe03523428affd067f9a2482b23f22b63"
+    },
+    {
+      "id": "scip-go gomod example.com/basic . `example.com/basic`/double().",
+      "kind": "function",
+      "name": "double",
+      "path": "main.go",
+      "range": {
+        "start_line": 13,
+        "start_col": 5,
+        "end_line": 13,
+        "end_col": 11
+      },
+      "hash": "e3502257529fe198939886423f4deffbe03523428affd067f9a2482b23f22b63"
+    },
+    {
+      "id": "scip-go gomod example.com/basic . `example.com/basic`/main().",
+      "kind": "function",
+      "name": "main",
+      "path": "main.go",
+      "range": {
+        "start_line": 24,
+        "start_col": 5,
+        "end_line": 24,
+        "end_col": 9
+      },
+      "hash": "e3502257529fe198939886423f4deffbe03523428affd067f9a2482b23f22b63"
+    },
+    {
+      "id": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "kind": "function",
+      "name": "total",
+      "path": "main.go",
+      "range": {
+        "start_line": 19,
+        "start_col": 5,
+        "end_line": 19,
+        "end_col": 10
+      },
+      "hash": "e3502257529fe198939886423f4deffbe03523428affd067f9a2482b23f22b63"
+    },
+    {
+      "id": "scip-go gomod std . strings/ToUpper().",
+      "kind": "external",
+      "name": "ToUpper"
+    },
+    {
+      "id": "unresolved:scip-go gomod example.com/basic . `example.com/basic`/apply().:f",
+      "kind": "unresolved",
+      "name": "f"
+    }
+  ],
+  "edges": [
+    {
+      "from": "ext:std",
+      "to": "scip-go gomod std . strings/ToUpper().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "file:main.go",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/Circle#",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "file:main.go",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/Shape#",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "file:main.go",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "file:main.go",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/double().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "file:main.go",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/main().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "file:main.go",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "pkg:example.com/basic:example.com/basic",
+      "to": "file:main.go",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "repo",
+      "to": "ext:std",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "repo",
+      "to": "pkg:example.com/basic:example.com/basic",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/Circle#",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/Circle#Area().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/Circle#",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/Circle#r.",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/Circle#Area().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/Shape#Area().",
+      "kind": "override",
+      "provenance": "resolved",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 11,
+          "start_col": 16,
+          "end_line": 11,
+          "end_col": 20
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/Circle#Area().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "kind": "flow",
+      "provenance": "may",
+      "label": "return",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 21,
+          "start_col": 24,
+          "end_line": 21,
+          "end_col": 28
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/Shape#",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/Shape#Area().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/Shape#Area().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "return",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 21,
+          "start_col": 24,
+          "end_line": 21,
+          "end_col": 28
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/double().",
+      "kind": "call",
+      "provenance": "may",
+      "label": "via f",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 16,
+          "start_col": 8,
+          "end_line": 16,
+          "end_col": 9
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "return",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 21,
+          "start_col": 8,
+          "end_line": 21,
+          "end_col": 13
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "to": "unresolved:scip-go gomod example.com/basic . `example.com/basic`/apply().:f",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "to": "unresolved:scip-go gomod example.com/basic . `example.com/basic`/apply().:f",
+      "kind": "call",
+      "provenance": "unresolved",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 16,
+          "start_col": 8,
+          "end_line": 16,
+          "end_col": 9
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "to": "unresolved:scip-go gomod example.com/basic . `example.com/basic`/apply().:f",
+      "kind": "flow",
+      "provenance": "unresolved",
+      "label": "arg0",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 16,
+          "start_col": 8,
+          "end_line": 16,
+          "end_col": 9
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/double().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "fn:arg0:f",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 21,
+          "start_col": 8,
+          "end_line": 21,
+          "end_col": 13
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/double().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "return",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 20,
+          "start_col": 6,
+          "end_line": 20,
+          "end_col": 12
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/main().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "kind": "call",
+      "provenance": "resolved",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 27,
+          "start_col": 5,
+          "end_line": 27,
+          "end_col": 10
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/main().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "arg0:s",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 27,
+          "start_col": 5,
+          "end_line": 27,
+          "end_col": 10
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/main().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "arg1:n",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 27,
+          "start_col": 5,
+          "end_line": 27,
+          "end_col": 10
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/main().",
+      "to": "scip-go gomod std . strings/ToUpper().",
+      "kind": "call",
+      "provenance": "resolved",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 25,
+          "start_col": 17,
+          "end_line": 25,
+          "end_col": 24
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/main().",
+      "to": "scip-go gomod std . strings/ToUpper().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "arg0",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 25,
+          "start_col": 17,
+          "end_line": 25,
+          "end_col": 24
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/Circle#Area().",
+      "kind": "call",
+      "provenance": "may",
+      "label": "dispatch",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 21,
+          "start_col": 24,
+          "end_line": 21,
+          "end_col": 28
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/Circle#Area().",
+      "kind": "flow",
+      "provenance": "may",
+      "label": "arg0:scale",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 21,
+          "start_col": 24,
+          "end_line": 21,
+          "end_col": 28
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/Shape#Area().",
+      "kind": "call",
+      "provenance": "resolved",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 21,
+          "start_col": 24,
+          "end_line": 21,
+          "end_col": 28
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/Shape#Area().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "arg0",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 21,
+          "start_col": 24,
+          "end_line": 21,
+          "end_col": 28
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "kind": "call",
+      "provenance": "resolved",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 21,
+          "start_col": 8,
+          "end_line": 21,
+          "end_col": 13
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "arg0:f",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 21,
+          "start_col": 8,
+          "end_line": 21,
+          "end_col": 13
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "arg1:v",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 21,
+          "start_col": 8,
+          "end_line": 21,
+          "end_col": 13
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/double().",
+      "kind": "call",
+      "provenance": "resolved",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 20,
+          "start_col": 6,
+          "end_line": 20,
+          "end_col": 12
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/double().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "arg0:x",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 20,
+          "start_col": 6,
+          "end_line": 20,
+          "end_col": 12
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod example.com/basic . `example.com/basic`/total().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/main().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "return",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 27,
+          "start_col": 5,
+          "end_line": 27,
+          "end_col": 10
+        }
+      }
+    },
+    {
+      "from": "scip-go gomod std . strings/ToUpper().",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/main().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "return",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 25,
+          "start_col": 17,
+          "end_line": 25,
+          "end_col": 24
+        }
+      }
+    },
+    {
+      "from": "unresolved:scip-go gomod example.com/basic . `example.com/basic`/apply().:f",
+      "to": "scip-go gomod example.com/basic . `example.com/basic`/apply().",
+      "kind": "flow",
+      "provenance": "unresolved",
+      "label": "return",
+      "site": {
+        "path": "main.go",
+        "range": {
+          "start_line": 16,
+          "start_col": 8,
+          "end_line": 16,
+          "end_col": 9
+        }
+      }
+    }
+  ]
+}

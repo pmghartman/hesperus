@@ -1,0 +1,16 @@
+[package]
+name = "hesperus"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "hesperus"
+path = "src/main.rs"
+
+[dependencies]
+hesperus-core = { path = "../core" }
+serde_json = "1"
+hesperus-lang-go = { path = "../lang-go" }
+
+[dev-dependencies]
+prost = "0.13"

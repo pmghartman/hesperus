@@ -1,0 +1,31 @@
+
+¡™
+scip-go0.2.9--outputç/private/tmp/claude-501/-Users-pmh-hesperus--claude-worktrees-implementation-08d29d/e3a41381-003a-46ef-81f0-527e93e91812/scratchpad/real.scipèfile:///private/tmp/claude-501/-Users-pmh-hesperus--claude-worktrees-implementation-08d29d/e3a41381-003a-46ef-81f0-527e93e91812/scratchpad/real Á 
+main.goKAscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/BB6scip-go gomod github.com/golang/go/src go1.22 strings/B[Gscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Shape#B
+Z `Lscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Shape#Area.BRlocal 0BZHscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Circle#B	R	^Jscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Circle#r.B	R	local 1BTHscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Circle#BaOscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Circle#Area().BR:local 2Blocal 1B-.VJscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Circle#r.B/0local 2B38\Jscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/double().BR'local 3Blocal 3B !]Iscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/apply().B
+Z local 4Blocal 5Blocal 4B	local 5B
+]Iscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/total().B
+Z local 6BSGscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Shape#Blocal 7Blocal 8BVJscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/double().Blocal 7BUIscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/apply().BVJscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/double().Blocal 6BXLscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Shape#Area.Blocal 8B\Hscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/main().B	Z local 9BB6scip-go gomod github.com/golang/go/src go1.22 strings/B	L@scip-go gomod github.com/golang/go/src go1.22 strings/ToUpper().Blocal 9B	UIscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/total().B
+THscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Circle#BVJscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Circle#r.B¶
+Gscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Shape#Shape is implemented by Circle.(2Shape:1"go*+type Shape interface{ Area(scale int) int }~
+Lscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Shape#Area.(C2Area:&"go* func (Shape).Area(scale int) intƒ
+Hscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Circle#"K
+Gscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Shape#(12Circle:!"go*type Circle struct{ r int }k
+Jscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Circle#r.(2r:"go*struct field r intt
+Jscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/double().(2double:"go*func double(x int) intz
+Iscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/total().(2total:$"go*func total(s Shape, n int) inte
+Hscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/main().(2main:"go*func main()_
+Ascip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/(#2main:"go*package main‘
+Oscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Circle#Area()."P
+Lscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/Shape#Area.(2Area:'"go*!func (Circle).Area(scale int) intÇ
+Iscip-go gomod example.com/basic 2389aa4271eb `example.com/basic`/apply().(2apply:,"go*&func apply(f func(int) int, v int) int'
+local 2(=2scale:"go*var scale int
+local 3(=2x:"go*	var x int)
+local 4(=2f:"go*var f func(int) int
+local 5(=2v:"go*	var v int!
+local 6(=2s:"go*var s Shape
+local 7(=2n:"go*	var n int
+local 8(=2d:"go*	var d int(
+local 9(=2name:"go*var name string'
+local 0(=2scale:"go*var scale int"
+local 1(=2c:"go*var c Circle"go0
