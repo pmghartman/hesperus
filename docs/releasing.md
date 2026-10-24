@@ -12,28 +12,36 @@ Publishing signs in with Microsoft Entra ID through GitHub's OIDC token. No secr
 
 The publisher ID must equal `publisher` in `vscode/package.json` (`pmghartman`). Manage it at <https://marketplace.visualstudio.com/manage>.
 
-### 2. Entra app registration
+### 2. User-assigned managed identity
 
-1. Sign in at <https://portal.azure.com> with the same Microsoft account as the publisher. If it says you have no directory, sign up for a free Azure account first. It creates one. No subscription or paid resource is used.
-2. **Microsoft Entra ID → App registrations → New registration.** Name it `hesperus-release`, keep **Single tenant**, leave the redirect URI empty, **Register**.
-3. On its overview, copy the **Application (client) ID** and **Directory (tenant) ID**.
-4. **Certificates & secrets → Federated credentials → Add credential.**
+It must be a managed identity. An app registration signs in but has no Azure DevOps profile, so the Marketplace cannot add it (`VSS011031: There is no profile for the authenticated user`).
+
+1. Sign in at <https://portal.azure.com> with the same Microsoft account as the publisher. A managed identity lives in a subscription. Without one, create a free Azure subscription. The identity itself costs nothing. If the free trial ends, upgrade it to pay-as-you-go to keep the identity; nothing here is billed.
+2. **Managed Identities → Create.**
+   - Subscription: yours. Resource group: new, `hesperus-release`. Region: any.
+   - Name: `hesperus-release`. **Review + create → Create.**
+3. Open the identity. From **Overview**, copy the **Client ID**. Copy the **Tenant ID** from **Microsoft Entra ID → Overview**.
+4. **Settings → Federated credentials → Add credential.**
    - Scenario: **GitHub Actions deploying Azure resources**
    - Organization: `pmghartman`, Repository: `hesperus`
-   - Entity type: **Environment**, name: `marketplace`
+   - Entity: **Environment**, name: `marketplace`
    - Credential name: `github-marketplace`
+5. Microsoft's guide also gives the identity **Reader**. On the `hesperus-release` resource group: **Access control (IAM) → Add role assignment → Reader →** members: **Managed identity →** `hesperus-release`.
+
+An app registration from an earlier attempt is no longer used and can be deleted.
 
 ### 3. GitHub repository
 
 1. **Settings → Environments → New environment** named `marketplace`. Optionally add yourself as a required reviewer, or restrict it to `main`.
 2. **Settings → Secrets and variables → Actions → Variables → New repository variable:**
-   - `AZURE_CLIENT_ID`: the application (client) ID
-   - `AZURE_TENANT_ID`: the directory (tenant) ID
+   - `AZURE_CLIENT_ID`: the managed identity's client ID
+   - `AZURE_TENANT_ID`: the tenant ID
 
 ### 4. Add the identity to the publisher
 
-1. With `.github/workflows/release.yml` on `main`, run **Actions → release → Run workflow** with **Setup only** checked. It releases nothing and prints an ID in the run summary.
+1. Run **Actions → release → Run workflow** with **Setup only** checked. It releases nothing. Its summary prints an ID, then its **may publish** step fails, because the identity is not a member yet.
 2. At <https://marketplace.visualstudio.com/manage>, open the publisher, **Members → Add**, paste the ID, role **Contributor**.
+3. Run **Setup only** again. **may publish** passes when the identity can publish.
 
 ### 5. Release
 
@@ -43,4 +51,5 @@ The publisher ID must equal `publisher` in `vscode/package.json` (`pmghartman`).
 
 - **Publish fails, nothing tagged.** The next run reuses the same version.
 - **`AADSTS700213` / no matching federated identity.** The credential's environment must be exactly `marketplace`, and the repository `pmghartman/hesperus`.
+- **`VSS011031: There is no profile`.** `AZURE_CLIENT_ID` is an app registration's. Use the managed identity's client ID.
 - **401 from the Marketplace.** The identity is not a member of the publisher, or not a Contributor.
