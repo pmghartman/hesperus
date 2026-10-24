@@ -1,0 +1,12 @@
+[package]
+name = "hesperus-lang-js"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+hesperus-core = { path = "../core" }
+# Syntax for call sites and parameters inside bodies.
+tree-sitter = "0.25"
+tree-sitter-javascript = "0.25"
+# TypeScript and TSX grammars; JavaScript's grammar rejects type annotations.
+tree-sitter-typescript = "0.23"

@@ -225,6 +225,48 @@ fn cli_cache_is_deterministic_and_fails_loudly_when_stale() {
     assert!(String::from_utf8_lossy(&o.stderr).contains("lockfile_hash"));
 }
 
+fn status(repo: &std::path::Path) -> String {
+    let o = cli(&["status", repo.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let v: serde_json::Value = serde_json::from_slice(&o.stdout).unwrap();
+    v["state"].as_str().unwrap().to_string()
+}
+
+/// Without --scip, index runs the indexer in the repo and writes only the cache.
+#[cfg(unix)]
+#[test]
+fn index_runs_indexer_and_status_tracks_cache() {
+    use std::os::unix::fs::PermissionsExt;
+    let src = std::fs::read_to_string(fixture().join("main.go")).unwrap();
+    let (repo, idx) = tmp_repo("indexer", &index(&src).encode_to_vec());
+    // A stand-in scip-go at the pinned install location; same flags: `--output <path>`.
+    let tools = repo.parent().unwrap().join("tools");
+    let fake = tools.join("scip-go-0.2.9").join("bin").join("scip-go");
+    std::fs::create_dir_all(fake.parent().unwrap()).unwrap();
+    std::fs::write(&fake, format!("#!/bin/sh\ncp '{}' \"$2\"\n", idx.display())).unwrap();
+    std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let t: serde_json::Value = serde_json::from_slice(&cli(&["tools", repo.to_str().unwrap(), "--tools-dir", tools.to_str().unwrap()]).stdout).unwrap();
+    assert_eq!(t["languages"][0]["id"], "go");
+    assert_eq!(t["tools"][0]["bin"], fake.to_str().unwrap());
+    assert_eq!(t["tools"][0]["install"]["kind"], "go");
+    assert_eq!(status(&repo), "missing");
+    let o = cli(&["index", repo.to_str().unwrap(), "--tools-dir", tools.to_str().unwrap()]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    assert_eq!(status(&repo), "ready");
+    let mut names: Vec<_> = std::fs::read_dir(&repo).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    names.sort();
+    assert_eq!(names, vec![".hesperus", "go.mod", "main.go"]);
+    let o = cli(&["graph", repo.to_str().unwrap()]);
+    assert_eq!(String::from_utf8(o.stdout).unwrap(), make().to_json());
+    std::fs::write(repo.join("go.sum"), "x\n").unwrap();
+    assert_eq!(status(&repo), "stale");
+    // No supported files at all: a clear error instead of an empty graph.
+    std::fs::remove_file(repo.join("main.go")).unwrap();
+    let o = cli(&["index", repo.to_str().unwrap(), "--tools-dir", tools.to_str().unwrap()]);
+    assert!(!o.status.success());
+    assert!(String::from_utf8_lossy(&o.stderr).contains("no supported language"));
+}
+
 /// Index produced by a real scip-go 0.2.9 run over this fixture (typed ranges,
 /// interface methods as `MethodSpecification` terms).
 #[test]

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/lang-go", "crates/cli"]
+members = ["crates/core", "crates/lang-go", "crates/lang-js", "crates/cli"]
 
 [workspace.package]
 version = "0.1.0"

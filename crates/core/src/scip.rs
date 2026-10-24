@@ -152,6 +152,29 @@ pub fn decode(bytes: &[u8]) -> Result<Index, String> {
     Index::decode(bytes).map_err(|e| format!("invalid SCIP index: {e}"))
 }
 
+/// "name version" from the index's tool info.
+pub fn tool_of(index: &Index) -> String {
+    index
+        .metadata
+        .as_ref()
+        .and_then(|m| m.tool_info.as_ref())
+        .map(|t| format!("{} {}", t.name, t.version))
+        .unwrap_or_else(|| "unknown".into())
+}
+
+/// One index from several indexers' output. Each indexer owns its own symbol scheme,
+/// so documents and symbols concatenate; order is canonicalized by path, then by symbol.
+pub fn merge(indexes: Vec<Index>) -> Index {
+    let mut out = Index::default();
+    for i in indexes {
+        out.documents.extend(i.documents);
+        out.external_symbols.extend(i.external_symbols);
+    }
+    out.documents.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    out.external_symbols.sort_by(|a, b| a.symbol.cmp(&b.symbol));
+    out
+}
+
 pub fn parse_range(r: &[i32]) -> Option<Range> {
     match r {
         [l, s, e] => Some(Range { start_line: *l as u32, start_col: *s as u32, end_line: *l as u32, end_col: *e as u32 }),

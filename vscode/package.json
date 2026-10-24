@@ -1,16 +1,33 @@
 {
   "name": "hesperus-vscode",
   "displayName": "Hesperus",
-  "description": "Zoomable structure and data-flow graph of a repo, read from the Hesperus cache.",
+  "description": "Zoomable graph of a repo's structure, calls, and data flow, built by static analysis. No model draws or guesses edges.",
   "version": "0.1.0",
   "publisher": "pmghartman",
-  "private": true,
   "license": "Apache-2.0",
+  "icon": "media/icon.png",
+  "preview": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pmghartman/hesperus"
+  },
+  "homepage": "https://github.com/pmghartman/hesperus#readme",
+  "bugs": {
+    "url": "https://github.com/pmghartman/hesperus/issues"
+  },
+  "keywords": [
+    "architecture",
+    "call graph",
+    "data flow",
+    "code review",
+    "scip"
+  ],
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Visualization"
+    "Visualization",
+    "Other"
   ],
   "main": "./out/extension.js",
   "activationEvents": [],
@@ -40,13 +57,17 @@
       },
       {
         "command": "hesperus.refresh",
-        "title": "Hesperus: Refresh Graph",
+        "title": "Hesperus: Re-index",
         "icon": "$(refresh)"
       }
     ],
     "menus": {
       "editor/title": [
-        { "command": "hesperus.refresh", "when": "activeWebviewPanelId == hesperus", "group": "navigation" }
+        {
+          "command": "hesperus.refresh",
+          "when": "activeWebviewPanelId == hesperus",
+          "group": "navigation"
+        }
       ]
     },
     "configuration": {
@@ -54,8 +75,8 @@
       "properties": {
         "hesperus.cliPath": {
           "type": "string",
-          "default": "hesperus",
-          "description": "Path to the hesperus CLI. The extension only reads the cache through it."
+          "default": "",
+          "description": "Path to a hesperus CLI to use instead of the one bundled with the extension. Leave empty to use the bundled CLI."
         }
       }
     }
@@ -64,7 +85,7 @@
     "build": "tsc -p .",
     "test": "tsc -p . && node --test out/",
     "vscode:prepublish": "tsc -p .",
-    "package": "vsce package --allow-missing-repository -o hesperus.vsix"
+    "package": "vsce package"
   },
   "dependencies": {
     "elkjs": "0.9.3"

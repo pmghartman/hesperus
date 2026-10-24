@@ -1,10 +1,47 @@
+use hesperus_core::frontend::{Frontend, Install, Tool};
 use hesperus_core::ir::Range;
 use hesperus_core::syntax::{CallSite, Facts, ParamDecl, Syntax};
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use tree_sitter::{Node, Parser};
 
 pub const LANGUAGE_ID: &str = "go";
 
 pub struct Go;
+
+impl Frontend for Go {
+    fn id(&self) -> &'static str {
+        LANGUAGE_ID
+    }
+    fn extensions(&self) -> &'static [&'static str] {
+        &["go"]
+    }
+    fn tool(&self) -> Tool {
+        Tool { name: "scip-go", version: "0.2.9", install: Install::Go { package: "github.com/scip-code/scip-go/cmd/scip-go@v0.2.9" } }
+    }
+    fn bin_in(&self, dir: &Path) -> PathBuf {
+        dir.join("bin").join("scip-go")
+    }
+    /// Where `go install` puts binaries; editors launched outside a shell often lack it on PATH.
+    fn search_dirs(&self) -> Vec<PathBuf> {
+        let env = |k: &str| std::env::var_os(k).filter(|v| !v.is_empty()).map(PathBuf::from);
+        let mut out: Vec<PathBuf> = env("GOBIN").into_iter().collect();
+        out.extend(env("GOPATH").map(|p| p.join("bin")));
+        out.extend(env("HOME").map(|h| h.join("go").join("bin")));
+        out
+    }
+    fn command(&self, repo: &Path, bin: &Path, out: &Path, _scratch: &Path) -> Result<Command, String> {
+        if !repo.join("go.mod").is_file() {
+            return Err("Go files found but no go.mod at the repo root; scip-go indexes one module from its root.".into());
+        }
+        let mut c = Command::new(bin);
+        c.arg("--output").arg(out).current_dir(repo);
+        Ok(c)
+    }
+    fn syntax(&self, _path: &str) -> Option<&dyn Syntax> {
+        Some(self)
+    }
+}
 
 fn rng(n: Node) -> Range {
     let (s, e) = (n.start_position(), n.end_position());

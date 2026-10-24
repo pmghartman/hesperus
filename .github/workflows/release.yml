@@ -1,0 +1,237 @@
+# manual release: one past the highest vMAJOR.MINOR tag (minor, or major with .0 when
+# checked), tested, built per platform with its own CLI, published to the VS Code
+# Marketplace through Microsoft Entra ID, then tagged and released on GitHub.
+# the version lives in tags only; files are stamped at build time, never committed
+# needs vars AZURE_CLIENT_ID and AZURE_TENANT_ID and the `marketplace` environment: docs/releasing.md
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      major:
+        description: "Bump Major Version"
+        type: boolean
+        default: false
+      identity:
+        description: "Setup only: print the Azure identity's Marketplace ID, release nothing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# one release at a time: the next version is read off the tags
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # the ID to add as a publisher member, from the same login publishing uses
+  identity:
+    if: ${{ inputs.identity }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: marketplace
+    permissions:
+      id-token: write
+    steps:
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      # 499b84ac-… is Azure DevOps' resource; the profile's id is what the publisher page takes
+      - run: |
+          id=$(az rest -u https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798 --query id -o tsv)
+          echo "Add this ID as a Contributor member of the publisher: $id" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  version:
+    if: ${{ !inputs.identity }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      ver: ${{ steps.v.outputs.ver }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      # every run one past the highest vMAJOR.MINOR tag: minor, or major with .0
+      - name: next version
+        id: v
+        env:
+          MAJOR: ${{ inputs.major }}
+        run: |
+          L=$(git ls-remote --tags origin | sed -n 's|.*refs/tags/v\([0-9]*\.[0-9]*\)$|\1|p' | sort -t. -k1,1n -k2,2n | tail -1)
+          L=${L:-0.0}
+          if [ "$MAJOR" = true ]; then V=$(( ${L%.*} + 1 )).0
+          else V=${L%.*}.$(( ${L#*.} + 1 ))
+          fi
+          echo "ver=$V" | tee -a "$GITHUB_OUTPUT"
+      # the Marketplace's changelog tab: each release's commit subjects, newest first;
+      # notes.md, this release's alone, for the GitHub release
+      - name: changelog
+        env:
+          VER: ${{ steps.v.outputs.ver }}
+        run: |
+          tags=$(git tag -l | grep -E '^v[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -t. -k1,1n -k2,2n | sed 's/^/v/')
+          log() { git log --no-merges --format='- %s' "$1" | grep . || echo "- No changes"; }
+          p=""; : > older.md
+          for t in $tags; do
+            { echo "## ${t#v}.0"; echo; log "${p:+$p..}$t"; echo; cat older.md; } > tmp.md && mv tmp.md older.md
+            p=$t
+          done
+          log "${p:+$p..}HEAD" > notes.md
+          { echo "# Changelog"; echo; echo "## $VER.0"; echo; cat notes.md; echo; cat older.md; } > CHANGELOG.md
+          cat CHANGELOG.md
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: changelog
+          path: |
+            CHANGELOG.md
+            notes.md
+          retention-days: 1
+
+  # tests gating the release; the determinism and golden snapshot tests are in cargo test
+  check:
+    if: ${{ !inputs.identity }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, macos-14]
+    name: check (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # rustup reads rust-toolchain.toml
+      - run: cargo test --locked
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+      - working-directory: vscode
+        run: npm ci && npm test
+
+  # one VSIX per platform around its own CLI binary; the Marketplace serves each machine its match
+  build:
+    needs: [version]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { runner: macos-14, rust: aarch64-apple-darwin, vsce: darwin-arm64 }
+          - { runner: macos-14, rust: x86_64-apple-darwin, vsce: darwin-x64 }
+          # musl: a static binary for any Linux distro
+          - { runner: ubuntu-24.04, rust: x86_64-unknown-linux-musl, vsce: linux-x64, musl: true }
+          - { runner: ubuntu-24.04-arm, rust: aarch64-unknown-linux-musl, vsce: linux-arm64, musl: true }
+          - { runner: windows-2022, rust: x86_64-pc-windows-msvc, vsce: win32-x64, exe: .exe }
+    name: build (${{ matrix.vsce }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    env:
+      VER: ${{ needs.version.outputs.ver }}.0
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: changelog
+          path: ${{ runner.temp }}/changelog
+      - name: musl toolchain
+        if: matrix.musl
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q musl-tools
+          # tree-sitter grammars are C: built against musl too
+          echo "CC_$(echo '${{ matrix.rust }}' | tr '-' '_')=musl-gcc" >> "$GITHUB_ENV"
+      # the version into both manifests; the CLI's goes into the cache header, so an update re-indexes
+      - name: stamp version
+        run: |
+          # first `version =` is [workspace.package]'s; awk, as BSD sed lacks GNU's 0,/re/
+          awk -v v="$VER" '!d && /^version = "/ { sub(/"[^"]*"/, "\"" v "\""); d = 1 } 1' Cargo.toml > Cargo.toml.new && mv Cargo.toml.new Cargo.toml
+          (cd vscode && npm version "$VER" --no-git-tag-version --allow-same-version)
+          cp "$RUNNER_TEMP/changelog/CHANGELOG.md" vscode/CHANGELOG.md
+      # not --locked: the stamp rewrites the workspace's own entries; check ran --locked on this commit
+      - name: CLI
+        run: |
+          rustup target add ${{ matrix.rust }}
+          cargo build --release -p hesperus --target ${{ matrix.rust }}
+          mkdir -p vscode/bin
+          cp target/${{ matrix.rust }}/release/hesperus${{ matrix.exe }} vscode/bin/
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+      - name: package
+        working-directory: vscode
+        run: |
+          npm ci
+          npx vsce package --target ${{ matrix.vsce }} -o hesperus-${{ matrix.vsce }}-$VER.vsix
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: vsix-${{ matrix.vsce }}
+          path: vscode/hesperus-${{ matrix.vsce }}-${{ env.VER }}.vsix
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  # Marketplace first: a failed publish leaves no tag, so the next run reuses the version
+  publish:
+    needs: [version, check, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: marketplace
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: vscode/package-lock.json
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: vsix-*
+          merge-multiple: true
+          path: dist
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      # vsce pinned in vscode/package.json; --azure-credential takes the Azure CLI login above
+      - working-directory: vscode
+        run: |
+          npm ci
+          npx vsce publish --azure-credential --packagePath ../dist/*.vsix
+
+  release:
+    needs: [version, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VER: ${{ needs.version.outputs.ver }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: vsix-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: changelog
+          path: changelog
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          tag_name: v${{ env.VER }}
+          name: Hesperus ${{ env.VER }}
+          target_commitish: ${{ github.sha }}
+          body_path: changelog/notes.md
+          files: dist/*.vsix

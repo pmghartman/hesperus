@@ -3,3 +3,4 @@ out/**/*.test.js
 tsconfig.json
 **/*.map
 .gitignore
+*.vsix

@@ -27,4 +27,17 @@ test("layout is deterministic and nests expanded containers", async () => {
   const l = await layout(g, view);
   const A = l.boxes.find((x) => x.id === "A")!, a1 = l.boxes.find((x) => x.id === "a1")!;
   assert.ok(A.container && a1.x >= A.x && a1.y >= A.y && a1.x + a1.w <= A.x + A.w);
+  const B = l.boxes.find((x) => x.id === "B")!;
+  assert.ok(B.expandable && !B.container && !a1.expandable);
+});
+
+test("rollups between one pair share a routed wire", async () => {
+  const flow = { ...view.rollups[0], kind: "flow" as const };
+  const l = await layout(g, { ...view, rollups: [flow, view.rollups[0]] });
+  assert.equal(l.wires.length, 1);
+  assert.deepEqual(l.wires[0].rollups.map((r) => r.kind), ["call", "flow"]);
+  // Routed in root coordinates: starts at a1's right edge, ends at B's left edge.
+  const a1 = l.boxes.find((x) => x.id === "a1")!, B = l.boxes.find((x) => x.id === "B")!;
+  const [s, e] = [l.wires[0].points[0], l.wires[0].points.at(-1)!];
+  assert.ok(Math.abs(s.x - (a1.x + a1.w)) < 1 && Math.abs(e.x - B.x) < 1, JSON.stringify({ s, e, a1, B }));
 });
