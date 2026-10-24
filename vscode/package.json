@@ -3,14 +3,52 @@
   "displayName": "Hesperus",
   "description": "Zoomable structure and data-flow graph of a repo, read from the Hesperus cache.",
   "version": "0.1.0",
+  "publisher": "pmghartman",
   "private": true,
   "license": "Apache-2.0",
-  "engines": { "vscode": "^1.90.0" },
-  "categories": ["Visualization"],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization"
+  ],
   "main": "./out/extension.js",
   "activationEvents": [],
   "contributes": {
-    "commands": [{ "command": "hesperus.openGraph", "title": "Hesperus: Open Graph" }],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "hesperus",
+          "title": "Hesperus",
+          "icon": "media/graph.svg"
+        }
+      ]
+    },
+    "views": {
+      "hesperus": [
+        {
+          "type": "webview",
+          "id": "hesperus.graph",
+          "name": "Graph"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "hesperus.openGraph",
+        "title": "Hesperus: Open Graph"
+      },
+      {
+        "command": "hesperus.refresh",
+        "title": "Hesperus: Refresh Graph",
+        "icon": "$(refresh)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        { "command": "hesperus.refresh", "when": "activeWebviewPanelId == hesperus", "group": "navigation" }
+      ]
+    },
     "configuration": {
       "title": "Hesperus",
       "properties": {
@@ -24,7 +62,9 @@
   },
   "scripts": {
     "build": "tsc -p .",
-    "test": "tsc -p . && node --test out/"
+    "test": "tsc -p . && node --test out/",
+    "vscode:prepublish": "tsc -p .",
+    "package": "vsce package --allow-missing-repository -o hesperus.vsix"
   },
   "dependencies": {
     "elkjs": "0.9.3"
@@ -32,6 +72,7 @@
   "devDependencies": {
     "@types/node": "20.14.10",
     "@types/vscode": "1.90.0",
+    "@vscode/vsce": "3.2.1",
     "typescript": "5.5.4"
   }
 }

@@ -10,41 +10,92 @@ function cli(args: string[]): Promise<string> {
     execFile(bin, args, { maxBuffer: 1 << 29 }, (err, out, errOut) => (err ? reject(new Error(errOut || String(err))) : resolve(out))));
 }
 
+// Same graph UI for the sidebar view and the editor panel.
+function mount(webview: vscode.Webview): vscode.Disposable {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  const nonce = randomBytes(16).toString("hex");
+  webview.html = html(nonce);
+  if (!folder)
+    return webview.onDidReceiveMessage((m) => m.type === "ready" && webview.postMessage({ type: "error", text: "Open a folder to see its graph." }));
+  const repo = folder.uri.fsPath;
+  const expanded = new Set<string>();
+  let graph: Graph | undefined;
+  const render = async () => {
+    try {
+      graph ??= JSON.parse(await cli(["graph", repo])) as Graph;
+      const view: View = JSON.parse(await cli(["view", repo, ...[...expanded].sort().flatMap((e) => ["--expand", e])]));
+      webview.postMessage({ type: "layout", layout: await layout(graph, view), expanded: [...expanded] });
+    } catch (e) {
+      webview.postMessage({ type: "error", text: String(e) });
+    }
+  };
+  // Webview posts "ready" once its listener exists; messages sent earlier are dropped.
+  return webview.onDidReceiveMessage(async (m) => {
+    if (m.type === "ready") {
+      await render();
+    } else if (m.type === "toggle") {
+      expanded.has(m.id) ? expanded.delete(m.id) : expanded.add(m.id);
+      await render();
+    } else if (m.type === "open") {
+      const n = graph?.nodes.find((x) => x.id === m.id);
+      if (!n?.path || !n.range) return;
+      const uri = vscode.Uri.joinPath(folder.uri, n.path);
+      const r = new vscode.Range(n.range.start_line, n.range.start_col, n.range.end_line, n.range.end_col);
+      await vscode.window.showTextDocument(uri, { selection: r, viewColumn: vscode.ViewColumn.Beside });
+    }
+  });
+}
+
+class SidebarProvider implements vscode.WebviewViewProvider {
+  constructor(private open: () => void) {}
+
+  // Activity-bar views cannot run a command directly; opening the view opens the editor tab instead.
+  resolveWebviewView(view: vscode.WebviewView) {
+    view.webview.html = `<!doctype html><body style="padding:8px">The graph opens in an editor tab.</body>`;
+    const go = () => {
+      if (!view.visible) return;
+      this.open();
+      vscode.commands.executeCommand("workbench.action.closeSidebar");
+    };
+    view.onDidChangeVisibility(go);
+    go();
+  }
+}
+
+class GraphPanel {
+  private panel?: vscode.WebviewPanel;
+  private sub?: vscode.Disposable;
+
+  constructor(private icon: vscode.Uri) {}
+
+  show() {
+    if (this.panel) return this.panel.reveal();
+    const name = vscode.workspace.workspaceFolders?.[0]?.name;
+    this.panel = vscode.window.createWebviewPanel("hesperus", name ? `Graph: ${name}` : "Hesperus", vscode.ViewColumn.Active, {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+    });
+    this.panel.iconPath = this.icon;
+    this.sub = mount(this.panel.webview);
+    this.panel.onDidDispose(() => {
+      this.sub?.dispose();
+      this.panel = undefined;
+    });
+  }
+
+  refresh() {
+    if (!this.panel) return this.show();
+    this.sub?.dispose();
+    this.sub = mount(this.panel.webview);
+  }
+}
+
 export function activate(ctx: vscode.ExtensionContext) {
+  const graph = new GraphPanel(vscode.Uri.joinPath(ctx.extensionUri, "media", "graph.svg"));
   ctx.subscriptions.push(
-    vscode.commands.registerCommand("hesperus.openGraph", async () => {
-      const folder = vscode.workspace.workspaceFolders?.[0];
-      if (!folder) return vscode.window.showErrorMessage("Open a folder first.");
-      const repo = folder.uri.fsPath;
-      const panel = vscode.window.createWebviewPanel("hesperus", "Hesperus", vscode.ViewColumn.Beside, { enableScripts: true });
-      const nonce = randomBytes(16).toString("hex");
-      panel.webview.html = html(nonce);
-      const expanded = new Set<string>();
-      let graph: Graph;
-      const render = async () => {
-        const view: View = JSON.parse(await cli(["view", repo, ...[...expanded].sort().flatMap((e) => ["--expand", e])]));
-        panel.webview.postMessage({ type: "layout", layout: await layout(graph, view), expanded: [...expanded] });
-      };
-      try {
-        graph = JSON.parse(await cli(["graph", repo]));
-        await render();
-      } catch (e) {
-        panel.webview.postMessage({ type: "error", text: String(e) });
-        return;
-      }
-      panel.webview.onDidReceiveMessage(async (m) => {
-        if (m.type === "toggle") {
-          expanded.has(m.id) ? expanded.delete(m.id) : expanded.add(m.id);
-          await render();
-        } else if (m.type === "open") {
-          const n = graph.nodes.find((x) => x.id === m.id);
-          if (!n?.path || !n.range) return;
-          const uri = vscode.Uri.joinPath(folder.uri, n.path);
-          const r = new vscode.Range(n.range.start_line, n.range.start_col, n.range.end_line, n.range.end_col);
-          await vscode.window.showTextDocument(uri, { selection: r, viewColumn: vscode.ViewColumn.One });
-        }
-      });
-    }),
+    vscode.window.registerWebviewViewProvider("hesperus.graph", new SidebarProvider(() => graph.show())),
+    vscode.commands.registerCommand("hesperus.refresh", () => graph.refresh()),
+    vscode.commands.registerCommand("hesperus.openGraph", () => graph.show()),
   );
 }
 
@@ -68,6 +119,7 @@ const vs=acquireVsCodeApi(),svg=document.getElementById("g"),NS="http://www.w3.o
 const el=(t,a,p)=>{const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);(p||svg).appendChild(e);return e};
 addEventListener("message",({data:m})=>{
   if(m.type==="error"){document.getElementById("err").textContent=m.text;return}
+  document.getElementById("err").textContent="";
   const L=m.layout;svg.replaceChildren();
   svg.setAttribute("width",L.width+40);svg.setAttribute("height",L.height+40);
   const g=el("g",{transform:"translate(20,20)"});
@@ -85,5 +137,6 @@ addEventListener("message",({data:m})=>{
     el("title",{},p).textContent=r.kind+" x"+r.weight+" (resolved "+r.resolved+", may "+r.may+", unresolved "+r.unresolved+")";
   }
 });
+vs.postMessage({type:"ready"});
 </script></body></html>`;
 }
