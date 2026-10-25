@@ -39,6 +39,8 @@ export interface Relationship { symbol: string; is_reference: boolean; is_implem
 export const ROLE_DEFINITION = 0x1;
 export const KIND_FIELD = 15;
 export const KIND_VARIABLE = 61;
+/** Constant and EnumMember: values a field may hold, never locations. */
+export const CONSTANT_KINDS: readonly number[] = [8, 12];
 /** Constructor, Function, Method, AbstractMethod, MethodSpecification, StaticMethod. */
 export const CALLABLE_KINDS: readonly number[] = [9, 17, 26, 66, 67, 80];
 

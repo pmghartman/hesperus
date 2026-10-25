@@ -38,7 +38,8 @@ The analyzed language is independent of the implementation language. Many OOP la
 
 - Hierarchy is containment, taken from code structure: repo, directory, package or module, file, class, method. A directory with one child folds into its parent. Stable node IDs are fully qualified symbols. Content hashes mark staleness only.
 - The graph is not a DAG. Store cycles as cycles. SCC collapse is a view option.
-- Edge kinds: `contains`, `call`, `override`, `flow` (`EDGE_KINDS` in `core/ir.ts`). Flow edges bind arguments to parameters and returns to assignments across call edges.
+- Edge kinds: `contains`, `call`, `override`, `flow`, `transition` (`EDGE_KINDS` in `core/ir.ts`). Flow edges bind arguments to parameters and returns to assignments across call edges.
+- State machines (`core/states.ts`): a field, variable, or local tested for equality against a constant and assigned two or more constants by statements. A local machine is a `variable` node `local:<function>:<name>` inside its function, with no flow edges; local constants (`const` declarations) can be its states. Its `state` children are those constants; `transition` edges run from the guarded state to the assigned one. Unguarded writes start at `any` (`may`); non-constant values end at `?` (`unresolved`).
 - Container edges are weighted rollups of the underlying edges. Expanding a node splits its edges in place. Every rollup is inspectable down to the edges beneath it. Aggregation rules live once in core and every consumer shares them.
 - Async, futures, and callbacks resolve through types where possible. Function values passed as arguments are flow, and calls through them get `may` edges.
 - Initial view is the whole repo flow graph. Zooming refines nodes and edges. Terminal nodes are the definitions in source.
@@ -74,12 +75,12 @@ Never create, switch, rename, or delete a branch, and never commit, push, open o
 - Fixtures: `fixtures/go-basic`, `go-fsm`, `js-fsm`, with committed SCIP indexes. Any repo (including phosphorus) is only a fixture.
 - Name stays Hesperus, one constant (`TOOL_NAME` in `core/ir.ts`), until renamed.
 - Flow edges bind arguments to parameters, returns (`return`), and function values (`fn:`).
+- Flow granularity is the field: `write` and `read` flow edges per field or variable, and a parameter written to a field carries the constant arguments of its resolved call sites (one hop).
 
 ## Ask before deciding
 
 These are open. Ask one question if a wrong guess is costly. Otherwise state the assumption in one line.
 
-- Flow granularity: variable, field, or entity.
 - Whether SCIP enclosing ranges suffice for call edges in every language added.
 - Adding the LSP fallback and which languages come next.
 

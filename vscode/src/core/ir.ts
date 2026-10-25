@@ -1,14 +1,14 @@
 // Versioned IR. Change deliberately and bump SCHEMA_VERSION; mirrored by schema/graph.schema.json.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 export const TOOL_NAME = "hesperus";
 export const REPO_ID = "repo";
 
 // Declaration order is sort order.
 export const NODE_KINDS = [
   "repo", "directory", "package", "file", "type", "function", "method", "field",
-  "variable", "external_package", "external", "unresolved",
+  "variable", "state", "external_package", "external", "unresolved",
 ] as const;
-export const EDGE_KINDS = ["contains", "call", "override", "flow"] as const;
+export const EDGE_KINDS = ["contains", "call", "override", "flow", "transition"] as const;
 export const PROVENANCES = ["resolved", "may", "unresolved"] as const;
 
 export type NodeKind = (typeof NODE_KINDS)[number];

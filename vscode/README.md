@@ -19,7 +19,7 @@ The graph tab:
 - Click a box to expand it. Cmd/Ctrl-click or double-click opens its source.
 - Hover a box to focus on its connections, or an edge to see the counts behind it.
 
-The sidebar shows status and errors, finds nodes by name, toggles calls, data flow, and overrides, and re-indexes.
+The sidebar shows status and errors, finds nodes by name, toggles calls, data flow, overrides, and state transitions, lists the state machines found, and re-indexes.
 
 ## Languages
 

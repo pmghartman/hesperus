@@ -106,6 +106,7 @@
     external_package: "M-5.5,-5.5h11v11h-11zM-5.5,-1.5h11",
     file: "M-4.5,-6h6l3,3v9h-9zM1.5,-6v3h3",
     tier: "M-6,-4.5h12M-6,0h12M-6,4.5h12",
+    state: "M0,-5L5,0L0,5L-5,0z",
   };
   const LETTER = { type: "T", function: "ƒ", method: "m", field: "•", variable: "v", external: "↗", unresolved: "?" };
   function glyph(g, kind, x, cy) {
@@ -119,7 +120,7 @@
     scene.replaceChildren();
     boxes = new Map(L.boxes.map((b) => [b.id, b]));
     const defs = el("defs", {}, scene);
-    for (const k of ["call", "flow", "override", "unresolved"]) {
+    for (const k of ["call", "flow", "override", "transition", "unresolved"]) {
       const m = el("marker", { id: "arrow-" + k, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", markerUnits: "userSpaceOnUse", orient: "auto" }, defs);
       // CSP forbids style attributes; colours come from the stylesheet.
       el("path", { d: "M0,1L9,5L0,9z", class: "arrow " + k }, m);
@@ -243,7 +244,8 @@
       const certainty = [["resolved", r.resolved], ["may", r.may], ["unresolved", r.unresolved]].filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(", ");
       return `${two ? (r.from === w.from ? "→ " : "← ") : ""}${r.kind} ×${r.weight}  <span class="dim">${certainty}</span>`;
     });
-    showTip(e, `<b>${name(w.from)}</b> ${two ? "↔" : "→"} <b>${name(w.to)}</b>\n${rows.join("\n")}`);
+    const by = w.labels?.length ? `\n<span class="dim">by ${w.labels.map(esc).join(", ")}</span>` : "";
+    showTip(e, `<b>${name(w.from)}</b> ${two ? "↔" : "→"} <b>${name(w.to)}</b>\n${rows.join("\n")}${by}`);
   }
   function unfocus() {
     scene.classList.remove("focus");

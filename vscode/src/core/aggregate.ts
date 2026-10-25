@@ -27,6 +27,28 @@ export interface Group {
 /** `nodes` holds graph ids and the ids of visible groups. */
 export interface View { nodes: string[]; rollups: Rollup[]; groups: Group[] }
 
+/** A state machine: a field or variable with `state` children. */
+export interface Machine { id: string; name: string; states: number; transitions: number }
+
+/** Every location with states, named `Owner.name` when a type or function holds it; sorted by
+ *  name, then id. */
+export function machines(g: Graph): Machine[] {
+  const par = parents(g);
+  const byId = new Map(g.nodes.map((n) => [n.id, n]));
+  const out = new Map<string, Machine>();
+  for (const n of g.nodes) {
+    if (n.kind !== "state") continue;
+    const loc = par.get(n.id);
+    const l = loc === undefined ? undefined : byId.get(loc);
+    if (!l) continue;
+    const owner = byId.get(par.get(l.id) ?? "");
+    const m = out.get(l.id) ?? out.set(l.id, { id: l.id, name: owner && ["type", "function", "method"].includes(owner.kind) ? `${owner.name}.${l.name}` : l.name, states: 0, transitions: 0 }).get(l.id)!;
+    m.states++;
+  }
+  for (const e of g.edges) if (e.kind === "transition") { const m = out.get(par.get(e.from) ?? ""); if (m) m.transitions++; }
+  return [...out.values()].sort((a, b) => cmpStr(a.name, b.name) || cmpStr(a.id, b.id));
+}
+
 /** A container shows tiers once it has more children than this. */
 export const GROUP_OVER = 12;
 export const isGroup = (id: string) => id.startsWith("tier:");
@@ -115,6 +137,8 @@ function tiers(g: Graph, par: Map<string, string>, rep: (id: string) => string, 
     const ch = kids.get(c)!.sort(cmpStr);
     if (ch.length <= GROUP_OVER) continue;
     if (c !== REPO_ID && (!expanded.has(c) || rep(c) !== c)) continue;
+    // A location's children are its states; transitions, not calls, connect them.
+    if (kindOf.get(c) === "field" || kindOf.get(c) === "variable") continue;
     const ext = ch.filter((id) => kindOf.get(id) === "external_package");
     const own = ch.filter((id) => kindOf.get(id) !== "external_package");
     const mk = (key: string, name: string, members: string[]) => {

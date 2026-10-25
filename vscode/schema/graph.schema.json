@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "hesperus graph",
-  "description": "Schema version 2. Mirrored by vscode/src/core/ir.ts; change both together.",
+  "description": "Schema version 3. A `state` is a constant value a field or variable is assigned; `transition` edges run between a location's states. Mirrored by vscode/src/core/ir.ts; change both together.",
   "type": "object",
   "required": ["schema_version", "nodes", "edges"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": 2 },
+    "schema_version": { "const": 3 },
     "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
     "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } }
   },
@@ -34,7 +34,7 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
-        "kind": { "enum": ["repo", "directory", "package", "file", "type", "function", "method", "field", "variable", "external_package", "external", "unresolved"] },
+        "kind": { "enum": ["repo", "directory", "package", "file", "type", "function", "method", "field", "variable", "state", "external_package", "external", "unresolved"] },
         "name": { "type": "string" },
         "path": { "type": "string" },
         "range": { "$ref": "#/$defs/range" },
@@ -50,7 +50,7 @@
       "properties": {
         "from": { "type": "string" },
         "to": { "type": "string" },
-        "kind": { "enum": ["contains", "call", "override", "flow"] },
+        "kind": { "enum": ["contains", "call", "override", "flow", "transition"] },
         "provenance": { "enum": ["resolved", "may", "unresolved"] },
         "label": { "type": "string" },
         "site": { "$ref": "#/$defs/site" }

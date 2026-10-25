@@ -30,7 +30,7 @@ Click the Hesperus icon in the activity bar. On first use it detects languages, 
 - Scroll to zoom, drag to pan. Click a box to expand it.
 - Cmd/Ctrl-click or double-click opens the source.
 - Hover to focus a box's connections or see the counts behind an edge.
-- The sidebar shows status, finds nodes by name, filters calls, data flow, and overrides, and re-indexes.
+- The sidebar shows status, finds nodes by name, filters calls, data flow, overrides, and state transitions, lists the state machines found, and re-indexes.
 
 A stale cache (new commit, lockfile, or tool version) fails loudly, then re-indexes.
 

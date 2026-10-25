@@ -4,9 +4,9 @@ import { Node } from "web-tree-sitter";
 import { CACHE_DIR } from "../core/cache";
 import { Command, extension, Frontend, Tool } from "../core/frontend";
 import { cmpStr } from "../core/ir";
-import { Facts } from "../core/syntax";
+import { Facts, Operand } from "../core/syntax";
 import { PKG_ROOT } from "../root";
-import { Grammar, namedChildren, Source } from "./treesitter";
+import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "javascript";
 
@@ -63,7 +63,74 @@ function paramName(n: Node): Node | undefined {
   }
 }
 
+const LITERALS = new Set(["string", "number", "true", "false", "null", "undefined"]);
+
+function operand(n: Node, src: Source): Operand {
+  if (n.type === "identifier" || n.type === "property_identifier" || n.type === "private_property_identifier")
+    return { name: src.range(n), text: n.text, form: "name", receiver: "" };
+  if (n.type === "member_expression") {
+    const p = n.childForFieldName("property");
+    if (p) return { name: src.range(p), text: n.text, form: "name", receiver: n.childForFieldName("object")?.text ?? "" };
+  }
+  if (n.type === "parenthesized_expression" && n.namedChildCount === 1) return operand(n.namedChild(0)!, src);
+  // A template with no substitutions is a plain string.
+  if (LITERALS.has(n.type) || (n.type === "template_string" && !namedChildren(n).some((x) => x.type === "template_substitution")))
+    return { name: src.range(n), text: n.text, form: "literal", receiver: "" };
+  return other(n, src);
+}
+
+const EQ = { eq: ["===", "=="], ne: ["!==", "!="] };
+const ENDS = new Set(["break_statement", "return_statement", "throw_statement", "continue_statement"]);
+
+/** Assignments and equality guards. `switch` cases with no statements share the next body. */
+function state(n: Node, src: Source, f: Facts) {
+  const op = (x: Node) => operand(x, src);
+  if (n.type === "assignment_expression") {
+    const l = n.childForFieldName("left"), r = n.childForFieldName("right");
+    if (l && r) f.assigns.push({ target: op(l), value: op(r), init: false });
+  } else if (n.type === "augmented_assignment_expression") {
+    const l = n.childForFieldName("left");
+    if (l) f.assigns.push({ target: op(l), value: other(n, src), init: false });
+  } else if (n.type === "update_expression") {
+    const a = n.childForFieldName("argument");
+    if (a) f.assigns.push({ target: op(a), value: other(n, src), init: false });
+  } else if (n.type === "lexical_declaration" && n.childForFieldName("kind")?.type === "const") {
+    // `const s = "idle"`: a constant only when it holds a literal.
+    for (const d of namedChildren(n)) {
+      const t = d.childForFieldName("name"), v = d.childForFieldName("value");
+      if (d.type === "variable_declarator" && t?.type === "identifier" && v && op(v).form === "literal") f.consts.push(src.range(t));
+    }
+  }
+  // A `const` binding is never written again, so it is a value, not a location.
+  const isConst = n.parent?.type === "lexical_declaration" && n.parent.childForFieldName("kind")?.type === "const";
+  if ((n.type === "variable_declarator" && !isConst) || n.type === "field_definition" || n.type === "public_field_definition") {
+    const t = n.childForFieldName("name") ?? n.childForFieldName("property"), v = n.childForFieldName("value");
+    if (t && v) f.assigns.push({ target: { ...op(t), receiver: n.type === "variable_declarator" ? "" : "this" }, value: op(v), init: true });
+  } else if (n.type === "if_statement") {
+    const c = n.childForFieldName("condition"), body = n.childForFieldName("consequence");
+    if (c && body) equalities(c, src.range(body), EQ, op, f.guards);
+  } else if (n.type === "switch_statement") {
+    const v = n.childForFieldName("value"), cases = namedChildren(n.childForFieldName("body") ?? n);
+    const subject = v?.type === "parenthesized_expression" && v.namedChildCount === 1 ? v.namedChild(0)! : v;
+    if (!subject) return;
+    let pending: Node[] = [], falls = false;
+    for (const c of cases) {
+      if (c.type !== "switch_case") continue;
+      const val = c.childForFieldName("value");
+      if (val) pending.push(val);
+      const stmts = c.childrenForFieldName("body").filter((x): x is Node => x !== null && x.type !== "comment");
+      if (!stmts.length) continue;
+      const body = src.span(stmts[0], stmts[stmts.length - 1]);
+      // A body the previous case falls into also runs without this case's test.
+      for (const x of pending) f.guards.push({ left: op(subject), right: op(x), equal: true, body, certain: !falls });
+      falls = !ENDS.has(stmts[stmts.length - 1].type);
+      pending = [];
+    }
+  }
+}
+
 function visit(n: Node, src: Source, f: Facts) {
+  state(n, src, f);
   if (FUNCTIONS.has(n.type)) {
     const d = namingDecl(n);
     if (d) {
@@ -86,9 +153,10 @@ function visit(n: Node, src: Source, f: Facts) {
   if (func) {
     const name = func.type === "member_expression" ? func.childForFieldName("property") ?? func : func;
     const a = n.childForFieldName("arguments");
-    const args = a ? namedChildren(a).filter((x) => x.type !== "comment").map((x) => src.range(x)) : [];
+    const argNodes = a ? namedChildren(a).filter((x) => x.type !== "comment") : [];
+    const args = argNodes.map((x) => src.range(x)), values = argNodes.map((x) => operand(x, src));
     const used = n.parent !== null && n.parent.type !== "expression_statement";
-    f.calls.push({ callee: src.range(name), callee_text: func.text, args, result_used: used });
+    f.calls.push({ callee: src.range(name), callee_text: func.text, args, values, result_used: used });
   }
 }
 

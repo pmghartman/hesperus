@@ -34,11 +34,17 @@ input[type=checkbox]:checked::after { content: ""; width: 7px; height: 4px; marg
 .swatch.call { background: var(--vscode-editor-foreground); opacity: .7; }
 .swatch.flow { background: var(--vscode-charts-blue); }
 .swatch.override { background: var(--vscode-charts-orange); }
+.swatch.transition { background: var(--vscode-symbolIcon-enumeratorMemberForeground, var(--vscode-charts-yellow)); }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font-size: 11px; color: var(--vscode-descriptionForeground); }
 .legend span { display: flex; align-items: center; gap: 5px; }
 .legend .l { stroke: var(--vscode-editor-foreground); stroke-opacity: .7; stroke-width: 1.5; }
 .legend .l.may { stroke-dasharray: 5 3; }
 .legend .l.unresolved { stroke: var(--vscode-errorForeground); stroke-opacity: 1; stroke-dasharray: 2 2; }
+.machines { list-style: none; padding: 0; margin: 0; max-height: 180px; overflow: auto; }
+.machines li { display: flex; align-items: baseline; gap: 6px; min-height: 22px; }
+.machines .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: inherit; font-family: var(--vscode-editor-font-family); }
+.machines .count { color: var(--vscode-descriptionForeground); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.machines .none { display: block; color: var(--vscode-descriptionForeground); font-size: 11px; }
 .langs { list-style: none; padding: 0; margin: 0; }
 .langs li { display: flex; align-items: baseline; gap: 6px; min-height: 22px; }
 .langs .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

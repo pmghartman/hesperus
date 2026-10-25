@@ -2,6 +2,7 @@
   --call: color-mix(in srgb, var(--vscode-editor-foreground) 80%, var(--vscode-charts-green));
   --flow: var(--vscode-charts-blue);
   --override: var(--vscode-charts-orange);
+  --transition: var(--vscode-symbolIcon-enumeratorMemberForeground, var(--vscode-charts-yellow));
   --unresolved: var(--vscode-errorForeground);
   --muted: var(--vscode-descriptionForeground);
   --box: var(--vscode-editorWidget-background);
@@ -37,6 +38,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 .k-function, .k-method { --kc: var(--vscode-symbolIcon-functionForeground, var(--vscode-charts-purple)); }
 .k-field, .k-variable { --kc: var(--vscode-symbolIcon-variableForeground, var(--vscode-charts-blue)); }
 .k-external, .k-external_package { --kc: var(--muted); }
+.k-state { --kc: var(--transition); }
 .k-unresolved { --kc: var(--unresolved); }
 .node.container > rect.body { fill: color-mix(in srgb, var(--kc, var(--vscode-editor-foreground)) 6%, transparent); stroke: color-mix(in srgb, var(--kc, var(--vscode-editor-foreground)) 35%, transparent); }
 .node.container.k-tier > rect.body { stroke-dasharray: 5 3; }
@@ -50,12 +52,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 .wire { fill: none; stroke: var(--call); stroke-opacity: var(--wo, .4); stroke-width: calc(var(--w, 1) * var(--z, 1) * 1px); }
 .wire.flow { stroke: var(--flow); }
 .wire.override { stroke: var(--override); }
+/* Transitions are few and are the point of a state view: always drawn strong. */
+.wire.transition { stroke: var(--transition); stroke-opacity: .85; stroke-width: calc(1.6px * var(--z, 1)); }
 .wire.may { stroke-dasharray: 6 3; }
 .wire.unresolved { stroke: var(--unresolved); stroke-dasharray: 2 3; }
 .wire.off { display: none; }
 .arrow { stroke: none; fill-opacity: .8; fill: var(--call); }
 .arrow.flow { fill: var(--flow); }
 .arrow.override { fill: var(--override); }
+.arrow.transition { fill: var(--transition); }
 .arrow.unresolved { fill: var(--unresolved); }
 .hit { fill: none; stroke: transparent; stroke-width: 8; pointer-events: stroke; }
 

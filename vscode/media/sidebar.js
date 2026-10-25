@@ -30,6 +30,27 @@
     for (const c of document.querySelectorAll("input[data-kind]")) c.checked = !m.hidden.includes(c.dataset.kind);
     if (m.found !== undefined) $("found").textContent = m.found;
 
+    // Fields and variables with states: a click expands one in place and centres on it.
+    const ms = $("machines");
+    ms.replaceChildren();
+    for (const x of m.machines) {
+      const row = document.createElement("li"), b = document.createElement("button"), c = document.createElement("span");
+      b.className = "link name";
+      b.textContent = x.name;
+      b.title = "Show its states";
+      b.onclick = () => vs.postMessage({ type: "machine", id: x.id });
+      c.className = "count";
+      c.textContent = `${x.states} states · ${x.transitions}`;
+      row.append(b, c);
+      ms.append(row);
+    }
+    if (!m.machines.length) {
+      const row = document.createElement("li");
+      row.className = "none";
+      row.textContent = s.state === "ready" ? "None found. A state machine is a field tested for equality and assigned two or more constants." : "—";
+      ms.append(row);
+    }
+
     const ul = $("langs");
     ul.replaceChildren();
     const li = (name, count, tool, missing) => {

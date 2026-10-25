@@ -2,7 +2,7 @@
 import * as path from "node:path";
 import { Language, Node, Parser } from "web-tree-sitter";
 import { Range } from "../core/ir";
-import { Facts, noFacts, Syntax } from "../core/syntax";
+import { Facts, Guard, noFacts, Operand, Syntax } from "../core/syntax";
 import { PKG_ROOT } from "../root";
 
 let runtime: Promise<void> | undefined;
@@ -37,7 +37,11 @@ export class Source {
     return Buffer.byteLength(this.text.slice(s, s + units), "utf8");
   }
   range(n: Node): Range {
-    const s = n.startPosition, e = n.endPosition;
+    return this.span(n, n);
+  }
+  /** From the start of `a` to the end of `b`. */
+  span(a: Node, b: Node): Range {
+    const s = a.startPosition, e = b.endPosition;
     return { start_line: s.row, start_col: this.col(s.row, s.column), end_line: e.row, end_col: this.col(e.row, e.column) };
   }
 }
@@ -53,6 +57,30 @@ export function walk(root: Node, visit: (n: Node) => void) {
     visit(n);
     const cs = children(n);
     for (let i = cs.length - 1; i >= 0; i--) stack.push(cs[i]);
+  }
+}
+
+/** Operand for a whole expression that is never a state or a location. */
+export const other = (n: Node, src: Source): Operand => ({ name: src.range(n), text: n.text, form: "other", receiver: "" });
+
+/** Equality and inequality tests in an `if` condition, through `&&`, `||` and parentheses. Under `||` the
+ *  body can run without the test, so those guards are not certain; under `!` they are dropped. */
+export function equalities(
+  cond: Node, body: Range, ops: { eq: readonly string[]; ne: readonly string[] }, operand: (n: Node) => Operand, out: Guard[], certain = true,
+) {
+  if (cond.type === "parenthesized_expression") {
+    const c = namedChildren(cond)[0];
+    if (c) equalities(c, body, ops, operand, out, certain);
+    return;
+  }
+  if (cond.type !== "binary_expression") return;
+  const op = cond.childForFieldName("operator")?.type ?? "";
+  const l = cond.childForFieldName("left"), r = cond.childForFieldName("right");
+  if (!l || !r) return;
+  if (ops.eq.includes(op) || ops.ne.includes(op)) out.push({ left: operand(l), right: operand(r), equal: ops.eq.includes(op), body, certain });
+  else if (op === "&&" || op === "||") {
+    equalities(l, body, ops, operand, out, certain && op === "&&");
+    equalities(r, body, ops, operand, out, certain && op === "&&");
   }
 }
 

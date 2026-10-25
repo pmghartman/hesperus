@@ -9,9 +9,10 @@ import {
   newGraph, node, NodeKind, Provenance, Range, rangeKey, REPO_ID, Site,
 } from "./ir";
 import {
-  CALLABLE_KINDS, Document, Index, KIND_FIELD, occEnclosing, occRange, parseSymbol, prefix, ROLE_DEFINITION,
+  CALLABLE_KINDS, CONSTANT_KINDS, Document, Index, KIND_FIELD, occEnclosing, occRange, parseSymbol, prefix, ROLE_DEFINITION,
   Symbol, SymbolInformation,
 } from "./scip";
+import { ArgIn, states } from "./states";
 import { Facts, noFacts, Syntax } from "./syntax";
 
 export interface Inputs {
@@ -31,6 +32,8 @@ interface Doc {
   refs: Map<string, string>;
   /** Same occurrences keyed by end position, for argument lookup. */
   refsByEnd: Map<string, Range[]>;
+  /** Definitions by range. */
+  defsAt: Map<string, string>;
   callables: Callable[];
 }
 
@@ -93,6 +96,7 @@ export function build(inp: Inputs): Graph {
     const facts = text !== undefined && syn ? syn.facts(text) : noFacts();
     const refs = new Map<string, string>();
     const refsByEnd = new Map<string, Range[]>();
+    const defsAt = new Map<string, string>();
     const localDefs: [string, Range, Range | undefined][] = [];
     for (const o of d.occurrences) {
       const r = occRange(o);
@@ -100,6 +104,8 @@ export function build(inp: Inputs): Graph {
       if (o.symbol_roles & ROLE_DEFINITION) {
         const body = occEnclosing(o) ?? minBy(facts.decls.filter((x) => contains(x, r)), cmpSize);
         localDefs.push([o.symbol, r, body]);
+        const k = rangeKey(r);
+        if (!defsAt.has(k)) defsAt.set(k, o.symbol);
       } else {
         const k = rangeKey(r);
         if (!refs.has(k)) refs.set(k, o.symbol);
@@ -119,7 +125,7 @@ export function build(inp: Inputs): Graph {
       if (isCallable(kind) && body) callables.push({ symbol: sym, ident: r, body });
     }
     texts.set(path, text);
-    ctxs.push({ doc: d, facts, refs, refsByEnd, callables });
+    ctxs.push({ doc: d, facts, refs, refsByEnd, defsAt, callables });
   }
 
   const hashes = new Map<string, string | undefined>();
@@ -213,12 +219,7 @@ export function build(inp: Inputs): Graph {
   const paramSym = new Map<string, [string, number]>();
   const pathSym = (path: string, sym: string) => `${path}\0${sym}`;
   for (const ctx of ctxs) {
-    const defsAt = new Map<string, string>();
-    for (const o of ctx.doc.occurrences) {
-      if (!(o.symbol_roles & ROLE_DEFINITION)) continue;
-      const r = occRange(o);
-      if (r) defsAt.set(rangeKey(r), o.symbol);
-    }
+    const defsAt = ctx.defsAt;
     for (const p of ctx.facts.params) {
       const c = ctx.callables.find((c) => contains(p.decl, c.ident));
       if (!c) continue;
@@ -232,10 +233,11 @@ export function build(inp: Inputs): Graph {
   interface ParamCall { func: string; idx: number; caller: string; site: Site; name: string }
   const paramCalls: ParamCall[] = [];
   const fnFlows: [string, number, string][] = []; // (callee, param idx, function value)
+  const argsTo = new Map<string, ArgIn[]>(); // callee + index -> resolved call sites passing it
   for (const ctx of ctxs) {
     const path = ctx.doc.relative_path;
     for (const call of ctx.facts.calls) {
-      const caller = minBy(ctx.callables.filter((c) => contains(c.body, call.callee)), (a, b) => cmpSize(a.body, b.body))?.symbol ?? fileId(path);
+      const caller = callerAt(ctx, call.callee);
       const site: Site = { path, range: call.callee };
       const targets: [string, Provenance][] = [];
       let stub = false;
@@ -270,6 +272,10 @@ export function build(inp: Inputs): Graph {
         call.args.forEach((arg, i) => {
           const name = names?.find(([k]) => k === i)?.[1];
           const label = name === undefined ? `arg${i}` : `arg${i}:${name}`;
+          if (prov === "resolved" && call.values[i]) {
+            const k = `${t}\0${i}`;
+            (argsTo.get(k) ?? argsTo.set(k, []).get(k)!).push({ path, caller, site: call.callee, value: call.values[i] });
+          }
           edges.push({ from: caller, to: t, kind: "flow", provenance: prov, label, site });
           if (prov !== "resolved") return;
           // Function value passed as argument.
@@ -299,12 +305,53 @@ export function build(inp: Inputs): Graph {
     }
   }
 
+  const st = states({
+    docs: ctxs.map((ctx) => {
+      const localDefs = new Map<string, Range>();
+      for (const [k, sym] of ctx.defsAt) if (sym.startsWith("local ") && !localDefs.has(sym)) localDefs.set(sym, keyRange(k));
+      return {
+        path: ctx.doc.relative_path,
+        facts: ctx.facts,
+        symAt: (r) => ctx.refs.get(rangeKey(r)) ?? ctx.defsAt.get(rangeKey(r)),
+        refs: [...ctx.refs].map(([k, sym]): [Range, string] => [keyRange(k), sym]),
+        callerAt: (r) => callerAt(ctx, r),
+        localDef: (sym) => localDefs.get(sym),
+      };
+    }),
+    kindOf: (sym) => (defs.has(sym) ? nodes.get(sym)?.kind : undefined),
+    isExternalValue: (sym) => {
+      const ps = parseSymbol(sym);
+      return !!ps && lastKind(ps) === "term" && !isCallableSym(ps, info.get(sym));
+    },
+    paramOf: (path, sym) => paramSym.get(pathSym(path, sym)),
+    argsTo: (callable, idx) => argsTo.get(`${callable}\0${idx}`) ?? [],
+    isConstantKind: (sym) => CONSTANT_KINDS.includes(info.get(sym)?.kind ?? 0),
+    nameOf: (id) => nodes.get(id)?.name ?? id,
+    defSite: (sym) => {
+      const d = defs.get(sym);
+      return d && { path: d.path, range: d.ident };
+    },
+  });
+  for (const n of st.nodes) ensure(n);
+  for (const [child, p] of st.parents) parent.set(child, p);
+  edges.push(...st.edges);
+
   for (const [child, p] of parent) edges.push({ from: p, to: child, kind: "contains", provenance: "resolved" });
   const g = newGraph();
   g.nodes = [...nodes.values()].map(node);
   g.edges = edges.map(edge);
   canonicalize(g);
   return g;
+}
+
+const keyRange = (k: string): Range => {
+  const [a, b, c, d] = k.split(",").map(Number);
+  return { start_line: a, start_col: b, end_line: c, end_col: d };
+};
+
+/** Innermost callable whose body holds the range, else the file. */
+function callerAt(ctx: Doc, r: Range): string {
+  return minBy(ctx.callables.filter((c) => contains(c.body, r)), (a, b) => cmpSize(a.body, b.body))?.symbol ?? fileId(ctx.doc.relative_path);
 }
 
 function callEdge(from: string, to: string, provenance: Provenance, label: string | undefined, site: Site): GraphEdge {

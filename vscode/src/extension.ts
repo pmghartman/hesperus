@@ -40,6 +40,7 @@ class Hesperus {
   private tools?: Tools;
   private graph?: Graph;
   private parent = new Map<string, string>();
+  private machines: aggregate.Machine[] = [];
   private expanded = new Set<string>();
   private hidden = new Set<EdgeKind>();
   private panel?: vscode.WebviewPanel;
@@ -118,6 +119,7 @@ class Hesperus {
       if (!this.graph) {
         this.graph = JSON.parse(await cli(["graph", repo])) as Graph;
         this.parent = new Map(this.graph.edges.filter((e) => e.kind === "contains").map((e) => [e.to, e.from]));
+        this.machines = aggregate.machines(this.graph);
       }
       this.setStatus({ state: "ready", label: "Ready", nodes: this.graph.nodes.length, edges: this.graph.edges.length });
       await this.render();
@@ -151,6 +153,7 @@ class Hesperus {
       hidden: [...this.hidden],
       repo: this.folder?.name ?? null,
       tools: this.tools ?? null,
+      machines: this.machines,
       found,
     });
   }
@@ -170,20 +173,27 @@ class Hesperus {
       if (k && (!bestKey || k < bestKey)) [best, bestKey] = [n, k];
     }
     if (!best) return this.postSidebar(`No node matches “${query}”.`);
-    const chain = new Set<string>([best.id]);
-    for (let p = this.parent.get(best.id); p && this.parent.has(p); p = this.parent.get(p)) (this.expanded.add(p), chain.add(p));
+    this.postSidebar(`${best.name} · ${best.kind.replace("_", " ")}`);
+    await this.reveal(best.id);
+  }
+
+  /** Expands a node's ancestors (and `open` itself) so it is drawn, then centres on it. */
+  private async reveal(id: string, open = false) {
+    if (!this.graph) return;
+    if (open) this.expanded.add(id);
+    const chain = new Set<string>([id]);
+    for (let p = this.parent.get(id); p && this.parent.has(p); p = this.parent.get(p)) (this.expanded.add(p), chain.add(p));
     // Open any layer the target or its ancestors sit in; layers can nest.
     for (let more = true; more; ) {
       more = false;
       for (const gr of aggregate.view(this.graph, this.expanded).groups)
         if (!gr.expanded && gr.members.some((m) => chain.has(m))) (this.expanded.add(gr.id), (more = true));
     }
-    this.postSidebar(`${best.name} · ${best.kind.replace("_", " ")}`);
     if (!this.panel) await this.open();
-    await this.render({ focus: best.id });
+    await this.render({ focus: id });
   }
 
-  private async onSidebar(m: { type: string; kind?: EdgeKind; query?: string }) {
+  private async onSidebar(m: { type: string; kind?: EdgeKind; query?: string; id?: string }) {
     if (m.type === "ready") this.postSidebar();
     else if (m.type === "open") await this.open();
     else if (m.type === "reindex") {
@@ -195,6 +205,7 @@ class Hesperus {
       this.panel?.webview.postMessage({ type: "fit" });
     } else if (m.type === "fit") this.panel?.webview.postMessage({ type: "fit" });
     else if (m.type === "find" && m.query) await this.find(m.query);
+    else if (m.type === "machine" && m.id) await this.reveal(m.id, true);
     else if (m.type === "kind" && m.kind) {
       this.hidden.has(m.kind) ? this.hidden.delete(m.kind) : this.hidden.add(m.kind);
       this.postSidebar();
@@ -254,6 +265,8 @@ const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" 
 <label><input type="checkbox" data-kind="call"><span class="swatch call"></span>Calls</label>
 <label><input type="checkbox" data-kind="flow"><span class="swatch flow"></span>Data flow</label>
 <label><input type="checkbox" data-kind="override"><span class="swatch override"></span>Overrides</label>
+<label><input type="checkbox" data-kind="transition"><span class="swatch transition"></span>State transitions</label>
 <div class="legend"><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l"/></svg>resolved</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l may"/></svg>may</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l unresolved"/></svg>unresolved</span></div></section>
+<section><h3>State machines</h3><ul id="machines" class="machines"></ul></section>
 <section><h3>Languages</h3><ul id="langs" class="langs"></ul></section>
 <p class="hint">Click a box to expand it. ⌘/Ctrl-click or double-click opens its source. Hover to trace its edges.</p>`;

@@ -15,4 +15,4 @@ The graph comes from code analysis. Do not add, remove, or reweight nodes or edg
 4. Node IDs are fully qualified symbols. `path` and `range` on a node point at its definition (0-based lines).
 5. Agent labels live in a separate layer and never replace the base `name`, `signature`, `doc`.
 
-Edge kinds: `contains` (hierarchy), `call`, `override`, `flow` (argument to parameter, `return`, `fn:` for function values). Schema: `hesperus schema`.
+Edge kinds: `contains` (hierarchy), `call`, `override`, `flow` (argument to parameter, `return`, `fn:` for function values, `write` and `read` of fields and variables), `transition` (between `state` nodes, the constants a field is assigned; labeled by the writer). Schema: `hesperus schema`.

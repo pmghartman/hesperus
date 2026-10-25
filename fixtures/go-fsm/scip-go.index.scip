@@ -1,0 +1,54 @@
+
+^.
+scip-go0.2.9--outputscip-go.index.scip*file:///Users/pmh/hesperus/fixtures/go-fsm ÎJ
+conn.goG=scip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/BWCscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/State#B
+Z VBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Idle.BROCscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/State#BYEscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Dialing.BRVBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Open.BRXDscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Closed.B	R	VBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#B	Z \Hscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.BROCscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/State#B\Hscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#tries.BR
+UCscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/New().BR.NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#BNBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#BTHscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.B %NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Idle.B'+local 0BNBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#B	]Iscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Dial().BZ local 0BTHscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.BNBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Idle.Blocal 0BTHscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.B	QEscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Dialing.Blocal 0BTHscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#tries.B	local 1BNBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#B	^Jscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Event().BZ* local 2Blocal 1B	THscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.B
+QEscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Dialing.Blocal 2Blocal 1BTHscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.B
+NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Open.Blocal 1B THscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#tries.B local 1B!THscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.B!
+NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Idle.B!local 1B#THscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.B#
+PDscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Closed.B#NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Open.B%
+NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Idle.B%local 2B&local 1B'THscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.B'
+PDscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Closed.B'local 3B-NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#B-	\Jscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Close().B-R-3local 4B-OCscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/State#B-local 3B-#$THscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.B-%*local 4B--1local 5B/NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#B/	\Jscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Reset().B/R/)local 5B/THscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.B/ NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Idle.B/#'local 6B1NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#B1	[Iscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Live().B1R15local 6B1$%THscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.B1&+NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Open.B1/3local 7B4NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#B4	]Iscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#shut().B4Z48 local 8B4OCscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/State#B4local 8B5NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Idle.B5
+local 7B6THscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.B6	local 8B6local 9B:NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#B:	]Kscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Hangup().B:R:*local 9B:UIscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#shut().B: PDscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Closed.B:!'local 10B<NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#B<	\Jscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Pause().B<R<'local 10B<UIscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#shut().B<NBscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Idle.B< $YEscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Words().B?
+Z?S local 11B?local 12BAlocal 13BBlocal 14BDlocal 15BD	local 12BDlocal 16BE	local 11BElocal 14BF	local 12BGlocal 16BHlocal 14BI	local 13BIlocal 15BJlocal 13BLlocal 16BMlocal 14BN	local 12BNlocal 15BR	q
+Jscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Reset().(2Reset:"go*func (*Conn).Reset()s
+Hscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#state.(2state:"go*struct field state Stateh
+Bscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Open.(2Open:"go*const Open State = 2n
+Dscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Closed.(2Closed:"go*const Closed State = 3d
+Cscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/New().(2New:"go*func New() *Conns
+Iscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Live().(2Live:"go*func (*Conn).Live() boolt
+Kscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Hangup().(2Hangup:"go*func (*Conn).Hangup()h
+Bscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Idle.(2Idle:"go*const Idle State = 0n
+Iscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Dial().(2Dial:"go*func (*Conn).Dial()x
+Jscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Event().(2Event:!"go*func (*Conn).Event(ok bool)«
+Jscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Close()..Close jumps to a state only known at run time.(2Close:$"go*func (*Conn).Close(next State)­
+Iscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#shut().5shut stores a state its callers pass in, except Idle.(2shut:!"go*func (*Conn).shut(to State)q
+Jscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#Pause().(2Pause:"go*func (*Conn).Pause()Y
+=scip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/(#2fsm:"go*package fsm¯
+Bscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#'Conn walks Idle, Dialing, Open, Closed.(12Conn:8"go*2type Conn struct {
+    state State
+    tries int
+}q
+Escip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Dialing.(2Dialing:"go*const Dialing State = 1¢
+Escip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Words().0Words counts words with a state held in a local.(2Words:"go*func Words(s string) intv
+Cscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/State#State of a Conn.(62State:"go*type State intq
+Hscip-go gomod example.com/fsm 6c919b7a492a `example.com/fsm`/Conn#tries.(2tries:"go*struct field tries int!
+local 3(=2c:"go*var c *Conn!
+local 5(=2c:"go*var c *Conn!
+local 6(=2c:"go*var c *Conn!
+local 7(=2c:"go*var c *Conn 
+local 15(=2n:"go*	var n int!
+local 16(=2r:"go*
+var r rune2
+local 12(2space:"go*const space untyped int0
+local 13(2word:"go*const word untyped int!
+local 0(=2c:"go*var c *Conn!
+local 1(=2c:"go*var c *Conn'
+local 4(=2next:"go*var next State#
+local 8(=2to:"go*var to State!
+local 9(=2c:"go*var c *Conn"
+local 10(=2c:"go*var c *Conn"
+local 2(=2ok:"go*var ok bool#
+local 11(=2s:"go*var s string(
+local 14(=2state:"go*var state int"go0
