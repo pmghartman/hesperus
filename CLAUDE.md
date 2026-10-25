@@ -23,13 +23,14 @@ Target user: an engineer reviewing architecture, often of AI-written code, who d
 - TypeScript on Node, one npm package in `vscode/`. No native code; tree-sitter runs as WebAssembly.
 - `vscode/src/core`: owns the IR, merging, aggregation, cache, and canonical serialization. Imports nothing from `vscode` or `src/lang`.
 - `vscode/src/cli.ts`: thin wrapper over core (`hesperus`). Doubles as the test harness. The extension runs it on the editor's own Node.
-- Language frontends (`vscode/src/lang`) emit the IR:
-  - SCIP indexer output is the primary symbol resolver.
-  - Headless LSP over stdio is the fallback where no SCIP indexer exists.
-  - tree-sitter supplies syntax for def-use inside bodies, resolved through SCIP or LSP definitions.
-  - Native per-language analyzers may be added later as optional frontends behind the same IR.
-- Extension (`vscode/src/extension.ts`) with a webview. Reads the graph file. Layout is precomputed deterministically with ELK. Clicking a terminal node opens its source range.
-- `skill`: lets agents read the graph file.
+- `vscode/src/engine.ts`, `tools.ts`: orchestration. `tools.ts` downloads the pinned SCIP indexers; the CLI itself never touches the network.
+- Language frontends (`vscode/src/lang`) emit the IR. Implemented: Go and JavaScript/TypeScript.
+  - SCIP indexer output is the symbol resolver (scip-go 0.2.9, scip-typescript 0.5.2).
+  - tree-sitter (`lang/treesitter.ts`) supplies syntax for calls and def-use inside bodies, resolved through SCIP definitions.
+  - Planned, not built: headless LSP fallback where no SCIP indexer exists; native per-language analyzers as optional frontends.
+- Extension (`vscode/src/extension.ts`, `layout.ts`, `media/`): activity-bar sidebar plus a graph webview tab. Layout is precomputed deterministically with ELK. Cmd/Ctrl-click or double-click opens a node's source range.
+- `skill/SKILL.md`: lets agents read the graph through the CLI.
+- CI: `.github/workflows/release.yml` tests, builds one VSIX, publishes to the Marketplace, tags the release. Version lives in tags only.
 
 The analyzed language is independent of the implementation language. Many OOP languages and many repos must work. Any single repo, including phosphorus (Go and JS), is only a fixture. No language-specific logic in core.
 
@@ -37,14 +38,14 @@ The analyzed language is independent of the implementation language. Many OOP la
 
 - Hierarchy is containment, taken from code structure: repo, directory, package or module, file, class, method. A directory with one child folds into its parent. Stable node IDs are fully qualified symbols. Content hashes mark staleness only.
 - The graph is not a DAG. Store cycles as cycles. SCC collapse is a view option.
-- Edge kinds include at least `contains`, `call`, `override`, and `flow`. Flow edges bind arguments to parameters and returns to assignments across call edges.
+- Edge kinds: `contains`, `call`, `override`, `flow` (`EDGE_KINDS` in `core/ir.ts`). Flow edges bind arguments to parameters and returns to assignments across call edges.
 - Container edges are weighted rollups of the underlying edges. Expanding a node splits its edges in place. Every rollup is inspectable down to the edges beneath it. Aggregation rules live once in core and every consumer shares them.
 - Async, futures, and callbacks resolve through types where possible. Function values passed as arguments are flow, and calls through them get `may` edges.
 - Initial view is the whole repo flow graph. Zooming refines nodes and edges. Terminal nodes are the definitions in source.
 
 ## Cache
 
-An untracked dot directory in the analyzed repo. It is a cache and safe to delete. The header records tool version, indexer and server versions, lockfile hash, and commit. A mismatch fails loudly with an explanation and never reuses silently. Shard per package so the viewer loads subtrees lazily.
+`.hesperus/` in the analyzed repo: untracked, a cache, safe to delete. `header.json` records tool version, schema version, indexer versions, lockfile hash, and commit. A mismatch fails loudly with an explanation and never reuses silently. Sharded per package under `shards/` so the viewer loads subtrees lazily. The graph is cache only; no committed graph file.
 
 ## Determinism rules for code you write
 
@@ -57,7 +58,7 @@ An untracked dot directory in the analyzed repo. It is a cache and safe to delet
 ## Conventions
 
 - Schema first. The IR is a versioned schema (`vscode/schema/graph.schema.json`) mirrored by `core/ir.ts`. Change both deliberately.
-- Golden snapshot tests on small fixture repos per language, plus hand-checked flow edges.
+- Golden snapshot tests on small fixture repos per language, plus hand-checked flow edges. Tests: `cd vscode && npm test`; `UPDATE_GOLDEN=1` refreshes snapshots.
 - Few dependencies. Justify each. No native modules.
 - Match existing project conventions once they exist.
 - Comment only where the reason is non-obvious. Two lines max, fragments.
@@ -67,15 +68,20 @@ An untracked dot directory in the analyzed repo. It is a cache and safe to delet
 
 Never create, switch, rename, or delete a branch, and never commit, push, open or update a PR, or merge, unless I request that exact action. In cloud sessions, work on main.
 
+## Decided
+
+- Cache only, no committed graph file.
+- Fixtures: `fixtures/go-basic`, `go-fsm`, `js-fsm`, with committed SCIP indexes. Any repo (including phosphorus) is only a fixture.
+- Name stays Hesperus, one constant (`TOOL_NAME` in `core/ir.ts`), until renamed.
+- Flow edges bind arguments to parameters, returns (`return`), and function values (`fn:`).
+
 ## Ask before deciding
 
 These are open. Ask one question if a wrong guess is costly. Otherwise state the assumption in one line.
 
 - Flow granularity: variable, field, or entity.
-- How call edges are derived from SCIP, and whether enclosing ranges suffice.
-- Final project name.
-- Cache only, or a committed graph file.
-- Which fixture languages and repos to use.
+- Whether SCIP enclosing ranges suffice for call edges in every language added.
+- Adding the LSP fallback and which languages come next.
 
 ## Non-goals
 
