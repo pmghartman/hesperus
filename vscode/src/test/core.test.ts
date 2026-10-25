@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { view } from "../core/aggregate";
+import { GROUP_OVER, view } from "../core/aggregate";
 import { canonicalize, cmpStr, EdgeKind, GraphEdge, GraphNode, newGraph } from "../core/ir";
 import { directories } from "../core/build";
 import { decode, parseSymbol, prefix } from "../core/scip";
@@ -30,6 +30,28 @@ test("rolls up and splits on expand", () => {
   v = view(g, new Set(["A"]));
   assert.deepEqual(v.nodes, ["A", "B", "a1", "a2"]); // expanded A stays as a container
   assert.equal(v.rollups.reduce((s, r) => s + r.weight, 0), 3);
+});
+
+test("crowded containers get dependency layers", () => {
+  const g = newGraph();
+  const kids = Array.from({ length: GROUP_OVER + 2 }, (_, i) => `P${String(i).padStart(2, "0")}`);
+  g.nodes = ["repo", "D", ...kids].map(n);
+  g.edges = [e("repo", "D", "contains"), ...kids.map((k) => e("D", k, "contains"))];
+  // Chain P00 -> P01 -> P02, with a cycle back from P02 to P01; the rest unconnected.
+  g.edges.push(e("P00", "P01", "call"), e("P01", "P02", "call"), e("P02", "P01", "call"));
+  g.edges.push({ ...e("P02", "P03", "call"), provenance: "may" }); // ignored for layering
+  canonicalize(g);
+  const v = view(g, new Set(["D"]));
+  assert.deepEqual(v.groups.map((x) => [x.name, x.members]), [
+    ["layer 1 · callers", ["P00"]],
+    ["layer 2 · callees", ["P01", "P02"]],
+    ["unconnected", kids.slice(3)],
+  ]);
+  assert.deepEqual(v.nodes, ["D", ...v.groups.map((x) => x.id)]);
+  assert.deepEqual(v.rollups.map((r) => [r.from, r.to, r.weight]), [[v.groups[0].id, v.groups[1].id, 1], [v.groups[1].id, v.groups[2].id, 1]]);
+  const open = view(g, new Set(["D", v.groups[1].id]));
+  assert.ok(open.nodes.includes("P01") && open.nodes.includes(v.groups[1].id));
+  assert.deepEqual(view(g, new Set(["D"])), v);
 });
 
 test("parses method symbol", () => {

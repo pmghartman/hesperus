@@ -172,6 +172,9 @@ export function build(inp: Inputs): Graph {
       let name = pid.startsWith("pkg:") ? pid.slice(4) : pid;
       const colon = name.indexOf(":");
       if (colon >= 0) name = name.slice(colon + 1);
+      // The directory tree already shows the path; a full import path would be cut off.
+      const tail = name.replace(/\/+$/, "");
+      if (tail.includes("/")) name = tail.slice(tail.lastIndexOf("/") + 1);
       ensure(bare(pid, "package", name));
       parent.set(pid, REPO_ID);
     }

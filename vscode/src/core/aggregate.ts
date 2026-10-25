@@ -13,7 +13,23 @@ export interface Rollup {
   edges: number[];
 }
 
-export interface View { nodes: string[]; rollups: Rollup[] }
+/** View-only layer between a crowded container and its children: dependency tiers among
+ *  siblings, from their call and override edges. Not containment; never stored in the graph. */
+export interface Group {
+  id: string;
+  parent: string;
+  name: string;
+  /** Direct children of `parent` in this group, sorted. */
+  members: string[];
+  expanded: boolean;
+}
+
+/** `nodes` holds graph ids and the ids of visible groups. */
+export interface View { nodes: string[]; rollups: Rollup[]; groups: Group[] }
+
+/** A container shows tiers once it has more children than this. */
+export const GROUP_OVER = 12;
+export const isGroup = (id: string) => id.startsWith("tier:");
 
 /** Child to parent along `contains` edges. */
 export function parents(g: Graph): Map<string, string> {
@@ -44,11 +60,34 @@ export function view(g: Graph, expanded: ReadonlySet<string>): View {
     memo.set(id, cur);
     return cur;
   };
-  const nodes = g.nodes.filter((n) => n.id !== REPO_ID && rep(n.id) === n.id).map((n) => n.id);
+  const groups = tiers(g, par, rep, expanded);
+  const tierOf = new Map<string, Group>();
+  for (const gr of groups) for (const m of gr.members) tierOf.set(m, gr);
+  // A collapsed tier stands for everything beneath its members; the outermost one wins.
+  const memo2 = new Map<string, string>();
+  const rep2 = (id: string): string => {
+    const r = rep(id);
+    const hit = memo2.get(r);
+    if (hit !== undefined) return hit;
+    let out = r;
+    for (let x: string | undefined = r; x !== undefined && x !== REPO_ID; x = par.get(x)) {
+      const t = tierOf.get(x);
+      if (t && !t.expanded) out = t.id;
+    }
+    memo2.set(r, out);
+    return out;
+  };
+  const visible = new Set(g.nodes.filter((n) => n.id !== REPO_ID && rep(n.id) === n.id).map((n) => n.id));
+  const drawn = (c: string) => c === REPO_ID || (visible.has(c) && rep2(c) === c);
+  const live = groups.filter((gr) => drawn(gr.parent));
+  const shown = new Set<string>();
+  for (const id of visible) shown.add(rep2(id));
+  for (const gr of live) if (gr.expanded) shown.add(gr.id);
+  const nodes = [...shown].sort(cmpStr);
   const acc = new Map<string, Rollup>();
   g.edges.forEach((e, i) => {
     if (e.kind === "contains") return;
-    const a = rep(e.from), b = rep(e.to);
+    const a = rep2(e.from), b = rep2(e.to);
     if (a === b) return;
     const k = `${a}\0${b}\0${e.kind}`;
     let r = acc.get(k);
@@ -58,5 +97,103 @@ export function view(g: Graph, expanded: ReadonlySet<string>): View {
     r.edges.push(i);
   });
   const rollups = [...acc.values()].sort((x, y) => cmpStr(x.from, y.from) || cmpStr(x.to, y.to) || cmpEdgeKind(x.kind, y.kind));
-  return { nodes, rollups };
+  return { nodes, rollups, groups: live };
+}
+
+/** Tiers for every expanded, visible container with more than GROUP_OVER children.
+ *  Tier n holds siblings whose longest chain of in-container callers is n; cycles share a
+ *  tier. Siblings with no edges to each other form their own group; external packages too. */
+function tiers(g: Graph, par: Map<string, string>, rep: (id: string) => string, expanded: ReadonlySet<string>): Group[] {
+  const kids = new Map<string, string[]>();
+  for (const n of g.nodes) {
+    const p = par.get(n.id);
+    if (p !== undefined) (kids.get(p) ?? kids.set(p, []).get(p)!).push(n.id);
+  }
+  const kindOf = new Map(g.nodes.map((n) => [n.id, n.kind]));
+  const out: Group[] = [];
+  for (const c of [...kids.keys()].sort(cmpStr)) {
+    const ch = kids.get(c)!.sort(cmpStr);
+    if (ch.length <= GROUP_OVER) continue;
+    if (c !== REPO_ID && (!expanded.has(c) || rep(c) !== c)) continue;
+    const ext = ch.filter((id) => kindOf.get(id) === "external_package");
+    const own = ch.filter((id) => kindOf.get(id) !== "external_package");
+    const mk = (key: string, name: string, members: string[]) => {
+      const id = `tier:${c}#${key}`;
+      out.push({ id, parent: c, name, members, expanded: expanded.has(id) });
+    };
+    if (ext.length > 1) mk("ext", `external · ${ext.length}`, ext);
+    if (own.length <= GROUP_OVER) continue;
+    // Each edge, lifted to the pair of children of c it runs between.
+    const childOf = new Map<string, string | null>();
+    const lift = (id: string): string | null => {
+      const hit = childOf.get(id);
+      if (hit !== undefined) return hit;
+      const p = par.get(id);
+      const r = p === undefined ? null : p === c ? id : lift(p);
+      childOf.set(id, r);
+      return r;
+    };
+    const ownSet = new Set(own);
+    const adj = new Map<string, Set<string>>(own.map((id) => [id, new Set()]));
+    for (const e of g.edges) {
+      // Dispatch guesses run against the dependency direction and would merge every tier.
+      if ((e.kind !== "call" && e.kind !== "override") || e.provenance !== "resolved") continue;
+      const a = lift(e.from), b = lift(e.to);
+      if (a && b && a !== b && ownSet.has(a) && ownSet.has(b)) adj.get(a)!.add(b);
+    }
+    const level = layers(own, adj);
+    const linked = new Set<string>();
+    for (const [a, bs] of adj) if (bs.size) { linked.add(a); for (const b of bs) linked.add(b); }
+    const byLevel = new Map<number, string[]>();
+    for (const id of own) if (linked.has(id)) (byLevel.get(level.get(id)!) ?? byLevel.set(level.get(id)!, []).get(level.get(id)!)!).push(id);
+    const lv = [...byLevel.keys()].sort((a, b) => a - b);
+    lv.forEach((l, i) => {
+      const role = i === 0 ? " · callers" : i === lv.length - 1 ? " · callees" : "";
+      mk(String(i + 1).padStart(3, "0"), `layer ${i + 1}${role}`, byLevel.get(l)!);
+    });
+    const alone = own.filter((id) => !linked.has(id));
+    if (alone.length) mk("solo", "unconnected", alone);
+  }
+  return out;
+}
+
+/** Longest-path level from the sources of the SCC condensation; iterative Tarjan. */
+function layers(ids: string[], adj: Map<string, Set<string>>): Map<string, number> {
+  const succ = (id: string) => [...adj.get(id)!].sort(cmpStr);
+  const index = new Map<string, number>(), low = new Map<string, number>(), comp = new Map<string, number>();
+  const stack: string[] = [], on = new Set<string>();
+  let next = 0, ncomp = 0;
+  for (const root of ids) {
+    if (index.has(root)) continue;
+    const work: [string, string[], number][] = [[root, succ(root), 0]];
+    index.set(root, next); low.set(root, next); next++; stack.push(root); on.add(root);
+    while (work.length) {
+      const top = work[work.length - 1];
+      const [v, ss] = top;
+      if (top[2] < ss.length) {
+        const w = ss[top[2]++];
+        if (!index.has(w)) {
+          index.set(w, next); low.set(w, next); next++; stack.push(w); on.add(w);
+          work.push([w, succ(w), 0]);
+        } else if (on.has(w)) low.set(v, Math.min(low.get(v)!, index.get(w)!));
+        continue;
+      }
+      work.pop();
+      if (work.length) { const u = work[work.length - 1][0]; low.set(u, Math.min(low.get(u)!, low.get(v)!)); }
+      if (low.get(v) === index.get(v)) {
+        let w: string;
+        do { w = stack.pop()!; on.delete(w); comp.set(w, ncomp); } while (w !== v);
+        ncomp++;
+      }
+    }
+  }
+  // Tarjan emits components in reverse topological order: callees first.
+  const preds = new Map<number, Set<number>>();
+  for (const [a, bs] of adj) for (const b of bs) {
+    const ca = comp.get(a)!, cb = comp.get(b)!;
+    if (ca !== cb) (preds.get(cb) ?? preds.set(cb, new Set()).get(cb)!).add(ca);
+  }
+  const lvl = new Array<number>(ncomp).fill(0);
+  for (let c = ncomp - 1; c >= 0; c--) for (const p of preds.get(c) ?? []) lvl[c] = Math.max(lvl[c], lvl[p] + 1);
+  return new Map(ids.map((id) => [id, lvl[comp.get(id)!]]));
 }

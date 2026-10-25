@@ -19,6 +19,7 @@ const g: Graph = {
 const view: View = {
   nodes: ["A", "B", "a1"],
   rollups: [{ from: "a1", to: "B", kind: "call", weight: 1, resolved: 1, may: 0, unresolved: 0, edges: [4] }],
+  groups: [],
 };
 
 test("layout is deterministic and nests expanded containers", async () => {
@@ -49,4 +50,28 @@ test("both directions between a pair share one wire, oriented along the call", a
   assert.equal(l.wires.length, 1);
   assert.equal(l.wires[0].from, "a1");
   assert.deepEqual(l.wires[0].rollups.map((r) => [r.kind, r.from]), [["call", "a1"], ["flow", "B"]]);
+});
+
+test("wires between siblings inside a container end on their boxes", async () => {
+  const h: Graph = {
+    schema_version: 1,
+    nodes: [n("repo"), n("A", "package"), n("a1"), n("a2"), n("B", "package")],
+    edges: [
+      { from: "repo", to: "A", kind: "contains", provenance: "resolved" },
+      { from: "repo", to: "B", kind: "contains", provenance: "resolved" },
+      { from: "A", to: "a1", kind: "contains", provenance: "resolved" },
+      { from: "A", to: "a2", kind: "contains", provenance: "resolved" },
+      { from: "a1", to: "a2", kind: "call", provenance: "resolved" },
+      { from: "B", to: "A", kind: "call", provenance: "resolved" },
+    ],
+  };
+  const r = (from: string, to: string, i: number) => ({ from, to, kind: "call" as const, weight: 1, resolved: 1, may: 0, unresolved: 0, edges: [i] });
+  const l = await layout(h, { nodes: ["A", "B", "a1", "a2"], rollups: [r("B", "A", 5), r("a1", "a2", 4)], groups: [] });
+  const box = (id: string) => l.boxes.find((x) => x.id === id)!;
+  const off = (p: { x: number; y: number }, b: { x: number; y: number; w: number; h: number }) =>
+    Math.hypot(Math.max(b.x - p.x, 0, p.x - b.x - b.w), Math.max(b.y - p.y, 0, p.y - b.y - b.h));
+  for (const w of l.wires) {
+    assert.ok(off(w.points[0], box(w.from)) < 1, `${w.from} start`);
+    assert.ok(off(w.points.at(-1)!, box(w.to)) < 1, `${w.to} end`);
+  }
 });

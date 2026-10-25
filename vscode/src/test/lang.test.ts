@@ -82,3 +82,9 @@ test("js: grammar by extension", () => {
   assert.ok(Js.syntax("web/a.TSX"));
   assert.equal(Js.syntax("web/a.css"), undefined);
 });
+
+test("go: one root per module, wherever go.mod sits", () => {
+  assert.deepEqual(Go.roots(["svc/b/go.mod", "go.mod", "svc/a/go.mod", "svc/a/x/testdata/go.mod", "main.go"]), ["", "svc/a", "svc/b"]);
+  assert.deepEqual(Go.roots(["backend/go.mod", "backend/cmd/x/main.go"]), ["backend"]);
+  assert.throws(() => Go.roots(["a.go"]), /no go.mod/);
+});

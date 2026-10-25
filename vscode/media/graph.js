@@ -88,7 +88,14 @@
     const rest = p.slice(1);
     if (rest.length >= 3 && rest.length % 3 === 0)
       for (let i = 0; i < rest.length; i += 3) d += `C${rest[i].x},${rest[i].y} ${rest[i + 1].x},${rest[i + 1].y} ${rest[i + 2].x},${rest[i + 2].y}`;
-    else for (const q of rest) d += `L${q.x},${q.y}`;
+    else if (rest.length > 1) {
+      // Not Bézier triples: smooth through midpoints so control points never show as corners.
+      for (let i = 0; i < rest.length - 1; i++) {
+        const a = rest[i], b = rest[i + 1];
+        d += `Q${a.x},${a.y} ${(a.x + b.x) / 2},${(a.y + b.y) / 2}`;
+      }
+      d += `L${rest[rest.length - 1].x},${rest[rest.length - 1].y}`;
+    } else for (const q of rest) d += `L${q.x},${q.y}`;
     return d;
   };
 
@@ -98,6 +105,7 @@
     package: "M-5.5,-5.5h11v11h-11zM-5.5,-1.5h11",
     external_package: "M-5.5,-5.5h11v11h-11zM-5.5,-1.5h11",
     file: "M-4.5,-6h6l3,3v9h-9zM1.5,-6v3h3",
+    tier: "M-6,-4.5h12M-6,0h12M-6,4.5h12",
   };
   const LETTER = { type: "T", function: "ƒ", method: "m", field: "•", variable: "v", external: "↗", unresolved: "?" };
   function glyph(g, kind, x, cy) {
@@ -125,6 +133,7 @@
     for (const b of order) {
       const g = el("g", { class: `node k-${b.node.kind}` + (b.container ? " container" : ""), "data-id": b.id }, nodeLayer);
       el("rect", { class: "body", x: b.x, y: b.y, width: b.w, height: b.h, rx: b.container ? 6 : 4 }, g);
+      el("rect", { class: "bar", x: b.x, y: b.y + 1, width: 3, height: (b.container ? HEAD : b.h) - 2, rx: 1.5 }, g);
       const cy = b.y + (b.container ? HEAD : b.h) / 2;
       let x = b.x + 8;
       if (b.expandable) {
@@ -134,7 +143,7 @@
       }
       glyph(g, b.node.kind, x, cy);
       x += 18;
-      const kind = b.node.kind.replace("_", " ");
+      const kind = b.node.kind === "tier" ? "group" : b.node.kind.replace("_", " ");
       el("text", { class: "name", x, y: cy + 4 }, g).textContent = short(b.node.name, b.w - (x - b.x) + PAD - 12);
       // Containers name their kind at the right of the header when it fits.
       if (b.container && (x - b.x) + (b.node.name.length + kind.length + 3) * CHAR + 12 <= b.w)
@@ -169,7 +178,7 @@
     }
     scene._wires = wireEls;
     // Many overlapping wires add up; fade each one so the sum stays readable.
-    svg.style.setProperty("--wo", String(Math.min(0.4, Math.max(0.1, 3 / Math.sqrt(L.wires.length || 1)))));
+    svg.style.setProperty("--wo", String(Math.min(0.55, Math.max(0.18, 4 / Math.sqrt(L.wires.length || 1)))));
     scene._nodes = nodeEls;
     applyHidden();
     if (screenBefore && boxes.get(anchor)) {
@@ -192,7 +201,7 @@
 
   // ---- hover focus and tooltips ----
   const nodeTip = (n) => {
-    const lines = [`<b>${esc(n.name)}</b>  ${n.kind.replace("_", " ")}`];
+    const lines = [`<b>${esc(n.name)}</b>  ${n.kind === "tier" ? "group" : n.kind.replace("_", " ")}`];
     if (n.signature) lines.push(esc(n.signature));
     if (n.doc) lines.push(esc(n.doc.length > 300 ? n.doc.slice(0, 300) + "…" : n.doc));
     if (n.path) lines.push(esc(n.path));

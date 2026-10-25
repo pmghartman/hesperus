@@ -78,10 +78,10 @@ const owner = (p: string) => {
 
 /** Repo files per frontend id, plus files no frontend owns. Uses git's view of the tree
  *  (tracked and untracked, minus ignored) so vendored and build output stay out. */
-function fileCounts(repo: string): [Map<string, number>, number] {
+function fileCounts(repo: string, files = listFiles(repo)): [Map<string, number>, number] {
   const counts = new Map<string, number>();
   let other = 0;
-  for (const p of listFiles(repo)) {
+  for (const p of files) {
     const f = owner(p);
     if (f) counts.set(f.id, (counts.get(f.id) ?? 0) + 1);
     else other++;
@@ -182,7 +182,8 @@ function readOrThrow(p: string): Buffer {
 /** Runs the indexer of every frontend with files in the repo. Indexer output and any
  *  scratch files go to a temp dir, so the repo itself is never written. */
 async function runIndexers(repo: string, toolsDir?: string): Promise<scip.Index[]> {
-  const [counts] = fileCounts(repo);
+  const files = listFiles(repo);
+  const [counts] = fileCounts(repo, files);
   const active = FRONTENDS.filter((f) => counts.has(f.id));
   if (!active.length) throw new Error(`no supported language in ${repo} (supported: ${FRONTENDS.map((f) => f.id).join(", ")})`);
   const missing = active.filter((f) => findTool(f, toolsDir) === null).map((f) => `${f.tool().name} ${f.tool().version} (for ${f.id})`);
@@ -192,7 +193,14 @@ async function runIndexers(repo: string, toolsDir?: string): Promise<scip.Index[
   fs.mkdirSync(scratch, { recursive: true });
   try {
     const out: scip.Index[] = [];
-    for (const f of active) out.push(await runOne(f, repo, findTool(f, toolsDir)!, scratch));
+    for (const f of active) {
+      const roots = f.roots(files);
+      for (const [i, root] of roots.entries()) {
+        const ix = await runOne(f, path.join(repo, root), findTool(f, toolsDir)!, scratch, `${f.id}-${i}`);
+        if (root !== "") for (const d of ix.documents) d.relative_path = `${root}/${d.relative_path}`;
+        out.push(ix);
+      }
+    }
     return out;
   } finally {
     // Does not follow symlinks, so overlays pointing into the repo are safe to remove.
@@ -200,8 +208,8 @@ async function runIndexers(repo: string, toolsDir?: string): Promise<scip.Index[
   }
 }
 
-async function runOne(f: Frontend, repo: string, bin: string, scratch: string): Promise<scip.Index> {
-  const out = path.join(scratch, `${f.id}.scip`);
+async function runOne(f: Frontend, repo: string, bin: string, scratch: string, name: string): Promise<scip.Index> {
+  const out = path.join(scratch, `${name}.scip`);
   const c = f.command(repo, bin, out, scratch);
   const { code, signal, stderr } = await new Promise<{ code: number | null; signal: string | null; stderr: string }>((resolve, reject) => {
     const p = spawn(c.cmd, c.args, { cwd: c.cwd, stdio: ["ignore", "ignore", "pipe"] });

@@ -45,10 +45,21 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
       parent.set(e.to, e.from);
       hasKids.add(e.from);
     }
+  // Tiers sit between a container and its children; they are boxes like any other.
+  for (const gr of view.groups) {
+    const what = gr.id.endsWith("#ext") ? "Packages outside the repo." : gr.id.endsWith("#solo")
+      ? "No resolved calls to or from their siblings."
+      : "Siblings grouped by their longest chain of resolved callers inside the parent; cycles share a layer.";
+    const doc = `View grouping, not code structure. ${what}\n${gr.members.length} children.`;
+    byId.set(gr.id, { id: gr.id, kind: "tier" as GraphNode["kind"], name: gr.name, doc });
+    hasKids.add(gr.id);
+    parent.set(gr.id, gr.parent);
+    for (const m of gr.members) parent.set(m, gr.id);
+  }
   const visible = new Set(view.nodes);
   const kids = new Map<string, string[]>();
   const roots: string[] = [];
-  for (const id of [...view.nodes].sort()) {
+  for (const id of [...view.nodes].sort(cmpStr)) {
     const p = parent.get(id);
     if (p && visible.has(p)) {
       if (!kids.has(p)) kids.set(p, []);
@@ -74,23 +85,39 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
     const [a, b] = k.split("\0");
     const score = (from: string) => rs.reduce((s, r) => s + (r.from === from ? (r.kind === "flow" ? 1 : 1e6) * r.weight : 0), 0);
     const [from, to] = score(b) > score(a) ? [b, a] : [a, b];
-    pairs.set(from + "\0" + to, rs.sort((x, y) => x.kind.localeCompare(y.kind) || (x.from === from ? 0 : 1) - (y.from === from ? 0 : 1)));
+    pairs.set(from + "\0" + to, rs.sort((x, y) => cmpStr(x.kind, y.kind) || (x.from === from ? 0 : 1) - (y.from === from ? 0 : 1)));
   }
   const keys = [...pairs.keys()].sort();
+  // Each edge lives in its endpoints' lowest common container; ELK routes it in that frame.
+  const holder = new Map<string, string>(); // edge id -> elk container id
+  const chain = (id: string) => {
+    const out: string[] = [];
+    for (let p = parent.get(id); p && visible.has(p); p = parent.get(p)) out.push(p);
+    return out;
+  };
+  const elkEdges = new Map<string, ElkEdge[]>();
+  keys.forEach((k, i) => {
+    const [from, to] = k.split("\0");
+    const up = new Set(chain(from));
+    const lca = chain(to).find((p) => up.has(p) && p !== from && p !== to) ?? "root";
+    holder.set(`e${i}`, lca);
+    if (!elkEdges.has(lca)) elkEdges.set(lca, []);
+    elkEdges.get(lca)!.push({ id: `e${i}`, sources: [from], targets: [to] });
+  });
+  const attach = (n: ElkNode) => {
+    const es = elkEdges.get(n.id);
+    if (es) n.edges = es;
+    n.children?.forEach(attach);
+  };
   const root: ElkNode = {
     id: "root",
     children: roots.map(mk),
-    edges: keys.map((k, i) => {
-      const [from, to] = k.split("\0");
-      return { id: `e${i}`, sources: [from], targets: [to] };
-    }),
     layoutOptions: {
       "elk.algorithm": "layered",
       "elk.direction": "RIGHT",
       "elk.randomSeed": "1",
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
       "elk.edgeRouting": "SPLINES",
-      "elk.json.edgeCoords": "ROOT",
       "elk.spacing.nodeNode": "14",
       "elk.layered.spacing.nodeNodeBetweenLayers": "48",
       "elk.spacing.edgeNode": "10",
@@ -103,12 +130,17 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
       "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
     },
   };
+  attach(root);
   const out = (await new ELK().layout(root as never)) as ElkNode & { width: number; height: number };
   const boxes: Box[] = [];
+  const origin = new Map<string, { x: number; y: number }>([["root", { x: 0, y: 0 }]]);
+  const routed = new Map<string, ElkEdge>();
   const walk = (n: ElkNode, ox: number, oy: number) => {
+    for (const e of n.edges ?? []) routed.set(e.id, e);
     for (const c of n.children ?? []) {
       const x = ox + (c.x ?? 0), y = oy + (c.y ?? 0);
       const node = byId.get(c.id);
+      origin.set(c.id, { x, y });
       if (node)
         boxes.push({ id: c.id, x, y, w: c.width ?? 0, h: c.height ?? 0, node, container: !!c.children, expandable: hasKids.has(c.id) });
       walk(c, x, y);
@@ -116,17 +148,17 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
   };
   walk(out, 0, 0);
   const pos = new Map(boxes.map((b) => [b.id, b]));
-  const routed = new Map((out.edges ?? []).map((e) => [e.id, e]));
   const wires: Wire[] = keys.flatMap((k, i) => {
     const [from, to] = k.split("\0");
     const a = pos.get(from), b = pos.get(to);
     if (!a || !b) return [];
     const s = routed.get(`e${i}`)?.sections?.[0];
+    const o = origin.get(holder.get(`e${i}`)!)!;
     const points = s
-      ? [s.startPoint, ...(s.bendPoints ?? []), s.endPoint]
+      ? [s.startPoint, ...(s.bendPoints ?? []), s.endPoint].map((q) => ({ x: o.x + q.x, y: o.y + q.y }))
       : [{ x: a.x + a.w, y: a.y + a.h / 2 }, { x: b.x, y: b.y + b.h / 2 }];
     return [{ from, to, rollups: pairs.get(k)!, points }];
   });
-  boxes.sort((a, b) => a.id.localeCompare(b.id));
+  boxes.sort((a, b) => cmpStr(a.id, b.id));
   return { width: out.width ?? 0, height: out.height ?? 0, boxes, wires };
 }

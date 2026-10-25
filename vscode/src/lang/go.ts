@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { Command, Frontend, Tool } from "../core/frontend";
+import { cmpStr } from "../core/ir";
 import { Grammar, namedChildren } from "./treesitter";
 
 export const LANGUAGE_ID = "go";
@@ -52,8 +53,15 @@ export const Go: Frontend = {
     if (home) out.push(path.join(home, "go", "bin"));
     return out;
   },
+  /** scip-go indexes one module from its root, so every go.mod in the tree is a root.
+   *  The go tool skips testdata and nested modules on its own. */
+  roots(files) {
+    const mods = files.filter((f) => (f === "go.mod" || f.endsWith("/go.mod")) && !f.split("/").includes("testdata"));
+    if (!mods.length) throw new Error("Go files found but no go.mod anywhere in the repo; scip-go indexes Go modules.");
+    return mods.map((f) => f.slice(0, Math.max(f.lastIndexOf("/"), 0))).sort(cmpStr);
+  },
   command(repo, bin, out): Command {
-    if (!isFile(path.join(repo, "go.mod"))) throw new Error("Go files found but no go.mod at the repo root; scip-go indexes one module from its root.");
+    if (!isFile(path.join(repo, "go.mod"))) throw new Error(`no go.mod in ${repo}`);
     return { cmd: bin, args: ["--output", out], cwd: repo };
   },
   init: () => GO.init(),

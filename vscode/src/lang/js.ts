@@ -117,6 +117,7 @@ export const Js: Frontend = {
   }),
   binIn: (dir) => path.join(dir, "node_modules", ".bin", "scip-typescript"),
   searchDirs: () => [],
+  roots: () => [""],
   /** scip-typescript needs a tsconfig and writes one into the project when inferring it.
    *  Index a scratch overlay instead: symlinks to the repo's entries plus our config.
    *  `preserveSymlinks` keeps paths, and so symbols, relative to the overlay root. */

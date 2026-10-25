@@ -31,7 +31,10 @@ export interface Frontend {
   binIn(installDir: string): string;
   /** Extra places a user install may live (e.g. the Go bin dir). */
   searchDirs(): string[];
-  /** Indexer invocation writing SCIP to `out`. May write only under `scratch`, never the repo. */
+  /** Repo-relative directories the indexer runs from ("" is the repo root), sorted;
+   *  e.g. one per Go module. Index paths are relative to each. */
+  roots(files: readonly string[]): string[];
+  /** Indexer invocation for the project at `repo` writing SCIP to `out`. May write only under `scratch`, never the repo. */
   command(repo: string, bin: string, out: string, scratch: string): Command;
   /** Loads grammars; `syntax` needs it first. */
   init(): Promise<void>;

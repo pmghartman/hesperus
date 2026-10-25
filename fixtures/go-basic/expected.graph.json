@@ -16,7 +16,7 @@
     {
       "id": "pkg:example.com/basic:example.com/basic",
       "kind": "package",
-      "name": "example.com/basic"
+      "name": "basic"
     },
     {
       "id": "repo",

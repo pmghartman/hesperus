@@ -170,7 +170,14 @@ class Hesperus {
       if (k && (!bestKey || k < bestKey)) [best, bestKey] = [n, k];
     }
     if (!best) return this.postSidebar(`No node matches “${query}”.`);
-    for (let p = this.parent.get(best.id); p && this.parent.has(p); p = this.parent.get(p)) this.expanded.add(p);
+    const chain = new Set<string>([best.id]);
+    for (let p = this.parent.get(best.id); p && this.parent.has(p); p = this.parent.get(p)) (this.expanded.add(p), chain.add(p));
+    // Open any layer the target or its ancestors sit in; layers can nest.
+    for (let more = true; more; ) {
+      more = false;
+      for (const gr of aggregate.view(this.graph, this.expanded).groups)
+        if (!gr.expanded && gr.members.some((m) => chain.has(m))) (this.expanded.add(gr.id), (more = true));
+    }
     this.postSidebar(`${best.name} · ${best.kind.replace("_", " ")}`);
     if (!this.panel) await this.open();
     await this.render({ focus: best.id });
