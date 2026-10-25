@@ -76,7 +76,7 @@
   },
   "scripts": {
     "build": "node scripts/grammars.js && tsc -p .",
-    "test": "npm run build && node --test \"out/**/*.test.js\"",
+    "test": "npm run build && node scripts/test.js",
     "vscode:prepublish": "npm run build",
     "package": "vsce package"
   },
