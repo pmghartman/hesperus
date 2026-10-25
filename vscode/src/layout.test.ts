@@ -75,3 +75,31 @@ test("wires between siblings inside a container end on their boxes", async () =>
     assert.ok(off(w.points.at(-1)!, box(w.to)) < 1, `${w.to} end`);
   }
 });
+
+test("wires from a container into its own descendants end on their boxes", async () => {
+  const h: Graph = {
+    schema_version: 1,
+    nodes: [n("repo"), n("X", "package"), n("F", "package"), n("G", "package"), n("s1"), n("s2"), n("f1")],
+    edges: [
+      { from: "repo", to: "X", kind: "contains", provenance: "resolved" },
+      { from: "repo", to: "F", kind: "contains", provenance: "resolved" },
+      { from: "F", to: "G", kind: "contains", provenance: "resolved" },
+      { from: "F", to: "f1", kind: "contains", provenance: "resolved" },
+      { from: "G", to: "s1", kind: "contains", provenance: "resolved" },
+      { from: "G", to: "s2", kind: "contains", provenance: "resolved" },
+      { from: "F", to: "s1", kind: "call", provenance: "unresolved" },
+      { from: "s2", to: "X", kind: "call", provenance: "resolved" },
+      { from: "f1", to: "s2", kind: "call", provenance: "resolved" },
+    ],
+  };
+  const r = (from: string, to: string, i: number) => ({ from, to, kind: "call" as const, weight: 1, resolved: 1, may: 0, unresolved: 0, edges: [i] });
+  const l = await layout(h, { nodes: ["X", "F", "G", "s1", "s2", "f1"], rollups: [r("F", "s1", 6), r("s2", "X", 7), r("f1", "s2", 8)], groups: [] });
+  const box = (id: string) => l.boxes.find((x) => x.id === id)!;
+  const off = (p: { x: number; y: number }, b: { x: number; y: number; w: number; h: number }) =>
+    Math.hypot(Math.max(b.x - p.x, 0, p.x - b.x - b.w), Math.max(b.y - p.y, 0, p.y - b.y - b.h));
+  assert.equal(l.wires.length, 3);
+  for (const w of l.wires) {
+    assert.ok(off(w.points[0], box(w.from)) < 1, `${w.from} start`);
+    assert.ok(off(w.points.at(-1)!, box(w.to)) < 1, `${w.to} end`);
+  }
+});

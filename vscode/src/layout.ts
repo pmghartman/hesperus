@@ -7,7 +7,7 @@ export interface Box { id: string; x: number; y: number; w: number; h: number; n
  *  calls, and routing them separately sends every one around the outside. Kinds stay listed for
  *  filtering; each rollup keeps its own direction. `from` is the end most rollups leave.
  *  `points` is start, cubic Bézier control triples, end (ELK spline sections). */
-export interface Wire { from: string; to: string; rollups: Rollup[]; points: { x: number; y: number }[] }
+export interface Wire { from: string; to: string; rollups: Rollup[]; points: { x: number; y: number }[]; labels: string[] }
 export interface Layout { width: number; height: number; boxes: Box[]; wires: Wire[] }
 
 // Sizes come from character counts, not measured text, so layout never depends on fonts.
@@ -29,6 +29,9 @@ interface ElkEdge {
   id: string;
   sources: string[];
   targets: string[];
+  /** Set by ELK: the node whose frame the sections use. Not always the lowest common
+   *  ancestor: an edge into a container's own descendant is routed in that container. */
+  container?: string;
   sections?: { startPoint: { x: number; y: number }; endPoint: { x: number; y: number }; bendPoints?: { x: number; y: number }[] }[];
 }
 
@@ -87,9 +90,8 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
     const [from, to] = score(b) > score(a) ? [b, a] : [a, b];
     pairs.set(from + "\0" + to, rs.sort((x, y) => cmpStr(x.kind, y.kind) || (x.from === from ? 0 : 1) - (y.from === from ? 0 : 1)));
   }
-  const keys = [...pairs.keys()].sort();
-  // Each edge lives in its endpoints' lowest common container; ELK routes it in that frame.
-  const holder = new Map<string, string>(); // edge id -> elk container id
+  const keys = [...pairs.keys()].sort(cmpStr);
+  // Each edge lives in its endpoints' lowest common container.
   const chain = (id: string) => {
     const out: string[] = [];
     for (let p = parent.get(id); p && visible.has(p); p = parent.get(p)) out.push(p);
@@ -100,7 +102,6 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
     const [from, to] = k.split("\0");
     const up = new Set(chain(from));
     const lca = chain(to).find((p) => up.has(p) && p !== from && p !== to) ?? "root";
-    holder.set(`e${i}`, lca);
     if (!elkEdges.has(lca)) elkEdges.set(lca, []);
     elkEdges.get(lca)!.push({ id: `e${i}`, sources: [from], targets: [to] });
   });
@@ -152,12 +153,16 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
     const [from, to] = k.split("\0");
     const a = pos.get(from), b = pos.get(to);
     if (!a || !b) return [];
-    const s = routed.get(`e${i}`)?.sections?.[0];
-    const o = origin.get(holder.get(`e${i}`)!)!;
+    const e = routed.get(`e${i}`);
+    const s = e?.sections?.[0];
+    const o = origin.get(e?.container ?? "root") ?? { x: 0, y: 0 };
     const points = s
       ? [s.startPoint, ...(s.bendPoints ?? []), s.endPoint].map((q) => ({ x: o.x + q.x, y: o.y + q.y }))
       : [{ x: a.x + a.w, y: a.y + a.h / 2 }, { x: b.x, y: b.y + b.h / 2 }];
-    return [{ from, to, rollups: pairs.get(k)!, points }];
+    // Who triggers a transition: the writers' names, from the edges beneath.
+    const labels = new Set<string>();
+    for (const r of pairs.get(k)!) if (r.kind === "transition") for (const i of r.edges) { const l = graph.edges[i]?.label; if (l !== undefined) labels.add(l); }
+    return [{ from, to, rollups: pairs.get(k)!, points, labels: [...labels].sort(cmpStr) }];
   });
   boxes.sort((a, b) => cmpStr(a.id, b.id));
   return { width: out.width ?? 0, height: out.height ?? 0, boxes, wires };
