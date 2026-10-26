@@ -37,6 +37,8 @@ interface Doc {
   /** Definitions by range. */
   defsAt: Map<string, string>;
   callables: Callable[];
+  /** No syntax for this file: only the index says anything about it. */
+  generic: boolean;
 }
 
 const fileId = (path: string) => `file:${path}`;
@@ -128,7 +130,7 @@ export function build(inp: Inputs): Graph {
       if (isCallable(kind) && body) callables.push({ symbol: sym, ident: r, body });
     }
     texts.set(path, text);
-    ctxs.push({ doc: d, facts, refs, refsByEnd, defsAt, callables });
+    ctxs.push({ doc: d, facts, refs, refsByEnd, defsAt, callables, generic: !syn });
   }
 
   const hashes = new Map<string, string | undefined>();
@@ -236,6 +238,22 @@ export function build(inp: Inputs): Graph {
       (paramsOf.get(c.symbol) ?? paramsOf.set(c.symbol, []).get(c.symbol)!).push([p.index, p.name]);
       const s = defsAt.get(rangeKey(p.range));
       if (s !== undefined) paramSym.set(pathSym(ctx.doc.relative_path, s), [c.symbol, p.index]);
+    }
+  }
+
+  // Without syntax there are no call sites. A reference to an in-repo callable from inside another
+  // callable may be a call or a mention, so it is a `may` edge.
+  for (const ctx of ctxs) {
+    if (!ctx.generic) continue;
+    const path = ctx.doc.relative_path;
+    for (const o of ctx.doc.occurrences) {
+      const rg = occRange(o);
+      if (!rg || o.symbol === "" || o.symbol_roles & ROLE_DEFINITION || o.symbol.startsWith("local ") || !defs.has(o.symbol)) continue;
+      const ps = parseSymbol(o.symbol);
+      if (!ps || !isCallableSym(ps, info.get(o.symbol))) continue;
+      const caller = callerAt(ctx, rg);
+      if (caller === fileId(path)) continue;
+      edges.push(callEdge(caller, o.symbol, "may", "reference", { path, range: rg }));
     }
   }
 

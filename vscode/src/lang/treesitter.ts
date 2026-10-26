@@ -67,6 +67,16 @@ export function walk(root: Node, visit: (n: Node) => void) {
 /** Operand for a whole expression that is never a state or a location. */
 export const other = (n: Node, src: Source): Operand => ({ name: src.range(n), text: n.text, form: "other", receiver: "" });
 
+const BINARY = new Set(["binary_expression", "binary", "boolean_operator", "comparison_operator", "conjunction_expression", "disjunction_expression", "equality_expression"]);
+
+/** Left side, right side and operator token of a binary node, whether the grammar names its fields or not. */
+function sides(n: Node): { l?: Node; r?: Node; op: string } {
+  const named = namedChildren(n);
+  if (n.type === "comparison_operator") return { l: named[0], r: named[1], op: n.childForFieldName("operators")?.type ?? "" };
+  const op = n.childForFieldName("operator")?.type ?? children(n).find((c) => !c.isNamed)?.type ?? "";
+  return { l: n.childForFieldName("left") ?? named[0], r: n.childForFieldName("right") ?? named[named.length - 1], op };
+}
+
 /** Equality and inequality tests in an `if` condition, through `&&`, `||` and parentheses. Under `||` the
  *  body can run without the test, so those guards are not certain; under `!` they are dropped. */
 export function equalities(
@@ -77,14 +87,14 @@ export function equalities(
     if (c) equalities(c, body, ops, operand, out, certain);
     return;
   }
-  if (cond.type !== "binary_expression") return;
-  const op = cond.childForFieldName("operator")?.type ?? "";
-  const l = cond.childForFieldName("left"), r = cond.childForFieldName("right");
+  if (!BINARY.has(cond.type)) return;
+  const { l, r, op } = sides(cond);
   if (!l || !r) return;
   if (ops.eq.includes(op) || ops.ne.includes(op)) out.push({ left: operand(l), right: operand(r), equal: ops.eq.includes(op), body, certain });
-  else if (op === "&&" || op === "||") {
-    equalities(l, body, ops, operand, out, certain && op === "&&");
-    equalities(r, body, ops, operand, out, certain && op === "&&");
+  else if (op === "&&" || op === "||" || op === "and" || op === "or") {
+    const all = op === "&&" || op === "and";
+    equalities(l, body, ops, operand, out, certain && all);
+    equalities(r, body, ops, operand, out, certain && all);
   }
 }
 

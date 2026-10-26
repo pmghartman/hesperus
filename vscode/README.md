@@ -31,6 +31,12 @@ The sidebar shows status and errors, finds nodes by name, toggles calls, data fl
 | C# | C# (`ms-dotnettools.csharp`) |
 | C, C++ | C/C++ (`ms-vscode.cpptools`) |
 | Dart, Flutter | Dart (`Dart-Code.dart-code`) |
+| Python | Python (`ms-python.python`) |
+| Java | Language Support for Java (`redhat.java`) |
+| Kotlin | Kotlin (`fwcd.kotlin`) |
+| PHP | PHP Intelephense (`bmewburn.vscode-intelephense-client`) |
+| Ruby | Ruby LSP (`Shopify.ruby-lsp`) |
+| Anything else (Swift, Scala, Lua, Zig, ...) | Generic: whatever language server the editor has. Definitions and references only, calls shown as `may` |
 
 Each language is indexed on its own. If its extension is missing or never answers, its files show as dashed **unindexed** nodes (toggle in the sidebar) with the reason and an install button, and the other languages still build. Files in other languages are counted and not analyzed.
 

@@ -24,6 +24,12 @@ Hesperus compiles source "up" into a graph an engineer can question: packages, f
 | C# | C# (`ms-dotnettools.csharp`) |
 | C, C++ | C/C++ (`ms-vscode.cpptools`) |
 | Dart, Flutter | Dart (`Dart-Code.dart-code`) |
+| Python | Python (`ms-python.python`) |
+| Java | Language Support for Java (`redhat.java`) |
+| Kotlin | Kotlin (`fwcd.kotlin`) |
+| PHP | PHP Intelephense (`bmewburn.vscode-intelephense-client`) |
+| Ruby | Ruby LSP (`Shopify.ruby-lsp`) |
+| Anything else (Swift, Scala, Lua, Zig, ...) | Generic: whatever language server the editor has. Definitions and references only, calls shown as `may` |
 
 Other languages are counted and not analyzed.
 

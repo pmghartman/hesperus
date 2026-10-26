@@ -15,11 +15,16 @@ import { CSharp } from "./lang/csharp";
 import { Dart } from "./lang/dart";
 import { Go } from "./lang/go";
 import { Js } from "./lang/js";
+import { Ruby } from "./lang/ruby";
+import { Python } from "./lang/python";
+import { Php } from "./lang/php";
+import { Kotlin } from "./lang/kotlin";
+import { Java } from "./lang/java";
 import { Rust } from "./lang/rust";
 import { PKG_ROOT } from "./root";
 
 /** Every language frontend. Order is irrelevant to output: indexes merge canonically. */
-export const FRONTENDS: readonly Frontend[] = [Go, Js, Rust, CSharp, Cpp, Dart];
+export const FRONTENDS: readonly Frontend[] = [Go, Js, Rust, CSharp, Cpp, Dart, Python, Java, Kotlin, Php, Ruby];
 const LOCKFILES = ["Cargo.lock", "go.sum", "package-lock.json", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "yarn.lock"];
 
 /** Stamped into package.json at release; recorded in the cache header so an update re-indexes. */
@@ -30,7 +35,22 @@ let ready: Promise<void> | undefined;
 export const init = () => (ready ??= Promise.all(FRONTENDS.map((f) => f.init())).then(() => {}));
 
 export interface Language { files: number; id: string; editor: Frontend["editor"] }
-export interface Scan { languages: Language[]; other_files: number }
+/** Files no frontend owns, grouped by extension: candidates for the generic fallback. */
+export interface Generic { ext: string; files: number }
+export interface Scan { languages: Language[]; generic: Generic[]; other_files: number }
+
+/** Data, markup, documents and binaries: never source the editor could outline as code. */
+const NOT_CODE = new Set((
+  "md markdown mdx txt rst adoc json jsonc json5 yaml yml toml ini cfg conf properties env xml xsd xsl xslt svg html htm css scss sass less csv tsv " +
+  "lock log sum mod map snap diff patch png jpg jpeg gif ico webp bmp tiff pdf zip gz tgz tar bz2 xz 7z rar woff woff2 ttf otf eot mp3 mp4 mov avi wav " +
+  "wasm bin exe dll so dylib class jar war o a obj lib pyc node vsix ipynb"
+).split(" "));
+
+/** Extension of a file no frontend owns and that could be source, else undefined. */
+const genericExt = (p: string) => {
+  const e = extension(p);
+  return e !== undefined && !owner(p) && !NOT_CODE.has(e) ? e : undefined;
+};
 export interface Status { detail: string; state: "ready" | "stale" | "missing" }
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -121,7 +141,13 @@ export function scan(repo: string): Scan {
     const files = counts.get(f.id) ?? 0;
     if (files > 0) languages.push({ files, id: f.id, editor: f.editor });
   }
-  return { languages, other_files: other };
+  const byExt = new Map<string, number>();
+  for (const p of listFiles(repo)) {
+    const e = genericExt(p);
+    if (e !== undefined) byExt.set(e, (byExt.get(e) ?? 0) + 1);
+  }
+  const generic = [...byExt].map(([ext, files]) => ({ ext, files })).sort((a, b) => cmpStr(a.ext, b.ext));
+  return { languages, generic, other_files: other - generic.reduce((n, g) => n + g.files, 0) };
 }
 
 export function status(repo: string, lockfiles: readonly string[] = []): Status {
@@ -148,6 +174,11 @@ export function load(repo: string, lockfiles: readonly string[] = []): Graph {
 /** Repo-relative files the language owns, sorted. */
 export function sourceFiles(repo: string, lang: string): string[] {
   return listFiles(repo).filter((p) => owner(p)?.id === lang).sort(cmpStr);
+}
+
+/** Repo-relative files of one generic extension, sorted. */
+export function genericFiles(repo: string, ext: string): string[] {
+  return listFiles(repo).filter((p) => genericExt(p) === ext).sort(cmpStr);
 }
 
 /** One language's outcome: an index, or why there is none. */

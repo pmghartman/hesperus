@@ -31,6 +31,8 @@ function symbols(items: (vscode.DocumentSymbol | vscode.SymbolInformation)[]): B
   return out;
 }
 
+const hasCode = (s: BridgeSymbol[]): boolean => s.some((x) => x.shape === "type" || x.shape === "method" || hasCode(x.children));
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const rel = (repo: string, uri: vscode.Uri) => {
   const p = path.relative(repo, uri.fsPath).split(path.sep).join("/");
@@ -38,7 +40,11 @@ const rel = (repo: string, uri: vscode.Uri) => {
 };
 
 /** One SCIP index of `files` from the editor's language servers. `report` gets progress text. */
-export async function editorIndex(repo: string, lang: string, files: string[], report: (s: string) => void): Promise<Index> {
+export async function editorIndex(
+  repo: string, lang: string, files: string[], report: (s: string) => void,
+  /** `patience`: seconds to wait for the first answer. `needCode`: refuse a language the server only outlines as data. */
+  opts: { patience: number; needCode: boolean } = { patience: 90, needCode: false },
+): Promise<Index> {
   const docs = new Map<string, vscode.Uri>(files.map((f) => [f, vscode.Uri.file(path.join(repo, f))]));
   const loaded: BridgeFile[] = [];
   let answered = false;
@@ -47,7 +53,7 @@ export async function editorIndex(repo: string, lang: string, files: string[], r
     const doc = await vscode.workspace.openTextDocument(f[1]);
     // A server that is still starting answers with nothing; wait for the first answer, not for every file.
     let syms: (vscode.DocumentSymbol | vscode.SymbolInformation)[] | undefined;
-    for (let t = 0; t < (answered ? 1 : 90); t++) {
+    for (let t = 0; t < (answered ? 1 : opts.patience); t++) {
       syms = await vscode.commands.executeCommand<(vscode.DocumentSymbol | vscode.SymbolInformation)[]>("vscode.executeDocumentSymbolProvider", f[1]);
       if (syms?.length) break;
       await sleep(1000);
@@ -56,6 +62,7 @@ export async function editorIndex(repo: string, lang: string, files: string[], r
     loaded.push({ path: f[0], language: lang, text: doc.getText(), symbols: symbols(syms ?? []) });
   }
   if (!answered) throw new Error(`No language server answered for ${lang} files. Install the editor's extension for the language (C/C++, C#, Rust analyzer, Dart) and reload.`);
+  if (opts.needCode && !loaded.some((f) => hasCode(f.symbols))) throw new Error(`The editor outlines ${lang} files but finds no functions or types in them.`);
   let n = 0;
   return bridge(loaded, async (d): Promise<BridgeRef[]> => {
     if (++n % 25 === 0) report(`Finding references ${n}…`);

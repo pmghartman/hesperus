@@ -2,7 +2,7 @@
 (() => {
   const vs = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
-  const LANG = { go: "Go", javascript: "JavaScript / TypeScript", rust: "Rust", csharp: "C#", cpp: "C / C++", dart: "Dart / Flutter" };
+  const LANG = { go: "Go", javascript: "JavaScript / TypeScript", rust: "Rust", csharp: "C#", cpp: "C / C++", dart: "Dart / Flutter", python: "Python", java: "Java", kotlin: "Kotlin", php: "PHP", ruby: "Ruby" };
   for (const id of ["open", "reindex", "collapse", "fit"]) $(id).onclick = () => vs.postMessage({ type: id });
   for (const c of document.querySelectorAll("input[data-kind]"))
     c.onchange = () => vs.postMessage({ type: "kind", kind: c.dataset.kind });
@@ -85,6 +85,8 @@
     for (const l of m.languages)
       add(ul, LANG[l.id] ?? l.id, `${l.files.toLocaleString()} files`, `${l.editor.name} extension${l.installed ? "" : " · not installed"}`, !l.installed);
     if (!m.languages.length) add(ul, "No supported language found", "");
+    for (const g of m.generic)
+      add(ul, `.${g.ext} files`, `${g.files.toLocaleString()} files`, "Generic: symbols and references from the editor, calls are may");
     if (m.other) add(ul, "Other, not analyzed", `${m.other.toLocaleString()} files`);
 
     const miss = $("missing");

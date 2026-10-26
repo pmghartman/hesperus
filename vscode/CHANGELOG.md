@@ -3,7 +3,8 @@
 ## Unreleased
 
 - Symbols and references now come from the editor's language servers, per language. SCIP indexers, their downloads and the `hesperus` CLI are removed.
-- Rust, C#, C/C++ and Dart/Flutter support, alongside Go and JavaScript/TypeScript.
+- Rust, C#, C/C++, Dart/Flutter, Python, Java, Kotlin, PHP and Ruby support, alongside Go and JavaScript/TypeScript.
+- Generic fallback for any other language the editor has a server for: definitions and references, with `may` call edges.
 - A missing language extension is offered for install; if skipped or silent, that language's files appear as unindexed nodes (a sidebar toggle) and the rest of the repo still builds.
 
 ## 0.1.0

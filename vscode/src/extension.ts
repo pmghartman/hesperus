@@ -4,7 +4,7 @@ import * as path from "node:path";
 import * as aggregate from "./core/aggregate";
 import { EdgeKind, Graph, GraphNode } from "./core/ir";
 import { layout } from "./layout";
-import { index, LangResult, load, scan, Scan, sourceFiles, status, unindexedLanguages } from "./engine";
+import { genericFiles, index, LangResult, load, scan, Scan, sourceFiles, status, unindexedLanguages } from "./engine";
 import { editorIndex, ensureExtension, hasExtension, installExtension } from "./editor";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -116,6 +116,17 @@ class Hesperus {
             results.push({ lang: l.id, error: msg(e) });
           }
         }
+        // Files no frontend owns: kept when the editor has a language server that finds code in them.
+        // Definitions and references only, so their calls are `may` edges; silence just leaves them out.
+        for (const g of this.scanned.generic) {
+          try {
+            this.setStatus({ state: "indexing", label: `.${g.ext}: asking the editor…`, reason });
+            const ix = await editorIndex(repo, "generic", genericFiles(repo, g.ext), (s) => this.setStatus({ state: "indexing", label: `.${g.ext}: ${s}`, reason }), { patience: 4, needCode: true });
+            results.push({ lang: `generic:${g.ext}`, index: ix });
+          } catch (e) {
+            this.log.appendLine(`.${g.ext}: ${msg(e)}`);
+          }
+        }
         await index(repo, results);
         this.graph = undefined;
         this.expanded.clear();
@@ -163,6 +174,7 @@ class Hesperus {
       unindexed: this.unindexed,
       repo: this.folder?.name ?? null,
       languages: (this.scanned?.languages ?? []).map((l) => ({ ...l, installed: hasExtension(l.editor.id) })),
+      generic: this.scanned?.generic ?? [],
       other: this.scanned?.other_files ?? 0,
       missing: this.graph ? unindexedLanguages(this.graph).map((m) => ({ ...m, installed: hasExtension(m.editor.id) })) : [],
       machines: this.machines,
