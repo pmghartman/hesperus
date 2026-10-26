@@ -107,7 +107,7 @@ function span(lines: string[], s: Span, enclosing?: Span): Pick<Occurrence, "ran
 }
 
 /** Runs `fn` over `xs`, `n` at a time; results keep input order. */
-async function pool<T, R>(xs: T[], n: number, fn: (x: T) => Promise<R>): Promise<R[]> {
+export async function pool<T, R>(xs: T[], n: number, fn: (x: T) => Promise<R>): Promise<R[]> {
   const out = new Array<R>(xs.length);
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(n, xs.length) }, async () => {

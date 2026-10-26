@@ -2,8 +2,9 @@
 // languages whose pinned SCIP indexer cannot run here. Results depend on the servers installed, so the
 // cache header records `editor-lsp` as the indexer; core stays editor-free and only reads the index.
 import * as vscode from "vscode";
+import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { BridgeFile, BridgeRef, BridgeSymbol, bridge, Span } from "./core/bridge";
+import { BridgeFile, BridgeRef, BridgeSymbol, bridge, pool, Span } from "./core/bridge";
 import { Index } from "./core/scip";
 import type { Language } from "./engine";
 
@@ -46,21 +47,23 @@ export async function editorIndex(
   opts: { patience: number; needCode: boolean } = { patience: 90, needCode: false },
 ): Promise<Index> {
   const docs = new Map<string, vscode.Uri>(files.map((f) => [f, vscode.Uri.file(path.join(repo, f))]));
-  const loaded: BridgeFile[] = [];
+  const outline = async (f: string) =>
+    (await vscode.commands.executeCommand<(vscode.DocumentSymbol | vscode.SymbolInformation)[]>("vscode.executeDocumentSymbolProvider", docs.get(f)!)) ?? [];
+  // A server that is still starting answers with nothing: wait for the first answer from a few files,
+  // not for every empty one.
+  const probe = files.slice(0, 8);
   let answered = false;
-  for (const [i, f] of [...docs].entries()) {
-    report(`Reading symbols ${i + 1}/${docs.size}…`);
-    const doc = await vscode.workspace.openTextDocument(f[1]);
-    // A server that is still starting answers with nothing; wait for the first answer, not for every file.
-    let syms: (vscode.DocumentSymbol | vscode.SymbolInformation)[] | undefined;
-    for (let t = 0; t < (answered ? 1 : opts.patience); t++) {
-      syms = await vscode.commands.executeCommand<(vscode.DocumentSymbol | vscode.SymbolInformation)[]>("vscode.executeDocumentSymbolProvider", f[1]);
-      if (syms?.length) break;
-      await sleep(1000);
-    }
-    if (syms?.length) answered = true;
-    loaded.push({ path: f[0], language: lang, text: doc.getText(), symbols: symbols(syms ?? []) });
+  for (let t = 0; t < opts.patience && !answered; t++) {
+    report(t === 0 ? "Waiting for the language server…" : `Waiting for the language server… ${t}s`);
+    answered = (await Promise.all(probe.map(outline))).some((s) => s.length > 0);
+    if (!answered) await sleep(1000);
   }
+  let read = 0;
+  const loaded: BridgeFile[] = await pool(files, 12, async (f) => {
+    const [text, syms] = answered ? await Promise.all([fs.readFile(path.join(repo, f), "utf8"), outline(f)]) : ["", []];
+    if (++read % 20 === 0) report(`Reading symbols ${read}/${files.length}…`);
+    return { path: f, language: lang, text, symbols: symbols(syms) };
+  });
   if (!answered) throw new Error(`No language server answered for ${lang} files. Install the editor's extension for the language (C/C++, C#, Rust analyzer, Dart) and reload.`);
   if (opts.needCode && !loaded.some((f) => hasCode(f.symbols))) throw new Error(`The editor outlines ${lang} files but finds no functions or types in them.`);
   let n = 0;
@@ -74,7 +77,7 @@ export async function editorIndex(
       if (p !== undefined) out.push({ path: p, span: span(l.range) });
     }
     return out;
-  });
+  }, 16);
 }
 
 /** The language's editor extension, installed and active; offers to install it when missing. */
