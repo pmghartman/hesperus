@@ -14,7 +14,10 @@ export interface Box { id: string; x: number; y: number; w: number; h: number; n
  *  filtering; each rollup keeps its own direction. `from` is the end most rollups leave.
  *  `points` is an orthogonal polyline: start, bend points, end. */
 export interface Wire { from: string; to: string; rollups: Rollup[]; points: { x: number; y: number }[]; labels: string[] }
-export interface Layout { width: number; height: number; boxes: Box[]; wires: Wire[] }
+export interface Layout { width: number; height: number; boxes: Box[]; wires: Wire[]; /** Wires left out to keep layout fast: the lightest ones. */ omitted: number }
+
+/** ELK's layered layout grows steeply with wires; past this the picture is a hairball anyway. */
+export const MAX_WIRES = 200;
 
 // Sizes come from character counts, not measured text, so layout never depends on fonts.
 // Must match media/graph.js. PAD holds the chevron, the kind mark, and margins.
@@ -125,6 +128,14 @@ export async function layout(graph: Graph, view: View, opts: { flow?: boolean } 
     const [from, to] = score(b) > score(a) ? [b, a] : [a, b];
     pairs.set(from + "\0" + to, rs.sort((x, y) => cmpStr(x.kind, y.kind) || (x.from === from ? 0 : 1) - (y.from === from ? 0 : 1)));
   }
+  let omitted = 0;
+  if (pairs.size > MAX_WIRES) {
+    const weight = (rs: Rollup[]) => rs.reduce((s, r) => s + r.weight, 0);
+    const keep = [...pairs].sort(([ka, a], [kb, b]) => weight(b) - weight(a) || cmpStr(ka, kb)).slice(0, MAX_WIRES);
+    omitted = pairs.size - keep.length;
+    pairs.clear();
+    for (const [k, rs] of keep) pairs.set(k, rs);
+  }
   const outside = (id: string) => ["external_package", "external"].includes(byId.get(id)?.kind ?? "");
   const stubs = new Map<string, Stub[]>();
   const keys = [...pairs.keys()].sort(cmpStr).filter((k) => {
@@ -214,5 +225,5 @@ export async function layout(graph: Graph, view: View, opts: { flow?: boolean } 
     return [{ from, to, rollups: pairs.get(k)!, points, labels: [...labels].sort(cmpStr) }];
   });
   boxes.sort((a, b) => cmpStr(a.id, b.id));
-  return { width: out.width ?? 0, height: out.height ?? 0, boxes, wires };
+  return { width: out.width ?? 0, height: out.height ?? 0, boxes, wires, omitted };
 }

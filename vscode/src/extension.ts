@@ -3,9 +3,12 @@ import { randomBytes } from "node:crypto";
 import * as path from "node:path";
 import * as aggregate from "./core/aggregate";
 import { EdgeKind, Graph, GraphNode } from "./core/ir";
-import { layout } from "./layout";
+import { layout, MAX_WIRES } from "./layout";
 import { FRONTENDS, genericFiles, index, LangResult, load, scan, Scan, sourceFiles, status, unindexedLanguages } from "./engine";
 import { editorIndex, ensureExtension, hasExtension, installExtension } from "./editor";
+
+/** More boxes than this stalls the layout for minutes. */
+const MAX_BOXES = 500;
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -154,8 +157,9 @@ class Hesperus {
       const ext = this.external ? all : aggregate.withoutExternal(this.graph, all);
       const v = this.unindexed ? ext : aggregate.withoutUnindexed(this.graph, ext);
       this.isolated = v.isolated ?? 0;
-      this.postSidebar();
-      this.panel.webview.postMessage({ type: "layout", layout: await layout(this.graph, v, { flow: this.flow }), hidden: [...this.hidden], ...extra });
+      const laid = await layout(this.graph, v, { flow: this.flow });
+      this.postSidebar(laid.omitted ? `Drawing the ${MAX_WIRES} heaviest wires; ${laid.omitted} lighter ones are left out.` : undefined);
+      this.panel.webview.postMessage({ type: "layout", layout: laid, hidden: [...this.hidden], ...extra });
     } catch (e) {
       this.setStatus({ state: "error", label: "Error", detail: msg(e) });
     }
@@ -265,6 +269,15 @@ class Hesperus {
     }
   }
 
+  /** True, with a note in the sidebar, when the open boxes would draw more than the layout can handle. */
+  private tooBig() {
+    if (!this.graph) return false;
+    const n = aggregate.view(this.graph, this.expanded, this.opts).nodes.length;
+    if (n <= MAX_BOXES) return false;
+    this.postSidebar(`Opening that would draw ${n.toLocaleString()} boxes; the limit is ${MAX_BOXES}. Close something first.`);
+    return true;
+  }
+
   /** Whether `id` (a node or a tier) lies beneath container `c`. Tier ids are `tier:<parent>#<key>`. */
   private inside(id: string, c: string) {
     const up = (x: string) => (aggregate.isGroup(x) ? x.slice(5, x.lastIndexOf("#")) : this.parent.get(x));
@@ -278,15 +291,19 @@ class Hesperus {
       if (this.status.state === "ready") await this.render();
       else this.panel?.webview.postMessage({ type: "status", status: this.status });
     } else if (m.type === "toggle" && m.id) {
+      const before = new Set(this.expanded);
       this.expanded.has(m.id) ? this.expanded.delete(m.id) : this.expanded.add(m.id);
+      if (this.tooBig()) this.expanded = before;
       await this.render({ anchor: m.id });
     } else if (m.type === "zoom") {
+      const before = new Set(this.expanded);
       // Semantic zoom. Closing a box forgets what was open inside it, so reopening shows one level.
       for (const id of m.open ?? []) this.expanded.add(id);
       for (const id of m.close ?? []) {
         this.expanded.delete(id);
         for (const x of [...this.expanded]) if (this.inside(x, id)) this.expanded.delete(x);
       }
+      if (this.tooBig()) this.expanded = before;
       await this.render({ anchor: m.anchor, seq: m.seq });
     } else if (m.type === "open" && folder) {
       const n = this.graph?.nodes.find((x) => x.id === m.id);
