@@ -3,6 +3,7 @@
 # published to the VS Code Marketplace through Microsoft Entra ID, then tagged and released on GitHub;
 # then only the two newest releases and runs kept
 # the version lives in tags only; files are stamped at build time, never committed
+# also published to Open VSX with the secret OVSX_TOKEN
 # needs vars AZURE_CLIENT_ID (a user-assigned managed identity) and AZURE_TENANT_ID, and the
 # `marketplace` environment
 name: release
@@ -157,6 +158,10 @@ jobs:
       - run: |
           V=$(node -p "require('./vscode/package.json').devDependencies['@vscode/vsce']")
           npx --yes "@vscode/vsce@$V" publish --azure-credential --packagePath dist/*.vsix
+      # Open VSX second: the VS Code Marketplace stays the gate. Needs the secret OVSX_TOKEN
+      - env:
+          OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
+        run: npx --yes ovsx@0.10.1 publish dist/*.vsix
 
   release:
     needs: [version, publish]
