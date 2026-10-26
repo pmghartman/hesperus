@@ -27,6 +27,14 @@ export interface Group {
 /** `nodes` holds graph ids and the ids of visible groups. */
 export interface View { nodes: string[]; rollups: Rollup[]; groups: Group[] }
 
+/** `v` without nodes outside the repo, their group, and the rollups that reach them. */
+export function withoutExternal(g: Graph, v: View): View {
+  const out = new Set(g.nodes.filter((n) => n.kind === "external_package" || n.kind === "external").map((n) => n.id));
+  const groups = v.groups.filter((gr) => !gr.members.every((m) => out.has(m)));
+  for (const gr of v.groups) if (!groups.includes(gr)) out.add(gr.id);
+  return { nodes: v.nodes.filter((id) => !out.has(id)), rollups: v.rollups.filter((r) => !out.has(r.from) && !out.has(r.to)), groups };
+}
+
 /** A state machine: a field or variable with `state` children. */
 export interface Machine { id: string; name: string; states: number; transitions: number }
 
@@ -60,10 +68,35 @@ export function parents(g: Graph): Map<string, string> {
   return m;
 }
 
+/** Kinds that are code organisation rather than logic. */
+const STRUCTURE = new Set(["directory", "package", "file"]);
+
+export interface ViewOptions {
+  /** Draw files. Off by default: the logic view keeps packages and directories as boundaries
+   *  and shows the types and functions in them directly. */
+  files?: boolean;
+}
+
+/** Nodes views pass through: never drawn, opened with their parent. Files (unless asked for),
+ *  and structure that is its parent's only child (a module's one file), which adds a level and
+ *  no grouping. Top-level nodes are always drawn, so every edge has a box to land on. */
+export function passThrough(g: Graph, par: Map<string, string> = parents(g), opts: ViewOptions = {}): (id: string) => boolean {
+  const kind = new Map(g.nodes.map((n) => [n.id, n.kind]));
+  const kids = new Map<string, number>();
+  for (const e of g.edges) if (e.kind === "contains") kids.set(e.from, (kids.get(e.from) ?? 0) + 1);
+  return (id) => {
+    const k = kind.get(id) ?? "";
+    const p = par.get(id);
+    if (!STRUCTURE.has(k) || !kids.get(id) || p === undefined || p === REPO_ID) return false;
+    return (k === "file" && !opts.files) || kids.get(p) === 1;
+  };
+}
+
 /** Visible nodes and rollups when `expanded` containers show their children.
  *  The repo root is always expanded. */
-export function view(g: Graph, expanded: ReadonlySet<string>): View {
+export function view(g: Graph, expanded: ReadonlySet<string>, opts: ViewOptions = {}): View {
   const par = parents(g);
+  const through = passThrough(g, par, opts);
   const memo = new Map<string, string>();
   const rep = (id: string): string => {
     const hit = memo.get(id);
@@ -76,13 +109,15 @@ export function view(g: Graph, expanded: ReadonlySet<string>): View {
     chain.reverse(); // root first
     let cur = chain[0];
     for (const x of chain.slice(1)) {
-      if (cur === REPO_ID || expanded.has(cur)) cur = x;
+      if (cur === REPO_ID || expanded.has(cur) || through(cur)) cur = x;
       else break;
     }
+    // A passed-through node's own edges (module-level code) belong to its drawn parent.
+    while (cur !== REPO_ID && through(cur)) cur = par.get(cur) ?? REPO_ID;
     memo.set(id, cur);
     return cur;
   };
-  const groups = tiers(g, par, rep, expanded);
+  const groups = tiers(g, par, rep, expanded, through);
   const tierOf = new Map<string, Group>();
   for (const gr of groups) for (const m of gr.members) tierOf.set(m, gr);
   // A collapsed tier stands for everything beneath its members; the outermost one wins.
@@ -99,7 +134,7 @@ export function view(g: Graph, expanded: ReadonlySet<string>): View {
     memo2.set(r, out);
     return out;
   };
-  const visible = new Set(g.nodes.filter((n) => n.id !== REPO_ID && rep(n.id) === n.id).map((n) => n.id));
+  const visible = new Set(g.nodes.filter((n) => n.id !== REPO_ID && rep(n.id) === n.id && !through(n.id)).map((n) => n.id));
   const drawn = (c: string) => c === REPO_ID || (visible.has(c) && rep2(c) === c);
   const live = groups.filter((gr) => drawn(gr.parent));
   const shown = new Set<string>();
@@ -122,13 +157,38 @@ export function view(g: Graph, expanded: ReadonlySet<string>): View {
   return { nodes, rollups, groups: live };
 }
 
+/** The first view opens down to logic instead of showing one box per top-level folder. */
+export const OVERVIEW_NODES = 60;
+
+/** Containers to open for the first view: whole levels at a time, so every part of the repo is
+ *  shown to the same depth, while the view stays within `budget` nodes. Outside packages stay shut. */
+export function overview(g: Graph, budget = OVERVIEW_NODES, opts: ViewOptions = {}): Set<string> {
+  const hasKids = new Set(g.edges.filter((e) => e.kind === "contains").map((e) => e.from));
+  const outside = new Set(g.nodes.filter((n) => n.kind === "external_package" || n.kind === "external").map((n) => n.id));
+  let open = new Set<string>(), v = view(g, open, opts);
+  for (;;) {
+    const level = v.nodes.filter((id) => !open.has(id) && !outside.has(id) && (hasKids.has(id) || v.groups.some((gr) => gr.id === id && !gr.members.every((m) => outside.has(m)))));
+    if (!level.length) return open;
+    const next = new Set([...open, ...level]);
+    const nv = view(g, next, opts);
+    if (nv.nodes.length > budget) return open;
+    [open, v] = [next, nv];
+  }
+}
+
 /** Tiers for every expanded, visible container with more than GROUP_OVER children.
  *  Tier n holds siblings whose longest chain of in-container callers is n; cycles share a
  *  tier. Siblings with no edges to each other form their own group; external packages too. */
-function tiers(g: Graph, par: Map<string, string>, rep: (id: string) => string, expanded: ReadonlySet<string>): Group[] {
+function tiers(g: Graph, par: Map<string, string>, rep: (id: string) => string, expanded: ReadonlySet<string>, through: (id: string) => boolean): Group[] {
+  // Children as drawn: a passed-through node's children belong to its nearest drawn ancestor.
+  const drawnParent = (id: string) => {
+    let p = par.get(id);
+    while (p !== undefined && p !== REPO_ID && through(p)) p = par.get(p);
+    return p;
+  };
   const kids = new Map<string, string[]>();
   for (const n of g.nodes) {
-    const p = par.get(n.id);
+    const p = through(n.id) ? undefined : drawnParent(n.id);
     if (p !== undefined) (kids.get(p) ?? kids.set(p, []).get(p)!).push(n.id);
   }
   const kindOf = new Map(g.nodes.map((n) => [n.id, n.kind]));
@@ -152,7 +212,7 @@ function tiers(g: Graph, par: Map<string, string>, rep: (id: string) => string, 
     const lift = (id: string): string | null => {
       const hit = childOf.get(id);
       if (hit !== undefined) return hit;
-      const p = par.get(id);
+      const p = drawnParent(id);
       const r = p === undefined ? null : p === c ? id : lift(p);
       childOf.set(id, r);
       return r;

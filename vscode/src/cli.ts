@@ -2,7 +2,7 @@
 // `hesperus`: thin wrapper over the engine; also the test harness.
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { view } from "./core/aggregate";
+import { overview, OVERVIEW_NODES, view } from "./core/aggregate";
 import { pretty, toJson } from "./core/ir";
 import { CACHE_DIR, index, load, status, tools } from "./engine";
 import { PKG_ROOT } from "./root";
@@ -13,13 +13,15 @@ const USAGE = `usage:
   hesperus tools <repo> [--tools-dir <dir>]          languages found and the indexers they need, as JSON
   hesperus status <repo> [--lockfile <rel-path>]...  cache state as JSON: ready, stale, or missing
   hesperus graph <repo> [--lockfile <rel-path>]...   print the cached graph
-  hesperus view  <repo> [--expand <node-id>]...      rollups for an expansion state
+  hesperus view  <repo> [--expand <node-id>]... [--files] [--overview]
+                                                     rollups for an expansion state; files are passed
+                                                     through unless --files; --overview opens the first view
   hesperus schema                                    print the graph JSON schema`;
 
-interface Opts { positional: string[]; scip: string[]; toolsDir?: string; lockfiles: string[]; expand: Set<string> }
+interface Opts { positional: string[]; scip: string[]; toolsDir?: string; lockfiles: string[]; expand: Set<string>; files: boolean; overview: boolean }
 
 function parse(args: string[]): Opts {
-  const o: Opts = { positional: [], scip: [], lockfiles: [], expand: new Set() };
+  const o: Opts = { positional: [], scip: [], lockfiles: [], expand: new Set(), files: false, overview: false };
   for (let i = 0; i < args.length; i++) {
     const a = args[i];
     const val = () => {
@@ -30,6 +32,8 @@ function parse(args: string[]): Opts {
     else if (a === "--tools-dir") o.toolsDir = val();
     else if (a === "--lockfile") o.lockfiles.push(val());
     else if (a === "--expand") o.expand.add(val());
+    else if (a === "--files") o.files = true;
+    else if (a === "--overview") o.overview = true;
     else if (a.startsWith("--")) throw new Error(`unknown flag ${a}\n${USAGE}`);
     else o.positional.push(a);
   }
@@ -60,8 +64,12 @@ async function run(args: string[]): Promise<string> {
       return pretty(tools(repoArg(o), o.toolsDir));
     case "graph":
       return toJson(load(repoArg(o), o.lockfiles));
-    case "view":
-      return pretty(view(load(repoArg(o), o.lockfiles), o.expand));
+    case "view": {
+      const g = load(repoArg(o), o.lockfiles);
+      const opts = { files: o.files };
+      const open = o.overview ? new Set([...overview(g, OVERVIEW_NODES, opts), ...o.expand]) : o.expand;
+      return pretty(view(g, open, opts));
+    }
     default:
       throw new Error(USAGE);
   }

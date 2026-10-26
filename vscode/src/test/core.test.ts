@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GROUP_OVER, view } from "../core/aggregate";
+import { GROUP_OVER, overview, view, withoutExternal } from "../core/aggregate";
 import { canonicalize, cmpStr, EdgeKind, GraphEdge, GraphNode, newGraph } from "../core/ir";
 import { directories } from "../core/build";
 import { decode, parseSymbol, prefix } from "../core/scip";
@@ -52,6 +52,49 @@ test("crowded containers get dependency layers", () => {
   const open = view(g, new Set(["D", v.groups[1].id]));
   assert.ok(open.nodes.includes("P01") && open.nodes.includes(v.groups[1].id));
   assert.deepEqual(view(g, new Set(["D"])), v);
+});
+
+test("a module's only file is passed through, not drawn", () => {
+  const g = newGraph();
+  g.nodes = [n("repo"), { ...n("M"), kind: "package" }, { ...n("F"), kind: "file" }, n("f1"), n("f2"), { ...n("X"), kind: "external_package" }];
+  g.edges = [e("repo", "M", "contains"), e("repo", "X", "contains"), e("M", "F", "contains"), e("F", "f1", "contains"), e("F", "f2", "contains"), e("f1", "f2", "call"), e("f1", "X", "call")];
+  canonicalize(g);
+  assert.deepEqual(view(g, new Set()).nodes, ["M", "X"]);
+  const v = view(g, new Set(["M"]));
+  assert.deepEqual(v.nodes, ["M", "X", "f1", "f2"]);
+  const w = withoutExternal(g, v);
+  assert.deepEqual(w.nodes, ["M", "f1", "f2"]);
+  assert.deepEqual(w.rollups.map((r) => [r.from, r.to]), [["f1", "f2"]]);
+});
+
+test("the logic view passes through files; tiers span a package's files", () => {
+  const g = newGraph();
+  const fns = Array.from({ length: GROUP_OVER + 2 }, (_, i) => `f${String(i).padStart(2, "0")}`);
+  g.nodes = [n("repo"), { ...n("P"), kind: "package" }, { ...n("F1"), kind: "file" }, { ...n("F2"), kind: "file" }, ...fns.map(n)];
+  g.edges = [e("repo", "P", "contains"), e("P", "F1", "contains"), e("P", "F2", "contains"), e("F1", "f00", "call")];
+  fns.forEach((f, i) => g.edges.push(e(i % 2 ? "F2" : "F1", f, "contains")));
+  g.edges.push(e("f00", "f01", "call"));
+  canonicalize(g);
+  const v = view(g, new Set(["P"]));
+  assert.ok(v.groups.length > 0 && v.groups.every((gr) => gr.parent === "P"));
+  assert.deepEqual(v.groups.flatMap((gr) => gr.members).sort(cmpStr), fns);
+  assert.ok(!v.nodes.includes("F1") && !v.nodes.includes("F2"));
+  // A file's own edges belong to its drawn parent.
+  assert.ok(v.rollups.every((r) => v.nodes.includes(r.from) && v.nodes.includes(r.to)));
+  const withFiles = view(g, new Set(["P"]), { files: true });
+  assert.deepEqual(withFiles.nodes, ["F1", "F2", "P"]);
+});
+
+test("overview opens whole levels within its budget", () => {
+  const g = newGraph();
+  g.nodes = ["repo", "A", "B", "a1", "a2", "b1", "x1", "x2", "x3"].map(n);
+  g.edges = [e("repo", "A", "contains"), e("repo", "B", "contains"), e("A", "a1", "contains"), e("A", "a2", "contains"), e("B", "b1", "contains")];
+  g.edges.push(e("a1", "x1", "contains"), e("a1", "x2", "contains"), e("a1", "x3", "contains"));
+  canonicalize(g);
+  assert.deepEqual([...overview(g, 5)], ["A", "B"]);
+  assert.deepEqual([...overview(g, 8)], ["A", "B", "a1"]);
+  // Opening only A would fit, but levels open whole or not at all.
+  assert.deepEqual([...overview(g, 3)], []);
 });
 
 test("parses method symbol", () => {

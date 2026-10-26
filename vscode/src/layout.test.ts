@@ -103,3 +103,24 @@ test("wires from a container into its own descendants end on their boxes", async
     assert.ok(off(w.points.at(-1)!, box(w.to)) < 1, `${w.to} end`);
   }
 });
+
+test("calls out of the repo are named on the caller, not routed", async () => {
+  const h: Graph = {
+    schema_version: 1,
+    nodes: [n("repo"), n("A", "package"), n("a1"), n("a2"), { id: "X", kind: "external_package", name: "lib" }],
+    edges: [
+      { from: "repo", to: "A", kind: "contains", provenance: "resolved" },
+      { from: "repo", to: "X", kind: "contains", provenance: "resolved" },
+      { from: "A", to: "a1", kind: "contains", provenance: "resolved" },
+      { from: "A", to: "a2", kind: "contains", provenance: "resolved" },
+      { from: "a1", to: "a2", kind: "call", provenance: "resolved" },
+      { from: "a1", to: "X", kind: "call", provenance: "resolved" },
+    ],
+  };
+  const r = (from: string, to: string, i: number) => ({ from, to, kind: "call" as const, weight: 1, resolved: 1, may: 0, unresolved: 0, edges: [i] });
+  const l = await layout(h, { nodes: ["A", "X", "a1", "a2"], rollups: [r("a1", "X", 5), r("a1", "a2", 4)], groups: [] });
+  assert.deepEqual(l.wires.map((w) => [w.from, w.to]), [["a1", "a2"]]);
+  const a1 = l.boxes.find((x) => x.id === "a1")!;
+  assert.deepEqual(a1.ext?.map((x) => x.name), ["lib"]);
+  assert.equal(a1.parent, "A");
+});

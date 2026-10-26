@@ -6,6 +6,8 @@
   for (const id of ["open", "reindex", "collapse", "fit"]) $(id).onclick = () => vs.postMessage({ type: id });
   for (const c of document.querySelectorAll("input[data-kind]"))
     c.onchange = () => vs.postMessage({ type: "kind", kind: c.dataset.kind });
+  $("external").onchange = () => vs.postMessage({ type: "external" });
+  $("files").onchange = () => vs.postMessage({ type: "files" });
   $("find").onsubmit = (e) => {
     e.preventDefault();
     vs.postMessage({ type: "find", query: $("q").value });
@@ -28,6 +30,8 @@
     $("detail").className = s.state === "error" ? "err" : "";
     for (const id of ["reindex", "collapse"]) $(id).disabled = busy;
     for (const c of document.querySelectorAll("input[data-kind]")) c.checked = !m.hidden.includes(c.dataset.kind);
+    $("external").checked = m.external;
+    $("files").checked = m.files;
     if (m.found !== undefined) $("found").textContent = m.found;
 
     // Fields and variables with states: a click expands one in place and centres on it.

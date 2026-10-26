@@ -2,17 +2,21 @@ import ELK from "elkjs/lib/elk.bundled.js";
 import { Rollup, View } from "./core/aggregate";
 import { cmpStr, Graph, GraphNode } from "./core/ir";
 
-export interface Box { id: string; x: number; y: number; w: number; h: number; node: GraphNode; container: boolean; expandable: boolean }
+/** Rollups between a box and one node outside the repo. */
+export interface Stub { id: string; name: string; rollups: Rollup[] }
+/** `parent` is the drawn box this one sits in, if any. `ext` lists the outside nodes a leaf box
+ *  reaches; they are drawn as a line in the box, not wires, since every box calls the standard library. */
+export interface Box { id: string; x: number; y: number; w: number; h: number; node: GraphNode; container: boolean; expandable: boolean; parent?: string; ext?: Stub[] }
 /** All rollups between two nodes share one wire, both directions: returns run against their
  *  calls, and routing them separately sends every one around the outside. Kinds stay listed for
  *  filtering; each rollup keeps its own direction. `from` is the end most rollups leave.
- *  `points` is start, cubic Bézier control triples, end (ELK spline sections). */
+ *  `points` is an orthogonal polyline: start, bend points, end. */
 export interface Wire { from: string; to: string; rollups: Rollup[]; points: { x: number; y: number }[]; labels: string[] }
 export interface Layout { width: number; height: number; boxes: Box[]; wires: Wire[] }
 
 // Sizes come from character counts, not measured text, so layout never depends on fonts.
 // Must match media/graph.js. PAD holds the chevron, the kind mark, and margins.
-const CHAR = 6.6, PAD = 40, MIN_W = 72, MAX_W = 260, LEAF_H = 26;
+const CHAR = 6.6, PAD = 40, MIN_W = 72, MAX_W = 260, LEAF_H = 26, EXT_H = 14;
 export const MAX_CHARS = Math.floor((MAX_W - PAD) / CHAR);
 
 interface ElkNode {
@@ -60,11 +64,17 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
     for (const m of gr.members) parent.set(m, gr.id);
   }
   const visible = new Set(view.nodes);
+  // Nearest drawn ancestor: views pass through some structure without drawing it.
+  const up = (id: string) => {
+    let p = parent.get(id);
+    while (p !== undefined && !visible.has(p)) p = parent.get(p);
+    return p;
+  };
   const kids = new Map<string, string[]>();
   const roots: string[] = [];
   for (const id of [...view.nodes].sort(cmpStr)) {
-    const p = parent.get(id);
-    if (p && visible.has(p)) {
+    const p = up(id);
+    if (p) {
       if (!kids.has(p)) kids.set(p, []);
       kids.get(p)!.push(id);
     } else roots.push(id);
@@ -74,6 +84,11 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
     const node = byId.get(id);
     if (ch)
       return { id, children: ch.map(mk), layoutOptions: { "elk.padding": "[top=38,left=12,bottom=12,right=12]" } };
+    const ext = stubs.get(id);
+    if (ext) {
+      const text = Math.ceil(ext.map((x) => x.name).join(", ").length * CHAR) + 30;
+      return { id, width: Math.max(node ? width(node) : MIN_W, Math.min(MAX_W, text)), height: LEAF_H + EXT_H };
+    }
     return { id, width: node ? width(node) : MIN_W, height: LEAF_H };
   };
   const byPair = new Map<string, Rollup[]>();
@@ -90,11 +105,22 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
     const [from, to] = score(b) > score(a) ? [b, a] : [a, b];
     pairs.set(from + "\0" + to, rs.sort((x, y) => cmpStr(x.kind, y.kind) || (x.from === from ? 0 : 1) - (y.from === from ? 0 : 1)));
   }
-  const keys = [...pairs.keys()].sort(cmpStr);
+  const outside = (id: string) => ["external_package", "external"].includes(byId.get(id)?.kind ?? "");
+  const stubs = new Map<string, Stub[]>();
+  const keys = [...pairs.keys()].sort(cmpStr).filter((k) => {
+    const [from, to] = k.split("\0");
+    if (outside(from) === outside(to)) return true;
+    const [inner, ext] = outside(to) ? [from, to] : [to, from];
+    if (kids.has(inner)) return true;
+    if (!stubs.has(inner)) stubs.set(inner, []);
+    stubs.get(inner)!.push({ id: ext, name: byId.get(ext)!.name, rollups: pairs.get(k)! });
+    return false;
+  });
+  for (const ss of stubs.values()) ss.sort((a, b) => cmpStr(a.name, b.name) || cmpStr(a.id, b.id));
   // Each edge lives in its endpoints' lowest common container.
   const chain = (id: string) => {
     const out: string[] = [];
-    for (let p = parent.get(id); p && visible.has(p); p = parent.get(p)) out.push(p);
+    for (let p = up(id); p; p = up(p)) out.push(p);
     return out;
   };
   const elkEdges = new Map<string, ElkEdge[]>();
@@ -118,15 +144,18 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
       "elk.direction": "RIGHT",
       "elk.randomSeed": "1",
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-      "elk.edgeRouting": "SPLINES",
-      "elk.spacing.nodeNode": "14",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "48",
-      "elk.spacing.edgeNode": "10",
-      "elk.spacing.edgeEdge": "4",
-      "elk.layered.spacing.edgeEdgeBetweenLayers": "4",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "10",
-      // Edges sharing an end share a port, so a busy node fans out from one point.
+      // Orthogonal wires read like a circuit: parallel runs, few crossings, no loops around the outside.
+      "elk.edgeRouting": "ORTHOGONAL",
+      "elk.spacing.nodeNode": "18",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "56",
+      "elk.spacing.edgeNode": "14",
+      "elk.spacing.edgeEdge": "7",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "7",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "14",
+      // Each wire keeps its own port, so every line can be followed end to end.
       "elk.layered.mergeEdges": "true",
+      // Sorted input order breaks ties, so expanding one box moves its neighbours as little as possible.
+      "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
       // Network-simplex placement is ~25x slower on repo-sized views.
       "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
     },
@@ -143,7 +172,7 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
       const node = byId.get(c.id);
       origin.set(c.id, { x, y });
       if (node)
-        boxes.push({ id: c.id, x, y, w: c.width ?? 0, h: c.height ?? 0, node, container: !!c.children, expandable: hasKids.has(c.id) });
+        boxes.push({ id: c.id, x, y, w: c.width ?? 0, h: c.height ?? 0, node, container: !!c.children, expandable: hasKids.has(c.id), ...(n.id === "root" ? {} : { parent: n.id }), ...(stubs.has(c.id) ? { ext: stubs.get(c.id) } : {}) });
       walk(c, x, y);
     }
   };

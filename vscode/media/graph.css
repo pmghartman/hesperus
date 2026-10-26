@@ -22,6 +22,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 .node:hover > rect.body { stroke: var(--accent); }
 .node .name { font-size: 12px; fill: var(--vscode-editor-foreground); }
 .node .kind { font-size: 11px; fill: var(--muted); }
+.node .ext { font-size: 10px; fill: var(--muted); }
 .node.container > rect.body { fill: var(--group); }
 .node.container .name { font-weight: 600; }
 .node .rule { stroke: var(--line); stroke-width: 1; }
@@ -64,6 +65,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 .arrow.unresolved { fill: var(--unresolved); }
 .hit { fill: none; stroke: transparent; stroke-width: 8; pointer-events: stroke; }
 
+/* Relayout: boxes slide into place, then new boxes and the rerouted wires fade in. */
+.node { transition: opacity .2s; }
+.node.enter { opacity: 0; }
+#scene > .wires { transition: opacity .2s; }
+#scene.moving > .wires { opacity: 0; transition: none; }
+#scene.moving { pointer-events: none; }
+
 /* Hover focus: everything not touching the hovered node fades */
 .focus .node:not(.hl) { opacity: .3; }
 .focus .wire:not(.hl) { stroke-opacity: .05; }
@@ -76,6 +84,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 #tools button:hover { background: var(--vscode-toolbar-hoverBackground); }
 #tools button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 #tools svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+#tools #auto[aria-pressed="true"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
+#tools .sep { width: 1px; height: 16px; margin: 0 3px; background: var(--border); }
 #zoom { min-width: 38px; text-align: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 #msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; white-space: pre-wrap; color: var(--muted); font-size: 13px; pointer-events: none; }
 #msg.err { color: var(--vscode-errorForeground); font-family: var(--vscode-editor-font-family); font-size: 12px; text-align: left; }

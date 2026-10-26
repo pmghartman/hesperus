@@ -43,6 +43,8 @@ The analyzed language is independent of the implementation language. Many OOP la
 - Container edges are weighted rollups of the underlying edges. Expanding a node splits its edges in place. Every rollup is inspectable down to the edges beneath it. Aggregation rules live once in core and every consumer shares them.
 - Async, futures, and callbacks resolve through types where possible. Function values passed as arguments are flow, and calls through them get `may` edges.
 - Initial view is the whole repo flow graph. Zooming refines nodes and edges. Terminal nodes are the definitions in source.
+- The default view is the logic view: files are passed through, so packages and directories are boundaries around types and functions (`passThrough` in `core/aggregate.ts`; the sidebar's Files box and `view --files` draw them). Views also pass through a directory, package, or file that is its parent's only child. Top-level nodes are always drawn. The first view opens whole levels while it stays within `OVERVIEW_NODES` (`overview`). Rollups to nodes outside the repo are drawn as a named line on the calling box, not routed wires; the sidebar can drop them (`withoutExternal`).
+- Semantic zoom (webview): zooming in opens the box under the cursor once it is large on screen; zooming out closes containers that have shrunk. Wires are routed orthogonally by ELK.
 
 ## Cache
 

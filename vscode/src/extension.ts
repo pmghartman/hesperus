@@ -43,12 +43,17 @@ class Hesperus {
   private machines: aggregate.Machine[] = [];
   private expanded = new Set<string>();
   private hidden = new Set<EdgeKind>();
+  private external = true;
+  private files = false;
   private panel?: vscode.WebviewPanel;
   private sidebar?: vscode.WebviewView;
   private busy?: Promise<void>;
 
   constructor(private ctx: vscode.ExtensionContext) {}
 
+  private get opts(): aggregate.ViewOptions {
+    return { files: this.files };
+  }
   private get folder() {
     return vscode.workspace.workspaceFolders?.[0];
   }
@@ -119,6 +124,7 @@ class Hesperus {
       if (!this.graph) {
         this.graph = JSON.parse(await cli(["graph", repo])) as Graph;
         this.parent = new Map(this.graph.edges.filter((e) => e.kind === "contains").map((e) => [e.to, e.from]));
+        this.expanded = aggregate.overview(this.graph, aggregate.OVERVIEW_NODES, this.opts);
         this.machines = aggregate.machines(this.graph);
       }
       this.setStatus({ state: "ready", label: "Ready", nodes: this.graph.nodes.length, edges: this.graph.edges.length });
@@ -128,11 +134,12 @@ class Hesperus {
     }
   }
 
-  private async render(extra: { anchor?: string; focus?: string } = {}) {
+  private async render(extra: { anchor?: string; focus?: string; seq?: number } = {}) {
     const folder = this.folder;
     if (!this.panel || !this.graph || !folder) return;
     try {
-      const v = aggregate.view(this.graph, this.expanded);
+      const all = aggregate.view(this.graph, this.expanded, this.opts);
+      const v = this.external ? all : aggregate.withoutExternal(this.graph, all);
       this.panel.webview.postMessage({ type: "layout", layout: await layout(this.graph, v), hidden: [...this.hidden], ...extra });
     } catch (e) {
       this.setStatus({ state: "error", label: "Error", detail: msg(e) });
@@ -151,6 +158,8 @@ class Hesperus {
       type: "state",
       status: this.status,
       hidden: [...this.hidden],
+      external: this.external,
+      files: this.files,
       repo: this.folder?.name ?? null,
       tools: this.tools ?? null,
       machines: this.machines,
@@ -186,7 +195,7 @@ class Hesperus {
     // Open any layer the target or its ancestors sit in; layers can nest.
     for (let more = true; more; ) {
       more = false;
-      for (const gr of aggregate.view(this.graph, this.expanded).groups)
+      for (const gr of aggregate.view(this.graph, this.expanded, this.opts).groups)
         if (!gr.expanded && gr.members.some((m) => chain.has(m))) (this.expanded.add(gr.id), (more = true));
     }
     if (!this.panel) await this.open();
@@ -204,7 +213,15 @@ class Hesperus {
       await this.render();
       this.panel?.webview.postMessage({ type: "fit" });
     } else if (m.type === "fit") this.panel?.webview.postMessage({ type: "fit" });
-    else if (m.type === "find" && m.query) await this.find(m.query);
+    else if (m.type === "files") {
+      this.files = !this.files;
+      this.postSidebar();
+      await this.render();
+    } else if (m.type === "external") {
+      this.external = !this.external;
+      this.postSidebar();
+      await this.render();
+    } else if (m.type === "find" && m.query) await this.find(m.query);
     else if (m.type === "machine" && m.id) await this.reveal(m.id, true);
     else if (m.type === "kind" && m.kind) {
       this.hidden.has(m.kind) ? this.hidden.delete(m.kind) : this.hidden.add(m.kind);
@@ -213,7 +230,14 @@ class Hesperus {
     }
   }
 
-  private async onGraph(m: { type: string; id?: string }) {
+  /** Whether `id` (a node or a tier) lies beneath container `c`. Tier ids are `tier:<parent>#<key>`. */
+  private inside(id: string, c: string) {
+    const up = (x: string) => (aggregate.isGroup(x) ? x.slice(5, x.lastIndexOf("#")) : this.parent.get(x));
+    for (let p = up(id); p !== undefined; p = up(p)) if (p === c) return true;
+    return false;
+  }
+
+  private async onGraph(m: { type: string; id?: string; open?: string[]; close?: string[]; anchor?: string; seq?: number }) {
     const folder = this.folder;
     if (m.type === "ready") {
       if (this.status.state === "ready") await this.render();
@@ -221,6 +245,14 @@ class Hesperus {
     } else if (m.type === "toggle" && m.id) {
       this.expanded.has(m.id) ? this.expanded.delete(m.id) : this.expanded.add(m.id);
       await this.render({ anchor: m.id });
+    } else if (m.type === "zoom") {
+      // Semantic zoom. Closing a box forgets what was open inside it, so reopening shows one level.
+      for (const id of m.open ?? []) this.expanded.add(id);
+      for (const id of m.close ?? []) {
+        this.expanded.delete(id);
+        for (const x of [...this.expanded]) if (this.inside(x, id)) this.expanded.delete(x);
+      }
+      await this.render({ anchor: m.anchor, seq: m.seq });
     } else if (m.type === "open" && folder) {
       const n = this.graph?.nodes.find((x) => x.id === m.id);
       if (!n?.path || !n.range) return;
@@ -254,7 +286,7 @@ function page(webview: vscode.Webview, media: vscode.Uri, name: string, body: st
 }
 
 const GRAPH_BODY = `<svg id="view" xmlns="http://www.w3.org/2000/svg"><g id="scene"></g></svg>
-<div id="tools"><button id="out" title="Zoom Out"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button><span id="zoom">100%</span><button id="in" title="Zoom In"><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9"/></svg></button><button id="fit" title="Fit to Window"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button></div>
+<div id="tools"><button id="auto" title="Semantic Zoom: zooming in opens boxes, zooming out closes them" aria-pressed="true"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3M5 7h4M7 5v4"/></svg></button><span class="sep"></span><button id="out" title="Zoom Out"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button><span id="zoom">100%</span><button id="in" title="Zoom In"><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9"/></svg></button><button id="fit" title="Fit to Window"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button></div>
 <div id="msg">Loading…</div><div id="tip" hidden></div>`;
 
 const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" class="state"></div></header>
@@ -266,7 +298,9 @@ const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" 
 <label><input type="checkbox" data-kind="flow"><span class="swatch flow"></span>Data flow</label>
 <label><input type="checkbox" data-kind="override"><span class="swatch override"></span>Overrides</label>
 <label><input type="checkbox" data-kind="transition"><span class="swatch transition"></span>State transitions</label>
+<label title="Packages outside the repo, such as the standard library"><input type="checkbox" id="external"><span class="swatch external"></span>External libraries</label>
+<label title="Off: packages and folders are boundaries around their types and functions. On: files sit between them."><input type="checkbox" id="files"><span class="swatch files"></span>Files</label>
 <div class="legend"><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l"/></svg>resolved</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l may"/></svg>may</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l unresolved"/></svg>unresolved</span></div></section>
 <section><h3>State machines</h3><ul id="machines" class="machines"></ul></section>
 <section><h3>Languages</h3><ul id="langs" class="langs"></ul></section>
-<p class="hint">Click a box to expand it. ⌘/Ctrl-click or double-click opens its source. Hover to trace its edges.</p>`;
+<p class="hint">Zoom in to open boxes, zoom out to close them, or click a box to toggle it. ⌘/Ctrl-click or double-click opens its source. Hover to trace edges; click a wire or shift-click a box to pin it, Esc to clear.</p>`;
