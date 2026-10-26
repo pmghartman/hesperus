@@ -2,7 +2,7 @@ import { Frontend } from "../core/frontend";
 import { cmpStr } from "../core/ir";
 import { Node } from "web-tree-sitter";
 import { Operand } from "../core/syntax";
-import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
+import { equalities, guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "go";
 
@@ -56,7 +56,7 @@ export const GO = new Grammar("tree-sitter-go.wasm", (n, src, f) => {
     if (k && v) f.assigns.push({ target: op(k), value: op(v), init: true });
   } else if (n.type === "if_statement") {
     const c = n.childForFieldName("condition"), body = n.childForFieldName("consequence");
-    if (c && body) equalities(c, src.range(body), EQ, op, f.guards);
+    if (c && body) guardIf(n, c, body, EQ, op, f.guards, src);
   } else if (n.type === "expression_switch_statement") {
     const v = n.childForFieldName("value");
     for (const c of namedChildren(n)) {

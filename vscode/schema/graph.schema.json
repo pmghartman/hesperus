@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "hesperus graph",
-  "description": "Schema version 4. A file with `unindexed` set was in a language the editor could not resolve: it is a file node with no definitions or edges inside it; `doc` says why. A `state` is a constant value a field or variable is assigned; `transition` edges run between a location's states. Mirrored by vscode/src/core/ir.ts; change both together.",
+  "description": "Schema version 5. A file with `unindexed` set was in a language the editor could not resolve: it is a file node with no definitions or edges inside it; `doc` says why. A `state` is a constant value a field or variable is assigned; `transition` edges run between a location's states. A `guard` edge from a callable to a state means the code in its `site` runs only when the location holds that state (label `==`) or does not (`!=`). An `event` is one value of a parameter a callable dispatches on (`m.type == \"toggle\"`), a child of that callable; `guard` edges to it mark the code that handles it. An `event` is also a function literal handed to code outside the repo (a listener); its `guard` edge, labeled `callback`, covers the literal. A `call` edge labeled `callback` from an external node means code outside the repo calls the target. Mirrored by vscode/src/core/ir.ts; change both together.",
   "type": "object",
   "required": ["schema_version", "nodes", "edges"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": 4 },
+    "schema_version": { "const": 5 },
     "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
     "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } }
   },
@@ -34,7 +34,7 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
-        "kind": { "enum": ["repo", "directory", "package", "file", "type", "function", "method", "field", "variable", "state", "external_package", "external", "unresolved"] },
+        "kind": { "enum": ["repo", "directory", "package", "file", "type", "function", "method", "field", "variable", "state", "event", "external_package", "external", "unresolved"] },
         "name": { "type": "string" },
         "path": { "type": "string" },
         "range": { "$ref": "#/$defs/range" },
@@ -51,7 +51,7 @@
       "properties": {
         "from": { "type": "string" },
         "to": { "type": "string" },
-        "kind": { "enum": ["contains", "call", "override", "flow", "transition"] },
+        "kind": { "enum": ["contains", "call", "override", "flow", "transition", "guard"] },
         "provenance": { "enum": ["resolved", "may", "unresolved"] },
         "label": { "type": "string" },
         "site": { "$ref": "#/$defs/site" }

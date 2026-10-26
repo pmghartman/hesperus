@@ -1,7 +1,7 @@
 import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
 import { Operand } from "../core/syntax";
-import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
+import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "ruby";
 
@@ -43,7 +43,7 @@ export const RUBY = new Grammar("tree-sitter-ruby.wasm", (n, src, f) => {
     if (l) f.assigns.push({ target: op(l), value: other(n, src), init: false });
   } else if (n.type === "if" || n.type === "elsif") {
     const c = n.childForFieldName("condition"), body = n.childForFieldName("consequence");
-    if (c && body) equalities(c, src.range(body), EQ, op, f.guards);
+    if (c && body) guardIf(n, c, body, EQ, op, f.guards, src);
   } else if (n.type === "method" || n.type === "singleton_method") {
     const decl = src.range(n);
     f.decls.push(decl);

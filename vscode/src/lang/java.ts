@@ -1,7 +1,7 @@
 import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
 import { Operand } from "../core/syntax";
-import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
+import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "java";
 
@@ -50,7 +50,7 @@ export const JAVA = new Grammar("tree-sitter-java.wasm", (n, src, f) => {
     if (name) f.consts.push(src.range(name));
   } else if (n.type === "if_statement") {
     const c = n.childForFieldName("condition"), body = n.childForFieldName("consequence");
-    if (c && body) equalities(c, src.range(body), EQ, op, f.guards);
+    if (c && body) guardIf(n, c, body, EQ, op, f.guards, src);
   } else if (n.type === "switch_expression" || n.type === "switch_statement") {
     const c = n.childForFieldName("condition"), block = n.childForFieldName("body");
     const subject = c && (c.type === "parenthesized_expression" ? c.namedChild(0) : c);

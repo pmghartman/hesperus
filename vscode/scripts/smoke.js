@@ -1,6 +1,8 @@
 // CI smoke test: an index built the way the editor bridge builds one yields a resolved call edge
 // (Go, Python), a `may` edge where there is no syntax (generic), an unindexed file stays visible,
-// and the same input gives the same bytes.
+// a call that resolves outside the repo is an external node under its package, a boolean flag tested
+// for truth is a state machine, the same input gives the same bytes, and a message handler becomes an
+// automaton.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
@@ -8,12 +10,77 @@ const path = require("node:path");
 const { bridge } = require("../out/core/bridge");
 const { toJson } = require("../out/core/ir");
 const { init, makeGraph } = require("../out/engine");
+const { automaton } = require("../out/core/automaton");
 
 const sp = (l, c, el, ec) => ({ start: { line: l, character: c }, end: { line: el, character: ec } });
 const fn = (name, l, len) => ({ name, shape: "method", kind: 17, range: sp(l, 0, l, len), selection: sp(l, 5, l, 6), children: [] });
+const js = (name, l, c, end) => ({ name, shape: "method", kind: 12, range: sp(l, 0, l, end + 40), selection: sp(l, c, l, end), children: [] });
 const py = (name, l, end) => ({ name, shape: "method", kind: 17, range: sp(l, 0, l + 1, end), selection: sp(l, 4, l, 5), children: [] });
 const GO = "package p\nfunc a() { b() }\nfunc b() {}\n";
 const PY = "def a():\n    b()\ndef b():\n    pass\n";
+const GO_EXT = "package p\nfunc c() { fmt.Println() }\n";
+const FLAG = "let busy = false;\nfunction go() { if (!busy) { busy = true; } }\nfunction stop() { if (busy) { busy = false; } }\n";
+
+// A message-driven player: its automaton has the inputs the handler dispatches on and moves between
+// the states its guards allow. The fake server finds definitions by outline and references by name.
+const PLAYER = `let state = "idle";
+let muted = false;
+let loaded = false;
+
+function play() {
+  if (!loaded) return;
+  if (state === "idle") state = "playing";
+  if (state === "paused") state = "playing";
+}
+
+function onMessage(m) {
+  if (m.type === "load") {
+    loaded = true;
+  } else if (m.type === "play") {
+    play();
+  } else if (m.type === "pause") {
+    if (state === "playing") state = "paused";
+  } else if (m.type === "stop") {
+    state = "idle";
+  } else if (m.type === "eject") {
+    state = "idle";
+    loaded = false;
+  } else if (m.type === "mute") {
+    muted = !muted;
+  }
+}
+
+window.addEventListener("message", (e) => onMessage(e.data));
+`;
+
+async function player(repo) {
+  const lines = PLAYER.split("\n");
+  const at = (name) => lines.flatMap((l, i) => [...l.matchAll(new RegExp(`\\b${name}\\b`, "g"))].map((m) => sp(i, m.index, i, m.index + name.length)));
+  const def = (name, shape, kind) => {
+    const sel = at(name)[0], end = shape === "method" ? lines.findIndex((l, i) => i > sel.start.line && l === "}") : sel.start.line;
+    return { name, shape, kind, range: sp(sel.start.line, 0, end, lines[end].length), selection: sel, children: [] };
+  };
+  const symbols = [def("state", "term", 61), def("muted", "term", 61), def("loaded", "term", 61), def("play", "method", 12), def("onMessage", "method", 12)];
+  const refs = async (d) => at(symbols.find((s) => d.id.endsWith(`/${s.name}${s.shape === "method" ? "(0)" : ""}.`)).name).slice(1).map((span) => ({ path: "player.js", span }));
+  fs.writeFileSync(path.join(repo, "player.js"), PLAYER);
+  // `addEventListener` is defined outside the repo, so the function handed to it is an event.
+  const listen = at("addEventListener")[0];
+  const opts = { sites: () => [listen], definitionsOf: async () => [{ package: "dom", names: ["Window", "addEventListener"] }] };
+  const g = makeGraph(repo, await bridge([{ path: "player.js", language: "javascript", text: PLAYER, symbols }], refs, opts), []);
+  const a = automaton(g);
+  assert.deepEqual(a.inputs.map((i) => i.name), ["eject", "load", "mute", "pause", "play", "stop"], "inputs");
+  const name = (id) => a.inputs.find((i) => i.id === id).name;
+  const region = a.regions.find((r) => r.dims.length === 2);
+  assert.equal(region?.states.length, 4, "loaded × state");
+  const of = (loaded, state) => region.states.find((s) => s.values[region.dims.find((d) => d.endsWith("loaded."))][0] === loaded && s.values[region.dims.find((d) => d.endsWith("state."))][0] === `"${state}"`);
+  const moves = region.edges.map((e) => `${region.states.indexOf(region.states.find((s) => s.id === e.from))}>${region.states.indexOf(region.states.find((s) => s.id === e.to))}:${e.inputs.map(name)}${e.may ? "?" : ""}`);
+  const idle = of("true", "idle"), playing = of("true", "playing");
+  assert.ok(of("false", "idle")?.initial, "initial");
+  assert.ok(region.edges.some((e) => e.from === idle.id && e.to === playing.id && !e.may && e.inputs.map(name).join() === "play"), `play: ${moves}`);
+  assert.ok(of("false", "idle").loops.map(name).includes("play"), "play does nothing until loaded");
+  assert.ok(region.edges.every((e) => !e.may), `all certain: ${moves}`);
+  assert.equal(a.regions.find((r) => r.dims.length === 1)?.states.length, 2, "muted");
+}
 
 (async () => {
   await init();
@@ -21,12 +88,20 @@ const PY = "def a():\n    b()\ndef b():\n    pass\n";
     { path: "p.go", language: "go", text: GO, symbols: [fn("a", 1, 16), fn("b", 2, 11)] },
     { path: "m.py", language: "python", text: PY, symbols: [py("a", 0, 7), py("b", 2, 8)] },
     { path: "g.foo", language: "generic", text: PY, symbols: [py("a", 0, 7), py("b", 2, 8)] },
+    { path: "q.go", language: "go", text: GO_EXT, symbols: [fn("c", 1, 26)] },
+    { path: "f.js", language: "javascript", text: FLAG, symbols: [{ name: "busy", shape: "term", kind: 61, range: sp(0, 0, 0, 16), selection: sp(0, 4, 0, 8), children: [] }, js("go", 1, 9, 11), js("stop", 2, 9, 13)] },
   ];
-  const refs = async (d) => (d.id.endsWith("/b(0).") ? [{ path: d.path, span: d.path === "p.go" ? sp(1, 11, 1, 12) : sp(1, 4, 1, 5) }] : []);
+  // The editor answers a definition lookup at `Println` with a file outside the repo.
+  const opts = {
+    sites: (f) => (f.path === "q.go" ? [sp(1, 15, 1, 22)] : []),
+    definitionsOf: async (p, at) => (p === "q.go" && at.character === 15 ? [{ package: "fmt", names: ["Println"] }] : []),
+  };
+  const busy = [sp(1, 21, 1, 25), sp(1, 29, 1, 33), sp(2, 22, 2, 26), sp(2, 30, 2, 34)].map((span) => ({ path: "f.js", span }));
+  const refs = async (d) => (d.id.endsWith("/busy.") ? busy : d.id.endsWith("/b(0).") ? [{ path: d.path, span: d.path === "p.go" ? sp(1, 11, 1, 12) : sp(1, 4, 1, 5) }] : []);
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), "hesperus-smoke-"));
   try {
-    for (const [name, text] of [["p.go", GO], ["m.py", PY], ["g.foo", PY], ["x.cs", "class X {}\n"]]) fs.writeFileSync(path.join(repo, name), text);
-    const make = async () => toJson(makeGraph(repo, await bridge(files, refs), [{ path: "x.cs", reason: "no C# extension" }]));
+    for (const [name, text] of [["p.go", GO], ["m.py", PY], ["g.foo", PY], ["q.go", GO_EXT], ["f.js", FLAG], ["x.cs", "class X {}\n"]]) fs.writeFileSync(path.join(repo, name), text);
+    const make = async () => toJson(makeGraph(repo, await bridge(files, refs, opts), [{ path: "x.cs", reason: "no C# extension" }]));
     const out = await make();
     const g = JSON.parse(out);
     const call = (file, prov) => g.edges.some((e) => e.kind === "call" && e.from.includes(file) && e.from.endsWith("/a(0).") && e.to.endsWith("/b(0).") && e.provenance === prov);
@@ -34,7 +109,13 @@ const PY = "def a():\n    b()\ndef b():\n    pass\n";
     assert.ok(call("`m.py`", "resolved"), "python call");
     assert.ok(call("`g.foo`", "may"), "generic reference");
     assert.equal(g.nodes.find((n) => n.id === "file:x.cs")?.unindexed, true);
+    const ext = g.edges.find((e) => e.kind === "call" && e.from.endsWith("/c(0).") && e.provenance === "resolved");
+    assert.equal(g.nodes.find((n) => n.id === ext?.to)?.name, "Println", "external call");
+    assert.ok(g.edges.some((e) => e.kind === "contains" && e.from === "ext:fmt" && e.to === ext.to), "external package");
+    const moves = g.edges.filter((e) => e.kind === "transition").map((e) => `${e.from.split(":").pop()}>${e.to.split(":").pop()}`).sort();
+    assert.deepEqual(moves, ["#initial>false", "false>true", "true>false"], "flag machine");
     assert.equal(await make(), out);
+    await player(repo);
     console.log("smoke ok");
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });

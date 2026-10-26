@@ -3,13 +3,13 @@
 // A location is a field or variable defined in the repo, or a local variable. Every write to a
 // field or variable is a `flow` edge from the writer labeled `write`; every other reference is
 // a `flow` edge to the reader labeled `read`. A location is a state machine when it is tested
-// for equality against a constant and assigned at least two distinct constants by statements,
-// not initializers. Its states are those constants, contained by the location; a local that is
+// for equality against a constant (or, holding only booleans, for truth: `if (busy)`) and holds at
+// least two distinct constants, counting its initializer, at least one of them set by a statement. Its states are those constants, contained by the location; a local that is
 // one becomes a `variable` node inside its function. A `transition` runs from the state an
 // enclosing guard tests to the state assigned. Unknowns stay visible: an unguarded write starts at `any` (may), a
 // non-constant value ends at `?` (unresolved).
 import { cmpRange, cmpSite, cmpSize, cmpStr, contains, GraphEdge, GraphNode, NodeKind, Provenance, Range, rangeKey, Site } from "./ir";
-import { Facts, Operand } from "./syntax";
+import { Facts, Guard, Operand } from "./syntax";
 
 export interface StateDoc {
   path: string;
@@ -32,6 +32,8 @@ export interface StateInputs {
   isExternalValue: (sym: string) => boolean;
   /** The callable and index of a parameter, by its local symbol in a document. */
   paramOf: (path: string, sym: string) => [string, number] | undefined;
+  /** Callables that code outside the repo runs; a parameter they test against constants is an event. */
+  isHandler: (callable: string) => boolean;
   /** Resolved call sites passing an argument into a callable's parameter. */
   argsTo: (callable: string, index: number) => ArgIn[];
   /** Fields the index marks Constant or EnumMember. */
@@ -45,7 +47,7 @@ export interface ArgIn { path: string; caller: string; site: Range; value: Opera
 export interface StateOut { nodes: GraphNode[]; parents: [string, string][]; edges: GraphEdge[] }
 
 interface Write { path: string; site: Range; caller: string; loc: string; receiver: string; value: Operand; init: boolean }
-interface Test { path: string; loc: string; receiver: string; value: NonNullable<Value>; body: Range; certain: boolean }
+interface Test { path: string; loc: string; receiver: string; value: NonNullable<Value>; body: Range; certain: boolean; truth: boolean; equal: boolean }
 type Value = { key: string; name: string; sym?: string; site: Site } | undefined;
 
 const isLocation = (k: NodeKind | undefined) => k === "field" || k === "variable";
@@ -98,7 +100,8 @@ export function states(inp: StateInputs): StateOut {
 
   const value = (d: StateDoc, o: Operand, loc: string): Value => {
     const site = { path: d.path, range: o.name };
-    if (o.form === "literal") return { key: o.text, name: o.text, site };
+    // `True` and `true` are one state across languages.
+    if (o.form === "literal") return { key: /^(true|false)$/i.test(o.text) ? o.text.toLowerCase() : o.text, name: o.text, site };
     if (o.form !== "name") return undefined;
     const s = d.symAt(o.name);
     if (s === undefined || s === loc || written.has(s)) return undefined;
@@ -113,17 +116,17 @@ export function states(inp: StateInputs): StateOut {
     return constant ? { key: s, name: inp.nameOf(s), sym: s, site } : undefined;
   };
 
-  // Guards: whichever side is a written location, against a constant on the other.
-  const tests: Test[] = [];
+  // Guards: whichever side is a written location, against a constant on the other. `tests` are the
+  // equalities that say which state code runs in; `checks` add the inequalities.
+  let checks: Test[] = [];
   for (const d of inp.docs) {
     for (const g of d.facts.guards) {
-      if (!g.equal) continue;
       for (const [l, r] of [[g.left, g.right], [g.right, g.left]]) {
         if (l.form !== "name") continue;
         const loc = locOf(d, d.symAt(l.name));
         if (loc === undefined || !written.has(loc)) continue;
         const v = value(d, r, loc);
-        if (v) tests.push({ path: d.path, loc, receiver: l.receiver, value: v, body: g.body, certain: g.certain });
+        if (v) checks.push({ path: d.path, loc, receiver: l.receiver, value: v, body: g.body, certain: g.certain, truth: !!g.truth, equal: g.equal });
         break;
       }
     }
@@ -139,10 +142,12 @@ export function states(inp: StateInputs): StateOut {
   };
   // What each write stores: its value, or through a parameter, every argument passed into it.
   // A move through a parameter is triggered at the call site, by the caller.
-  interface Move { value: Value; caller: string; site: Site }
+  // `x = !x` flips a flag: a move from each truth value to the other.
+  interface Move { value: Value; caller: string; site: Site; flip?: boolean }
   const moves: Move[][] = writes.map((w) => {
     const d = docOf.get(w.path)!;
     const here = { caller: w.caller, site: { path: w.path, range: w.site } };
+    if (w.value.negates && locOf(d, d.symAt(w.value.negates)) === w.loc) return [{ value: undefined, flip: true, ...here }];
     const s = w.value.form === "name" ? d.symAt(w.value.name) : undefined;
     const p = s === undefined ? undefined : inp.paramOf(w.path, s);
     if (!p) return [{ value: value(d, w.value, w.loc), ...here }];
@@ -159,14 +164,27 @@ export function states(inp: StateInputs): StateOut {
     if (!ins.length) return [{ value: undefined, ...here }];
     return ins.map((a) => ({ value: value(docOf.get(a.path)!, a.value, w.loc), caller: a.caller, site: { path: a.path, range: a.site } }));
   });
-  const assigned = new Map<string, Set<string>>();
+  // Values each location holds: from statements, which move a machine, and from initializers, which start it.
+  const assigned = new Map<string, Set<string>>(), held = new Map<string, Set<string>>();
+  const add = (m: Map<string, Set<string>>, loc: string, key: string) => (m.get(loc) ?? m.set(loc, new Set()).get(loc)!).add(key);
   writes.forEach((w, i) => {
-    // Initializers configure a value; only statements move a machine between states.
-    if (w.init) return;
-    for (const m of moves[i]) if (m.value) (assigned.get(w.loc) ?? assigned.set(w.loc, new Set()).get(w.loc)!).add(m.value.key);
+    for (const m of moves[i]) {
+      for (const key of m.flip ? ["false", "true"] : m.value ? [m.value.key] : []) {
+        add(held, w.loc, key);
+        if (!w.init) add(assigned, w.loc, key);
+      }
+    }
   });
+  // A truth test says which state a flag is in only when the flag holds nothing but booleans; there,
+  // `!= true` is `== false`.
+  const boolean = (loc: string) => [...(held.get(loc) ?? [])].every((k) => k === "true" || k === "false");
+  const not = (v: NonNullable<Value>): NonNullable<Value> => (v.key === "true" ? { ...v, key: "false", name: "false" } : { ...v, key: "true", name: "true" });
+  checks = checks.filter((t) => !t.truth || boolean(t.loc)).map((t) => (!t.equal && boolean(t.loc) && /^(true|false)$/.test(t.value.key) ? { ...t, equal: true, value: not(t.value) } : t));
+  const tests = checks.filter((t) => t.equal);
   const machines = new Set<string>();
-  for (const t of tests) if ((assigned.get(t.loc)?.size ?? 0) >= 2) machines.add(t.loc);
+  for (const t of tests) if (assigned.has(t.loc) && (held.get(t.loc)?.size ?? 0) >= 2) machines.add(t.loc);
+  // A field or module flag set both ways by statements is state even where only a ternary or nothing reads it.
+  for (const [loc, ks] of held) if (!localInfo.has(loc) && boolean(loc) && ks.size === 2 && assigned.has(loc)) machines.add(loc);
 
   const out: StateOut = { nodes: [], parents: [], edges: [] };
   const made = new Set<string>();
@@ -182,7 +200,8 @@ export function states(inp: StateInputs): StateOut {
   const real = (loc: string, v: NonNullable<Value>) => stateId(loc, v.key);
 
   for (const t of tests) if (machines.has(t.loc)) note(t.loc, t.value);
-  writes.forEach((w, i) => machines.has(w.loc) && moves[i].forEach((m) => note(w.loc, m.value)));
+  const truth = (key: string, site: Site): NonNullable<Value> => ({ key, name: key, site });
+  writes.forEach((w, i) => machines.has(w.loc) && moves[i].forEach((m) => (m.flip ? [truth("false", m.site), truth("true", m.site)] : [m.value]).forEach((v) => note(w.loc, v))));
   for (const loc of [...values.keys()].sort(cmpStr)) {
     const l = localInfo.get(loc);
     if (l) {
@@ -208,6 +227,13 @@ export function states(inp: StateInputs): StateOut {
     const around = tests.filter((t) => t.loc === w.loc && t.path === w.path && contains(t.body, w.site));
     const inner = around.reduce<Range | undefined>((m, t) => (m === undefined || cmpSize(t.body, m) < 0 ? t.body : m), undefined);
     for (const m of moves[i]) {
+      if (m.flip) {
+        // From each truth value the enclosing guards allow, to the other.
+        const from = inner ? around.filter((t) => cmpRange(t.body, inner) === 0).map((t) => t.value.key) : ["false", "true"];
+        for (const f of from.filter((k) => k === "true" || k === "false"))
+          out.edges.push({ from: stateId(w.loc, f), to: stateId(w.loc, f === "true" ? "false" : "true"), kind: "transition", provenance: "resolved", label: inp.nameOf(m.caller), site: m.site });
+        continue;
+      }
       const to = m.value ? real(w.loc, m.value) : pseudo(w.loc, "?", "unresolved", "?", "A value that is not a constant.");
       const emit = (from: string, prov: Provenance) =>
         out.edges.push({ from, to, kind: "transition", provenance: m.value ? prov : "unresolved", label: inp.nameOf(m.caller), site: m.site });
@@ -217,6 +243,43 @@ export function states(inp: StateInputs): StateOut {
         if (cmpRange(t.body, inner) === 0) emit(real(w.loc, t.value), t.certain && t.receiver === w.receiver ? "resolved" : "may");
     }
   });
+
+  // Guards: the code a check encloses runs only in (or out of) that state.
+  for (const t of checks) {
+    if (!machines.has(t.loc) || !values.get(t.loc)?.has(t.value.key)) continue;
+    const d = docOf.get(t.path)!;
+    out.edges.push({ from: d.callerAt(t.body), to: stateId(t.loc, t.value.key), kind: "guard", provenance: t.certain ? "resolved" : "may", label: t.equal ? "==" : "!=", site: { path: t.path, range: t.body } });
+  }
+
+  // Events: a handler's parameter tested against two or more constants (`m.type === "toggle"`) says
+  // which input arrived; each constant is an event of the handler, guarding the code that handles it.
+  interface Dispatch { caller: string; on: string; value: Operand; guard: Guard; path: string }
+  const dispatch: Dispatch[] = [];
+  for (const d of inp.docs) {
+    for (const g of d.facts.guards) {
+      const caller = d.callerAt(g.body);
+      if (!inp.isHandler(caller)) continue;
+      const decl = d.facts.params.filter((p) => contains(p.decl, g.body)).reduce<Range | undefined>((m, p) => (m === undefined || cmpSize(p.decl, m) < 0 ? p.decl : m), undefined);
+      const names = new Set(d.facts.params.filter((p) => decl && cmpRange(p.decl, decl) === 0).map((p) => p.name));
+      for (const [l, r] of [[g.left, g.right], [g.right, g.left]]) {
+        if (l.form !== "name" || r.form !== "literal" || g.truth || !(names.has(l.receiver) || (l.receiver === "" && names.has(l.text)))) continue;
+        dispatch.push({ caller, on: l.text, value: r, guard: g, path: d.path });
+        break;
+      }
+    }
+  }
+  const kinds = new Map<string, Set<string>>();
+  for (const x of dispatch) if (x.guard.equal) add(kinds, `${x.caller}\0${x.on}`, x.value.text);
+  for (const x of [...dispatch].sort((a, b) => cmpStr(a.path, b.path) || cmpRange(a.value.name, b.value.name))) {
+    if ((kinds.get(`${x.caller}\0${x.on}`)?.size ?? 0) < 2) continue;
+    const id = `event:${x.caller}:${x.on}=${x.value.text}`;
+    if (!made.has(id)) {
+      made.add(id);
+      out.nodes.push({ id, kind: "event", name: x.value.text.replace(/^(["'`])(.*)\1$/, "$2"), path: x.path, range: x.value.name, doc: `${x.on} == ${x.value.text}` });
+      out.parents.push([id, x.caller]);
+    }
+    out.edges.push({ from: x.caller, to: id, kind: "guard", provenance: x.guard.certain ? "resolved" : "may", label: x.guard.equal ? "==" : "!=", site: { path: x.path, range: x.guard.body } });
+  }
 
   // Reads: every other reference to a written location.
   for (const d of inp.docs) {

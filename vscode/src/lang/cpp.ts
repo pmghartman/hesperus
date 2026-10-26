@@ -2,7 +2,7 @@ import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
 import { cmpStr } from "../core/ir";
 import { Facts, Operand } from "../core/syntax";
-import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
+import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "cpp";
 
@@ -89,7 +89,7 @@ function state(n: Node, src: Source, f: Facts) {
     }
     case "if_statement": {
       const c = n.childForFieldName("condition"), body = n.childForFieldName("consequence");
-      if (c && body) equalities(unclause(c), src.range(body), EQ, op, f.guards);
+      if (c && body) guardIf(n, unclause(c), body, EQ, op, f.guards, src);
       break;
     }
     case "switch_statement": {

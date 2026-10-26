@@ -21,6 +21,8 @@ The graph tab:
 
 The sidebar shows status and errors, finds nodes by name, toggles calls, data flow, overrides, and state transitions, lists the state machines found, and re-indexes.
 
+The **Automaton** box in the sidebar draws the program as a state machine instead: states are the values its state machines hold (fields and variables set to constants and tested against them, and flags set both ways), and the inputs are what comes in from outside: functions handed to code outside the repo (event listeners, message handlers), each value a handler dispatches on (`m.type === "play"`), and functions nothing in the repo calls. Locations that never test each other are drawn as separate regions, so independent flags never multiply. A dashed transition is one the analysis could not decide.
+
 ## Languages
 
 | Language | Editor extension |

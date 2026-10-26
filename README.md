@@ -41,6 +41,7 @@ Click the Hesperus icon in the activity bar. On first use it detects languages, 
 - Cmd/Ctrl-click or double-click opens the source.
 - Hover to focus a box's connections or see the counts behind an edge.
 - The sidebar shows status, finds nodes by name, filters calls, data flow, overrides, and state transitions, lists the state machines found, and re-indexes.
+- Automaton view: the program as a state machine over its state variables, with external events and entry points as inputs.
 
 A stale cache (new commit, lockfile, or tool version) fails loudly, then re-indexes.
 

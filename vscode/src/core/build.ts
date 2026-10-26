@@ -13,7 +13,7 @@ import {
   Symbol, SymbolInformation,
 } from "./scip";
 import { ArgIn, states } from "./states";
-import { Facts, noFacts, Syntax } from "./syntax";
+import { CallSite, Facts, noFacts, Syntax } from "./syntax";
 
 export interface Inputs {
   index: Index;
@@ -119,6 +119,13 @@ export function build(inp: Inputs): Graph {
         list ? list.push(r) : refsByEnd.set(ek, [r]);
       }
     }
+    // A binding the syntax says names a function (`const f = () => …`) is callable whatever kind the
+    // server gives it.
+    for (const [sym, r, body] of localDefs) {
+      const i = info.get(sym);
+      if (i && !callableKind(i) && parseSymbol(sym) && lastKind(parseSymbol(sym)!) === "term" && facts.decls.some((d) => contains(d, r) && (!body || contains(body, d))))
+        info.set(sym, { ...i, kind: 17 });
+    }
     const callables: Callable[] = [];
     for (const [sym, r, body] of localDefs) {
       const ps = parseSymbol(sym);
@@ -208,7 +215,9 @@ export function build(inp: Inputs): Graph {
     const pid = `ext:${ps.package}`;
     ensure(bare(pid, "external_package", ps.package));
     parent.set(pid, REPO_ID);
-    nodes.set(sym, bare(sym, "external", ps.descriptors[ps.descriptors.length - 1]?.name ?? ""));
+    // Owning types name it too (`Map.get`); the package is already its parent.
+    const named = ps.descriptors.filter((d) => d.kind === "type" || d.kind === "method" || d.kind === "term");
+    nodes.set(sym, bare(sym, "external", named.map((d) => d.name).join(".") || (ps.descriptors[ps.descriptors.length - 1]?.name ?? "")));
     parent.set(sym, pid);
   };
 
@@ -262,9 +271,29 @@ export function build(inp: Inputs): Graph {
   const paramCalls: ParamCall[] = [];
   const fnFlows: [string, number, string][] = []; // (callee, param idx, function value)
   const argsTo = new Map<string, ArgIn[]>(); // callee + index -> resolved call sites passing it
+  // Code handed to something outside the repo runs when that code calls it: an event of the callable
+  // that hands it over, guarding the function literal's range.
+  const handlers = new Set<string>(); // callables code outside the repo calls, directly or from a callback
+  const callbacks: Site[] = [];
   for (const ctx of ctxs) {
     const path = ctx.doc.relative_path;
-    for (const call of ctx.facts.calls) {
+    // Each function literal belongs to the innermost call whose arguments hold it.
+    const holder = ctx.facts.lambdas.map((l) => minBy(
+      ctx.facts.calls.flatMap((c, i) => c.args.filter((a) => contains(a, l)).map((a) => ({ i, a }))),
+      (x, y) => cmpSize(x.a, y.a),
+    )?.i);
+    // A call that registers code keeps nothing of its result, or hands it on whole to a call that does
+    // (`subs.push(onEvent(cb))`); one whose result is used (`new Set(xs.map(f))`) runs it now.
+    const lines = (texts.get(path) ?? "").split("\n");
+    const between = (a: Range, b: Range) => a.start_line === b.start_line ? lines[a.start_line]?.slice(a.start_col, b.start_col) ?? ""
+      : [lines[a.start_line]?.slice(a.start_col) ?? "", ...lines.slice(a.start_line + 1, b.start_line), lines[b.start_line]?.slice(0, b.start_col) ?? ""].join("\n");
+    const end = (r: Range): Range => ({ start_line: r.end_line, start_col: r.end_col, end_line: r.end_line, end_col: r.end_col });
+    const registers = (c: CallSite, depth = 0): boolean => {
+      if (!c.result_used) return true;
+      const last = c.args[c.args.length - 1];
+      return !!last && depth < 8 && ctx.facts.calls.some((o) => o !== c && o.args.some((a) => contains(a, c.callee) && contains(a, last) && /^[\s,]*\)$/.test(between(end(last), end(a)))) && registers(o, depth + 1));
+    };
+    ctx.facts.calls.forEach((call, ci) => {
       const caller = callerAt(ctx, call.callee);
       const site: Site = { path, range: call.callee };
       const targets: [string, Provenance][] = [];
@@ -281,7 +310,7 @@ export function build(inp: Inputs): Graph {
             edges.push(callEdge(caller, imp, "may", "dispatch", site));
             targets.push([imp, "may"]);
           }
-        } else if (ps && lastKind(ps) === "type") continue; // conversion
+        } else if (ps && lastKind(ps) === "type") return; // conversion
         else stub = true;
       } else {
         const pc = paramSym.get(pathSym(path, s));
@@ -289,8 +318,10 @@ export function build(inp: Inputs): Graph {
         stub = true;
       }
       if (stub) {
-        const id = `unresolved:${caller}:${call.callee_text}`;
-        ensure(bare(id, "unresolved", call.callee_text));
+        // A callee written as an expression (an inline function) is named by its first line, not its body.
+        const text = call.callee_text.length > 40 || call.callee_text.includes("\n") ? call.callee_text.split("\n")[0].slice(0, 39).trimEnd() + "…" : call.callee_text;
+        const id = `unresolved:${caller}:${text}`;
+        ensure(bare(id, "unresolved", text));
         parent.set(id, caller);
         edges.push(callEdge(caller, id, "unresolved", undefined, site));
         targets.push([id, "unresolved"]);
@@ -320,12 +351,31 @@ export function build(inp: Inputs): Graph {
           if (fv !== undefined) {
             edges.push({ from: fv, to: t, kind: "flow", provenance: "resolved", label: `fn:${label}`, site });
             fnFlows.push([t, i, fv]);
+            if (!defs.has(t)) {
+              edges.push(callEdge(t, fv, "may", "callback", site));
+              handlers.add(fv);
+            }
           }
         });
         if (call.result_used) edges.push({ from: t, to: caller, kind: "flow", provenance: prov, label: "return", site });
       }
-    }
+      const ext = targets.find(([t, prov]) => prov === "resolved" && !defs.has(t))?.[0];
+      if (ext === undefined || !registers(call)) return;
+      ctx.facts.lambdas.forEach((l, li) => {
+        if (holder[li] !== ci) return;
+        const id = `event:${caller}:${nodes.get(ext)!.name}@${l.start_line + 1}:${l.start_col}`;
+        ensure({ id, kind: "event", name: nodes.get(ext)!.name, path, range: l, doc: "Code outside the repo calls this function literal." });
+        parent.set(id, caller);
+        // Whether the outside code calls it later or right away is not known: `may`.
+        edges.push({ from: caller, to: id, kind: "guard", provenance: "may", label: "callback", site: { path, range: l } });
+        edges.push(callEdge(ext, id, "may", "callback", { path, range: l }));
+        callbacks.push({ path, range: l });
+      });
+    });
   }
+  // Callables a callback calls handle what comes in from outside.
+  for (const e of edges)
+    if (e.kind === "call" && defs.has(e.to) && e.site && callbacks.some((c) => c.path === e.site!.path && contains(c.range, e.site!.range))) handlers.add(e.to);
   // Calls through a parameter reach the function values passed into it.
   for (const pc of paramCalls) {
     for (const [callee, idx, f] of fnFlows) {
@@ -359,6 +409,7 @@ export function build(inp: Inputs): Graph {
       return !!ps && lastKind(ps) === "term" && !isCallableSym(ps, info.get(sym));
     },
     paramOf: (path, sym) => paramSym.get(pathSym(path, sym)),
+    isHandler: (callable) => handlers.has(callable),
     argsTo: (callable, idx) => argsTo.get(`${callable}\0${idx}`) ?? [],
     isConstantKind: (sym) => CONSTANT_KINDS.includes(info.get(sym)?.kind ?? 0) || declaredConst(sym),
     nameOf: (id) => nodes.get(id)?.name ?? id,

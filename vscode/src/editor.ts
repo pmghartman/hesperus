@@ -4,7 +4,7 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { BridgeFile, BridgeRef, BridgeSymbol, bridge, pool, Span } from "./core/bridge";
+import { BridgeExternal, BridgeFile, BridgeRef, BridgeSymbol, bridge, pool, Span } from "./core/bridge";
 import { Index } from "./core/scip";
 import { init, type Language } from "./engine";
 import type { Frontend } from "./core/frontend";
@@ -41,6 +41,30 @@ const rel = (repo: string, uri: vscode.Uri) => {
   const p = path.relative(repo, uri.fsPath).split(path.sep).join("/");
   return p.startsWith("..") || path.isAbsolute(p) ? undefined : p;
 };
+
+/** Package a definition outside the indexed files belongs to, from where its file sits: the directory after
+ *  a dependency folder (`node_modules/x`, `site-packages/x`, `pkg/mod/x@v`, a cargo crate), else its folder. */
+export function packageOf(uri: vscode.Uri): string {
+  const segs = uri.path.split("/").filter((x) => x !== "");
+  const file = segs[segs.length - 1] ?? "";
+  const at = (name: string) => segs.lastIndexOf(name);
+  let i = at("node_modules");
+  if (i >= 0 && segs[i + 1]) {
+    const scoped = segs[i + 1].startsWith("@") && segs[i + 2];
+    const pkg = segs[i + 1] === "@types" && segs[i + 2] ? segs[i + 2] : scoped ? `${segs[i + 1]}/${segs[i + 2]}` : segs[i + 1];
+    // TypeScript's own declarations of the language's built-ins.
+    return pkg === "typescript" && /^lib\..*\.d\.ts$/.test(file) ? "builtins" : pkg;
+  }
+  for (const d of ["site-packages", "dist-packages"]) if ((i = at(d)) >= 0 && segs[i + 1]) return segs[i + 1].replace(/\.pyi?$/, "");
+  if ((i = at("stdlib")) >= 0 && segs[i + 1]) return segs[i + 1].replace(/\.pyi?$/, "");
+  if ((i = segs.findIndex((x, j) => x === "mod" && segs[j - 1] === "pkg")) >= 0) {
+    const end = segs.findIndex((x, j) => j > i && x.includes("@"));
+    if (end > i) return segs.slice(i + 1, end + 1).join("/").replace(/@[^/]*$/, "");
+  }
+  if ((i = at("registry")) >= 0 && segs[i + 3]) return segs[i + 3].replace(/-\d+\.\d+.*$/, "");
+  if ((i = at("library")) >= 0 && segs[i + 1] && at("rustlib") >= 0) return segs[i + 1];
+  return segs[segs.length - 2] ?? uri.scheme;
+}
 
 /** One SCIP index of `files` from the editor's language servers. `report` gets progress text. */
 export async function editorIndex(
@@ -101,6 +125,21 @@ export async function editorIndex(
   let n = 0;
   // A server that never answers one query must not stall the run: give up on it after this long.
   const within = <T>(p: Thenable<T>, fallback: T) => Promise.race([Promise.resolve(p), sleep(QUERY_MS).then(() => fallback)]);
+  // Names an outside definition by the outline of its own file: the types around it, then itself.
+  const outlines = new Map<string, Promise<(vscode.DocumentSymbol | vscode.SymbolInformation)[]>>();
+  const outside = async (l: vscode.Location): Promise<BridgeExternal> => {
+    const k = l.uri.toString();
+    if (!outlines.has(k)) outlines.set(k, within(vscode.commands.executeCommand<(vscode.DocumentSymbol | vscode.SymbolInformation)[]>("vscode.executeDocumentSymbolProvider", l.uri), []).then((x) => x ?? [], () => []));
+    const names: string[] = [];
+    for (let list = await outlines.get(k)!; ; ) {
+      const hit = list.find((x): x is vscode.DocumentSymbol => "range" in x && x.range.contains(l.range.start));
+      if (!hit) break;
+      names.push(hit.name);
+      if (hit.selectionRange.contains(l.range.start)) break;
+      list = hit.children;
+    }
+    return { package: packageOf(l.uri), names };
+  };
   return bridge(loaded, async (d, done, total): Promise<BridgeRef[]> => {
     if (done % 10 === 0 || done === total) report(`Finding references ${done}/${total}…`);
     const at = new vscode.Position(d.selection.start.line, d.selection.start.character);
@@ -112,7 +151,10 @@ export async function editorIndex(
     definitionsOf: async (p, at) => {
       if (++n % 25 === 0) report(`Resolving calls ${n}…`);
       const r = (await within(vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>("vscode.executeDefinitionProvider", docs.get(p)!, new vscode.Position(at.line, at.character)), [])) ?? [];
-      return inRepo(r.map((x) => ("targetUri" in x ? new vscode.Location(x.targetUri, x.targetSelectionRange ?? x.targetRange) : x)));
+      const locs = r.map((x) => ("targetUri" in x ? new vscode.Location(x.targetUri, x.targetSelectionRange ?? x.targetRange) : x));
+      // Files outside this index (other repos, installed packages, ignored folders) are dependencies.
+      const ours = locs.filter((l) => docs.has(rel(repo, l.uri) ?? ""));
+      return ours.length ? inRepo(ours) : Promise.all(locs.slice(0, 1).map(outside));
     },
   });
 }

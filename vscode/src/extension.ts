@@ -3,7 +3,8 @@ import { randomBytes } from "node:crypto";
 import * as path from "node:path";
 import * as aggregate from "./core/aggregate";
 import { EdgeKind, Graph, GraphNode } from "./core/ir";
-import { layout, MAX_WIRES } from "./layout";
+import { automaton } from "./core/automaton";
+import { automatonLayout, layout, MAX_WIRES } from "./layout";
 import { FRONTENDS, genericFiles, index, LangResult, load, scan, Scan, sourceFiles, status, unindexedLanguages } from "./engine";
 import { editorIndex, ensureExtension, hasExtension, installExtension } from "./editor";
 
@@ -34,12 +35,15 @@ class Hesperus {
   private parent = new Map<string, string>();
   private machines: aggregate.Machine[] = [];
   private expanded = new Set<string>();
-  private hidden = new Set<EdgeKind>();
+  // Guards tie code to the states it runs in; the automaton view is their picture, so boxes leave them out.
+  private hidden = new Set<EdgeKind>(["guard"]);
   private external = true;
   private files = false;
   private flow = true;
   private isolated = 0;
   private unindexed = true;
+  /** Draw the program as an automaton of its state machines instead of the structure graph. */
+  private automaton = false;
   private panel?: vscode.WebviewPanel;
   private sidebar?: vscode.WebviewView;
   private busy?: Promise<void>;
@@ -153,6 +157,12 @@ class Hesperus {
     const folder = this.folder;
     if (!this.panel || !this.graph || !folder) return;
     try {
+      if (this.automaton) {
+        const a = await automatonLayout(automaton(this.graph));
+        this.postSidebar();
+        this.panel.webview.postMessage({ type: "automaton", layout: a, ...extra });
+        return;
+      }
       const all = aggregate.view(this.graph, this.expanded, this.opts);
       const ext = this.external ? all : aggregate.withoutExternal(this.graph, all);
       const v = this.unindexed ? ext : aggregate.withoutUnindexed(this.graph, ext);
@@ -182,6 +192,7 @@ class Hesperus {
       flow: this.flow,
       isolated: this.isolated,
       unindexed: this.unindexed,
+      automaton: this.automaton,
       repo: this.folder?.name ?? null,
       languages: (this.scanned?.languages ?? []).map((l) => ({ ...l, installed: hasExtension(l.editor.id) })),
       generic: this.scanned?.generic ?? [],
@@ -215,6 +226,7 @@ class Hesperus {
   private async reveal(id: string, open = false) {
     if (!this.graph) return;
     if (open) this.expanded.add(id);
+    this.automaton = false;
     const chain = new Set<string>([id]);
     for (let p = this.parent.get(id); p && this.parent.has(p); p = this.parent.get(p)) (this.expanded.add(p), chain.add(p));
     // Open any layer the target or its ancestors sit in; layers can nest.
@@ -247,6 +259,11 @@ class Hesperus {
       this.files = !this.files;
       this.postSidebar();
       await this.render();
+    } else if (m.type === "automaton") {
+      this.automaton = !this.automaton;
+      this.postSidebar();
+      await this.render();
+      this.panel?.webview.postMessage({ type: "fit" });
     } else if (m.type === "unindexed") {
       this.unindexed = !this.unindexed;
       this.postSidebar();
@@ -337,7 +354,7 @@ function page(webview: vscode.Webview, media: vscode.Uri, name: string, body: st
 <script nonce="${nonce}" src="${js}"></script></body></html>`;
 }
 
-const GRAPH_BODY = `<svg id="view" xmlns="http://www.w3.org/2000/svg"><g id="scene"></g></svg>
+const GRAPH_BODY = `<svg id="view" xmlns="http://www.w3.org/2000/svg"><g id="scene"></g><g id="labels"></g></svg>
 <div id="tools"><button id="auto" title="Semantic Zoom: zooming in opens boxes" aria-pressed="true"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3M5 7h4M7 5v4"/></svg></button><span class="sep"></span><button id="out" title="Zoom Out"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button><span id="zoom">100%</span><button id="in" title="Zoom In"><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9"/></svg></button><button id="fit" title="Fit to Window"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button></div>
 <div id="msg">Loading…</div><div id="tip" hidden></div>`;
 
@@ -350,6 +367,8 @@ const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" 
 <label><input type="checkbox" data-kind="flow"><span class="swatch flow"></span>Data flow</label>
 <label><input type="checkbox" data-kind="override"><span class="swatch override"></span>Overrides</label>
 <label><input type="checkbox" data-kind="transition"><span class="swatch transition"></span>State transitions</label>
+<label title="Code that runs only in a state, or only for an event"><input type="checkbox" data-kind="guard"><span class="swatch transition"></span>Guards</label>
+<label title="The program as an automaton: states are the values of its state machines, inputs are what comes in from outside (callbacks, dispatched events, entry points)"><input type="checkbox" id="automaton"><span class="swatch transition"></span>Automaton</label>
 <label title="Units are folders, packages and files, drawn flat with entries on the left and outside libraries on the right. Open one to see what is inside. Off: nested boxes."><input type="checkbox" id="flow"><span class="swatch files"></span>Stage flow</label>
 <div id="isolated" class="muted" hidden></div>
 <label title="Packages outside the repo, such as the standard library"><input type="checkbox" id="external"><span class="swatch external"></span>External libraries</label>

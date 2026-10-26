@@ -1,7 +1,7 @@
 import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
 import { Operand } from "../core/syntax";
-import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
+import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "kotlin";
 
@@ -50,7 +50,7 @@ export const KOTLIN = new Grammar("tree-sitter-kotlin.wasm", (n, src, f) => {
     if (name) f.consts.push(src.range(name));
   } else if (n.type === "if_expression") {
     const c = namedChildren(n)[0], body = first(n, "control_structure_body");
-    if (c && body && c !== body) equalities(c, src.range(body), EQ, op, f.guards);
+    if (c && body && c !== body) guardIf(n, c, body, EQ, op, f.guards, src);
   } else if (n.type === "when_expression") {
     const subject = first(n, "when_subject")?.namedChild(0);
     if (!subject) return;

@@ -139,6 +139,11 @@ export function passThrough(g: Graph, par: Map<string, string> = parents(g), opt
 /** Visible nodes and rollups when `expanded` containers show their children.
  *  The repo root is always expanded. */
 export function view(g: Graph, expanded: ReadonlySet<string>, opts: ViewOptions = {}): View {
+  return build(g, expanded, opts).view;
+}
+
+/** `view`, plus every box it could draw before the flow view leaves out the unconnected ones. */
+function build(g: Graph, expanded: ReadonlySet<string>, opts: ViewOptions): { view: View; all: string[] } {
   const par = parents(g);
   const through = opts.flow ? flowThrough(g, par, expanded) : passThrough(g, par, opts);
   const memo = new Map<string, string>();
@@ -199,13 +204,15 @@ export function view(g: Graph, expanded: ReadonlySet<string>, opts: ViewOptions 
     r.edges.push(i);
   });
   const rollups = [...acc.values()].sort((x, y) => cmpStr(x.from, y.from) || cmpStr(x.to, y.to) || cmpEdgeKind(x.kind, y.kind));
-  if (!opts.flow) return { nodes, rollups, groups: live };
+  if (!opts.flow) return { view: { nodes, rollups, groups: live }, all: nodes };
   // A box nothing flows to or from says nothing about what the program does; its ancestors stay if a
   // linked box sits inside.
   const keep = new Set<string>();
   for (const r of rollups) for (const id of [r.from, r.to]) for (let x: string | undefined = id; x !== undefined && !keep.has(x); x = par.get(x)) keep.add(x);
   const linked = nodes.filter((id) => keep.has(id));
-  return { nodes: linked, rollups, groups: live, isolated: nodes.length - linked.length };
+  // Nothing linked at this depth (top-level folders that never call each other): draw them all, not nothing.
+  if (!linked.length) return { view: { nodes, rollups, groups: live, isolated: 0 }, all: nodes };
+  return { view: { nodes: linked, rollups, groups: live, isolated: nodes.length - linked.length }, all: nodes };
 }
 
 /** The first view opens down to logic instead of showing one box per top-level folder. */
@@ -216,13 +223,15 @@ export const OVERVIEW_NODES = 60;
 export function overview(g: Graph, budget = OVERVIEW_NODES, opts: ViewOptions = {}): Set<string> {
   const hasKids = new Set(g.edges.filter((e) => e.kind === "contains").map((e) => e.from));
   const outside = new Set(g.nodes.filter((n) => n.kind === "external_package" || n.kind === "external").map((n) => n.id));
-  let open = new Set<string>(), v = view(g, open, opts);
+  // Levels open by every box, drawn or not: in the flow view a folder with no calls across it still
+  // holds the logic, and judging by the drawn boxes alone would never open it.
+  let open = new Set<string>(), v = build(g, open, opts);
   for (;;) {
-    const level = v.nodes.filter((id) => !open.has(id) && !outside.has(id) && (hasKids.has(id) || v.groups.some((gr) => gr.id === id && !gr.members.every((m) => outside.has(m)))));
+    const level = v.all.filter((id) => !open.has(id) && !outside.has(id) && (hasKids.has(id) || v.view.groups.some((gr) => gr.id === id && !gr.members.every((m) => outside.has(m)))));
     if (!level.length) return open;
     const next = new Set([...open, ...level]);
-    const nv = view(g, next, opts);
-    if (nv.nodes.length > budget) return open;
+    const nv = build(g, next, opts);
+    if (nv.view.nodes.length > budget) return open;
     [open, v] = [next, nv];
   }
 }

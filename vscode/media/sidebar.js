@@ -8,6 +8,7 @@
     c.onchange = () => vs.postMessage({ type: "kind", kind: c.dataset.kind });
   $("external").onchange = () => vs.postMessage({ type: "external" });
   $("flow").onchange = () => vs.postMessage({ type: "flow" });
+  $("automaton").onchange = () => vs.postMessage({ type: "automaton" });
   $("files").onchange = () => vs.postMessage({ type: "files" });
   $("unindexed").onchange = () => vs.postMessage({ type: "unindexed" });
   $("find").onsubmit = (e) => {
@@ -35,6 +36,7 @@
     $("external").checked = m.external;
     $("files").checked = m.files;
     $("flow").checked = m.flow;
+    $("automaton").checked = m.automaton;
     $("isolated").hidden = !(m.flow && m.isolated);
     $("isolated").textContent = `${m.isolated} boxes with no calls to or from them are not drawn.`;
     $("unindexed").checked = m.unindexed;
@@ -57,7 +59,7 @@
     if (!m.machines.length) {
       const row = document.createElement("li");
       row.className = "none";
-      row.textContent = s.state === "ready" ? "None found. A state machine is a field tested for equality and assigned two or more constants." : "—";
+      row.textContent = s.state === "ready" ? "None found. A state machine is a field or variable that holds two or more constants, set by statements, and is tested against them (or is a flag set both ways)." : "—";
       ms.append(row);
     }
 

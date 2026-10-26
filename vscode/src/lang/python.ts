@@ -1,7 +1,7 @@
 import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
 import { Operand } from "../core/syntax";
-import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
+import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "python";
 
@@ -38,7 +38,7 @@ export const PYTHON = new Grammar("tree-sitter-python.wasm", (n, src, f) => {
     if (l) f.assigns.push({ target: op(l), value: other(n, src), init: false });
   } else if (n.type === "if_statement" || n.type === "elif_clause") {
     const c = n.childForFieldName("condition"), body = n.childForFieldName("consequence");
-    if (c && body) equalities(c, src.range(body), EQ, op, f.guards);
+    if (c && body) guardIf(n, c, body, EQ, op, f.guards, src);
   } else if (n.type === "function_definition") {
     const decl = src.range(n);
     f.decls.push(decl);

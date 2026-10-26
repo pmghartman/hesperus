@@ -1,7 +1,7 @@
 import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
 import { Operand } from "../core/syntax";
-import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
+import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "php";
 
@@ -51,7 +51,7 @@ export const PHP = new Grammar("tree-sitter-php.wasm", (n, src, f) => {
     if (name) f.consts.push(src.range(name));
   } else if (n.type === "if_statement" || n.type === "else_if_clause") {
     const c = n.childForFieldName("condition"), body = n.childForFieldName("body");
-    if (c && body) equalities(c, src.range(body), EQ, op, f.guards);
+    if (c && body) guardIf(n, c, body, EQ, op, f.guards, src);
   } else if (n.type === "function_definition" || n.type === "method_declaration") {
     const decl = src.range(n);
     f.decls.push(decl);

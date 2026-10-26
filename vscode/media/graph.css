@@ -39,7 +39,7 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 .k-function, .k-method { --kc: var(--vscode-symbolIcon-functionForeground, var(--vscode-charts-purple)); }
 .k-field, .k-variable { --kc: var(--vscode-symbolIcon-variableForeground, var(--vscode-charts-blue)); }
 .k-external, .k-external_package { --kc: var(--muted); }
-.k-state { --kc: var(--transition); }
+.k-state, .k-event { --kc: var(--transition); }
 .k-unresolved { --kc: var(--unresolved); }
 .node.container > rect.body { fill: color-mix(in srgb, var(--kc, var(--vscode-editor-foreground)) 6%, transparent); stroke: color-mix(in srgb, var(--kc, var(--vscode-editor-foreground)) 35%, transparent); }
 .node.container.k-tier > rect.body { stroke-dasharray: 5 3; }
@@ -55,13 +55,14 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 .wire.override { stroke: var(--override); }
 /* Transitions are few and are the point of a state view: always drawn strong. */
 .wire.transition { stroke: var(--transition); stroke-opacity: .85; stroke-width: calc(1.6px * var(--z, 1)); }
+.wire.guard { stroke: var(--transition); stroke-dasharray: 2 2; }
 .wire.may { stroke-dasharray: 6 3; }
 .wire.unresolved { stroke: var(--unresolved); stroke-dasharray: 2 3; }
 .wire.off { display: none; }
 .arrow { stroke: none; fill-opacity: .8; fill: var(--call); }
 .arrow.flow { fill: var(--flow); }
 .arrow.override { fill: var(--override); }
-.arrow.transition { fill: var(--transition); }
+.arrow.transition, .arrow.guard { fill: var(--transition); }
 .arrow.unresolved { fill: var(--unresolved); }
 .hit { fill: none; stroke: transparent; stroke-width: 8; pointer-events: stroke; }
 
@@ -95,6 +96,29 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 #tip[hidden] { display: none; }
 #tip b { font-family: var(--vscode-editor-font-family); font-weight: 600; }
 #tip .dim { color: var(--muted); }
+
+/* Automaton */
+.region > rect.body { fill: color-mix(in srgb, var(--transition) 4%, transparent); stroke: color-mix(in srgb, var(--transition) 30%, transparent); stroke-dasharray: 5 3; }
+.region .title { font: 600 12px var(--vscode-font-family); fill: color-mix(in srgb, var(--transition) 60%, var(--vscode-editor-foreground)); }
+.astate { cursor: default; }
+.astate > rect.body { fill: var(--box); stroke: color-mix(in srgb, var(--transition) 60%, var(--line)); stroke-width: 1.4; vector-effect: non-scaling-stroke; }
+.astate.initial > rect.body { stroke-width: 2.2; }
+.astate .value { font: 12px var(--vscode-editor-font-family); fill: var(--vscode-editor-foreground); }
+.astate .loops { font-size: 10px; fill: var(--muted); }
+.astate .start { fill: var(--transition); }
+.arc { fill: none; stroke: var(--transition); stroke-width: 1.4px; stroke-opacity: .8; vector-effect: non-scaling-stroke; }
+.arc.may { stroke-dasharray: 6 3; }
+.arc-label { font-size: 11px; fill: var(--vscode-editor-foreground); paint-order: stroke; stroke: var(--vscode-editor-background); stroke-width: 3px; stroke-linejoin: round; cursor: default; }
+.focus .astate:not(.hl), .focus .arc-label:not(.hl) { opacity: .3; }
+.focus .arc:not(.hl) { stroke-opacity: .1; }
+.focus .arc.hl { stroke-opacity: 1; stroke-width: 2.2px; }
+
+/* Zoomed out: box text is too small to read, so screen-sized labels replace it. */
+#view.far #scene .node text { display: none; }
+#labels { pointer-events: none; }
+.far-label { font-size: 11px; fill: var(--vscode-editor-foreground); paint-order: stroke; stroke: var(--vscode-editor-background); stroke-width: 3px; stroke-linejoin: round; }
+.far-label.container { font-weight: 600; fill: color-mix(in srgb, var(--kc) 55%, var(--vscode-editor-foreground)); }
+.focus ~ #labels .far-label { opacity: .5; }
 
 .node.unindexed .body { stroke-dasharray: 4 3; opacity: .65; }
 

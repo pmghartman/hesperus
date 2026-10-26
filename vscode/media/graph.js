@@ -3,7 +3,7 @@
   const vs = acquireVsCodeApi();
   const NS = "http://www.w3.org/2000/svg";
   const $ = (id) => document.getElementById(id);
-  const svg = $("view"), scene = $("scene"), msg = $("msg"), tip = $("tip");
+  const svg = $("view"), scene = $("scene"), labels = $("labels"), msg = $("msg"), tip = $("tip");
   // Must match src/layout.ts.
   const CHAR = 6.6, PAD = 40, HEAD = 26, LEAF_H = 26;
   const el = (tag, attrs, parent) => {
@@ -31,7 +31,45 @@
     // Wires thin out as the view zooms out, so a whole repo reads as structure, not a solid mass.
     svg.style.setProperty("--z", String(Math.min(1, Math.max(0.3, t.k))));
     $("zoom").textContent = Math.round(t.k * 100) + "%";
+    relabel();
   };
+
+  // ---- far labels ----
+  // Zoomed out, box text shrinks past reading. Names are then drawn at screen size instead, biggest
+  // boxes first, skipping any that would overlap one already placed.
+  const FAR_K = 0.7, LABEL_PX = 11, LABEL_CHAR = 6.2, MAX_LABELS = 150;
+  let labelFrame = 0;
+  function relabel() {
+    if (labelFrame) return;
+    labelFrame = requestAnimationFrame(() => {
+      labelFrame = 0;
+      const far = !!L && t.k < FAR_K && !moving;
+      svg.classList.toggle("far", far);
+      labels.replaceChildren();
+      if (!far) return;
+      const W = svg.clientWidth, H = svg.clientHeight, placed = [];
+      const free = (r) => placed.every((p) => r.x + r.w <= p.x || p.x + p.w <= r.x || r.y + r.h <= p.y || p.y + p.h <= r.y);
+      const leaves = L.boxes.filter((b) => !b.container).map((b) => ({ b, s: onScreen(b) }));
+      const order = [...L.boxes].sort((a, b) => b.w * b.h - a.w * a.h || a.id.localeCompare(b.id));
+      for (const b of order) {
+        if (placed.length >= MAX_LABELS) break;
+        const s = onScreen(b);
+        if (s.x > W || s.y > H || s.x + s.w < 0 || s.y + s.h < 0 || s.w < 28) continue;
+        // Containers name their top edge; a leaf is named across its middle. The whole name may run past
+        // the box when nothing is there; else it is cut to the box.
+        const y = b.container ? s.y + Math.min(HEAD * t.k, 16) : s.y + s.h / 2 + 4;
+        const room = Math.floor((s.w - 8) / LABEL_CHAR), full = b.node.name;
+        const rect = (n) => ({ x: s.x + 4, y: y - LABEL_PX, w: n.length * LABEL_CHAR + 4, h: LABEL_PX + 4 });
+        const clear = (r) => leaves.every((o) => o.b === b || r.x + r.w <= o.s.x || o.s.x + o.s.w <= r.x || r.y + r.h <= o.s.y || o.s.y + o.s.h <= r.y);
+        const cut = full.length > room ? full.slice(0, Math.max(room - 1, 3)) + "…" : full;
+        const name = full !== cut && free(rect(full)) && clear(rect(full)) ? full : free(rect(cut)) ? cut : undefined;
+        if (name === undefined) continue;
+        placed.push(rect(name));
+        const g = el("text", { class: `far-label k-${b.node.kind}` + (b.container ? " container" : ""), x: s.x + 6, y }, labels);
+        g.textContent = name;
+      }
+    });
+  }
   const fitted = () => {
     const W = svg.clientWidth, H = svg.clientHeight, m = 32;
     const k = Math.min((W - 2 * m) / Math.max(L.width, 1), (H - 2 * m) / Math.max(L.height, 1), 1.5);
@@ -163,7 +201,7 @@
     tier: "M-6,-4.5h12M-6,0h12M-6,4.5h12",
     state: "M0,-5L5,0L0,5L-5,0z",
   };
-  const LETTER = { type: "T", function: "ƒ", method: "m", field: "•", variable: "v", external: "↗", unresolved: "?" };
+  const LETTER = { type: "T", function: "ƒ", method: "m", field: "•", variable: "v", external: "↗", unresolved: "?", event: "⚡" };
   function glyph(g, kind, x, cy) {
     if (ICON[kind]) return el("path", { class: "glyph", d: ICON[kind], transform: `translate(${x + 6},${cy})` }, g);
     el("text", { class: "letter", x: x + 6, y: cy + 4, "text-anchor": "middle" }, g).textContent = LETTER[kind] ?? "·";
@@ -190,7 +228,7 @@
     scene.replaceChildren();
     boxes = new Map(L.boxes.map((b) => [b.id, b]));
     const defs = el("defs", {}, scene);
-    for (const k of ["call", "flow", "override", "transition", "unresolved"]) {
+    for (const k of ["call", "flow", "override", "transition", "guard", "unresolved"]) {
       const m = el("marker", { id: "arrow-" + k, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", markerUnits: "userSpaceOnUse", orient: "auto" }, defs);
       // CSP forbids style attributes; colours come from the stylesheet.
       el("path", { d: "M0,1L9,5L0,9z", class: "arrow " + k }, m);
@@ -302,6 +340,7 @@
       for (const g of scene.querySelectorAll(".node.enter")) g.classList.remove("enter");
       scene.classList.remove("moving");
       moving = false;
+      relabel();
       quiet = performance.now() + QUIET_MS;
       net = 0;
     };
@@ -414,6 +453,92 @@
     flash(id);
   }
 
+  // ---- automaton ----
+  // Regions are orthogonal: each holds the states of locations that test each other. A state is a pill;
+  // the initial one has an arrow in. Transitions are labelled by the inputs that take them; inputs that
+  // leave a state as it is are listed under it.
+  function drawAutomaton(A) {
+    const first = !L;
+    L = { width: A.width, height: A.height, boxes: [], wires: [] };
+    boxes = new Map();
+    scene._wires = [];
+    scene._nodes = new Map();
+    scene.replaceChildren();
+    const inputs = new Map(A.inputs.map((i) => [i.id, i]));
+    const defs = el("defs", {}, scene);
+    for (const k of ["transition", "unresolved"]) {
+      const mk = el("marker", { id: "arrow-" + k, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "8", markerHeight: "8", markerUnits: "userSpaceOnUse", orient: "auto" }, defs);
+      el("path", { d: "M0,1L9,5L0,9z", class: "arrow " + k }, mk);
+    }
+    const regionLayer = el("g", {}, scene), arcLayer = el("g", {}, scene), stateLayer = el("g", {}, scene);
+    for (const r of A.regions) {
+      const g = el("g", { class: "region" }, regionLayer);
+      el("rect", { class: "body", x: r.x, y: r.y, width: r.w, height: r.h, rx: 8 }, g);
+      el("text", { class: "title", x: r.x + 12, y: r.y + 19 }, g).textContent = r.title + (r.truncated ? "  (more states than drawn)" : "");
+    }
+    const list = (ids) => ids.map((i) => esc(inputs.get(i)?.detail ?? i)).join("\n");
+    const stateEls = new Map(), arcEls = [];
+    for (const s of A.states) {
+      const g = el("g", { class: "astate" + (s.initial ? " initial" : "") }, stateLayer);
+      const pillH = s.h - (s.loops.length || s.mayLoops.length ? 14 : 0);
+      el("rect", { class: "body", x: s.x, y: s.y, width: s.w, height: pillH, rx: Math.min(pillH / 2, 15) }, g);
+      s.lines.forEach((line, i) => (el("text", { class: "value", x: s.x + s.w / 2, y: s.y + 19 + i * 16, "text-anchor": "middle" }, g).textContent = line));
+      const loops = [...s.loops, ...s.mayLoops];
+      if (loops.length) {
+        const ns = loops.map((i) => inputs.get(i)?.name ?? i);
+        el("text", { class: "loops", x: s.x + s.w / 2, y: s.y + s.h - 2, "text-anchor": "middle" }, g).textContent = "↺ " + (ns.length > 3 ? `${ns.slice(0, 3).join(", ")} +${ns.length - 3}` : ns.join(", "));
+      }
+      if (s.initial) {
+        // Drawn into the top, where no transition lands.
+        const cx = s.x + Math.min(s.w / 2, 22);
+        el("circle", { class: "start", cx, cy: s.y - 20, r: 3.5 }, g);
+        el("path", { class: "arc", d: `M${cx},${s.y - 16}V${s.y - 1}`, "marker-end": "url(#arrow-transition)" }, g);
+      }
+      g.addEventListener("mouseenter", (e) => {
+        lightAutomaton(s.id);
+        const head = `<b>${s.lines.map(esc).join("\n")}</b>${s.initial ? "  initial" : ""}`;
+        showTip(e, head + (s.loops.length ? `\n<span class="dim">Unchanged by</span>\n${list(s.loops)}` : "")
+          + (s.mayLoops.length ? `\n<span class="dim">May leave it as it is</span>\n${list(s.mayLoops)}` : ""));
+      });
+      g.addEventListener("mouseleave", unfocus);
+      stateEls.set(s.id, g);
+    }
+    for (const a of A.arcs) {
+      const d = pathOf(a.points);
+      const path = el("path", { class: "arc" + (a.may ? " may" : ""), d, "marker-end": "url(#arrow-transition)" }, arcLayer);
+      const label = el("text", { class: "arc-label", x: a.label.x, y: a.label.y }, arcLayer);
+      label.textContent = a.label.text;
+      const hit = el("path", { class: "hit", d }, arcLayer);
+      for (const t of [hit, label]) {
+        t.addEventListener("mouseenter", (e) => {
+          lightAutomaton(null, a);
+          showTip(e, `${a.may ? '<span class="dim">may</span>\n' : ""}${list(a.inputs)}\n<span class="dim">⌘/Ctrl-click opens the handler</span>`);
+        });
+        t.addEventListener("mouseleave", unfocus);
+        t.addEventListener("click", (e) => {
+          e.stopPropagation();
+          if (e.metaKey || e.ctrlKey) vs.postMessage({ type: "open", id: inputs.get(a.inputs[0])?.handler });
+        });
+      }
+      arcEls.push({ a, path, label });
+    }
+    scene._automaton = { stateEls, arcEls };
+    if (first || !userMoved) fit();
+    else apply();
+  }
+  function lightAutomaton(state, arc) {
+    const { stateEls, arcEls } = scene._automaton;
+    scene.classList.add("focus");
+    for (const x of arcEls) {
+      if (arc ? x.a !== arc : x.a.from !== state && x.a.to !== state) continue;
+      x.path.classList.add("hl");
+      x.label.classList.add("hl");
+      stateEls.get(x.a.from)?.classList.add("hl");
+      stateEls.get(x.a.to)?.classList.add("hl");
+    }
+    if (state) stateEls.get(state)?.classList.add("hl");
+  }
+
   addEventListener("message", ({ data: m }) => {
     if (m.type === "hidden") {
       hidden = m.hidden;
@@ -424,12 +549,18 @@
       msg.hidden = false;
       msg.className = (s.state === "error" ? "err" : "") + (L ? " over" : "");
       msg.textContent = s.state === "error" ? s.detail : s.state === "ready" ? "" : (s.label || "Loading…") + "\nProgress is in the Hesperus sidebar.";
-      if (s.state === "error" || !L) scene.replaceChildren();
+      if (s.state === "error" || !L) (scene.replaceChildren(), labels.replaceChildren());
       pending = null;
       return;
     }
     if (m.type === "focus") return centerOn(m.id);
     if (m.type === "fit") return fit();
+    if (m.type === "automaton") {
+      msg.hidden = true;
+      pending = null;
+      pinned = null;
+      return drawAutomaton(m.layout);
+    }
     if (m.type === "layout") {
       msg.hidden = true;
       hidden = m.hidden;

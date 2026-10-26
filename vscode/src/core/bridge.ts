@@ -3,7 +3,7 @@
 import { cmpStr } from "./ir";
 import { Index, Occurrence, ROLE_DEFINITION, SymbolInformation } from "./scip";
 
-export const BRIDGE_TOOL = { name: "editor-lsp", version: "1" };
+export const BRIDGE_TOOL = { name: "editor-lsp", version: "2" };
 
 /** Line and UTF-16 character, as language servers report them. */
 export interface Pos { line: number; character: number }
@@ -21,6 +21,8 @@ export interface BridgeSymbol {
 export interface BridgeFile { path: string; language: string; text: string; symbols: BridgeSymbol[] }
 export interface BridgeDef { id: string; path: string; selection: Span; shape: BridgeSymbol["shape"] }
 export interface BridgeRef { path: string; span: Span }
+/** A definition outside the repo: its package, and its name with the types that own it, outermost first. */
+export interface BridgeExternal { package: string; names: string[] }
 
 const PLAIN = /^[A-Za-z0-9_+\-$]+$/;
 const esc = (s: string) => (PLAIN.test(s) ? s : "`" + s.replace(/`/g, "``") + "`");
@@ -130,8 +132,8 @@ export interface BridgeOptions {
   unify?: boolean;
   /** Call-site name tokens of a file, from syntax. */
   sites?: (f: BridgeFile) => Span[];
-  /** Where the language server says the name at `at` is defined. */
-  definitionsOf?: (path: string, at: Pos) => Promise<BridgeRef[]>;
+  /** Where the language server says the name at `at` is defined, in the repo or outside it. */
+  definitionsOf?: (path: string, at: Pos) => Promise<(BridgeRef | BridgeExternal)[]>;
 }
 
 /** Pairs a declaration with its definition when exactly two files declare the same qualified name.
@@ -162,6 +164,12 @@ function unify(w: Walk) {
     const seen = new Set<string>();
     w.infos.set(path, infos.filter((i) => !seen.has(i.symbol) && seen.add(i.symbol)));
   }
+}
+
+/** Callable symbol for an outside definition; the graph files it under its package. */
+function externalSymbol(language: string, e: BridgeExternal): string {
+  const names = e.names.length ? e.names : ["?"];
+  return `lsp ${language} ${e.package.replace(/ /g, "  ") || "?"} . ${names.slice(0, -1).map((n) => esc(n) + "#").join("")}${esc(names[names.length - 1])}(0).`;
 }
 
 const within = (p: Pos, s: Span) => posKey(s.start, p) <= 0 && posKey(p, s.end) <= 0;
@@ -198,9 +206,14 @@ export async function bridge(files: BridgeFile[], refsOf: (d: BridgeDef, done: n
     for (const d of w.defs) (byPath.get(d.path) ?? byPath.set(d.path, []).get(d.path)!).push(d);
     const todo = sorted.flatMap((f) => sites(f).filter((s) => !covered.has(key(f.path, s.start))).map((s) => ({ path: f.path, site: s })));
     const found = await pool(todo, concurrency, (t) => definitionsOf(t.path, t.site.start));
+    const lang = new Map(sorted.map((f) => [f.path, f.language]));
     todo.forEach((t, i) => {
-      const hit = found[i].map((l) => (byPath.get(l.path) ?? []).find((d) => within(l.span.start, d.selection))).find((d) => d !== undefined);
-      if (hit) w.byFile.get(t.path)!.push({ symbol: hit.id, symbol_roles: 0, ...span(texts.get(t.path)!, t.site) });
+      const inside = found[i].filter((l): l is BridgeRef => "path" in l);
+      const hit = inside.map((l) => (byPath.get(l.path) ?? []).find((d) => within(l.span.start, d.selection))).find((d) => d !== undefined);
+      // Only when every answer lies outside: an in-repo answer that is no definition (a local) stays unresolved.
+      const ext = inside.length ? undefined : found[i].find((l): l is BridgeExternal => "package" in l);
+      const symbol = hit?.id ?? (ext && externalSymbol(lang.get(t.path)!, ext));
+      if (symbol) w.byFile.get(t.path)!.push({ symbol, symbol_roles: 0, ...span(texts.get(t.path)!, t.site) });
     });
   }
   return {

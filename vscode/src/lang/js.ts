@@ -2,7 +2,7 @@ import { Node } from "web-tree-sitter";
 import { Frontend, extension } from "../core/frontend";
 import { cmpStr } from "../core/ir";
 import { Facts, Operand } from "../core/syntax";
-import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
+import { branches, guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "javascript";
 
@@ -102,9 +102,12 @@ function state(n: Node, src: Source, f: Facts) {
   if ((n.type === "variable_declarator" && !isConst) || n.type === "field_definition" || n.type === "public_field_definition") {
     const t = n.childForFieldName("name") ?? n.childForFieldName("property"), v = n.childForFieldName("value");
     if (t && v) f.assigns.push({ target: { ...op(t), receiver: n.type === "variable_declarator" ? "" : "this" }, value: op(v), init: true });
+  } else if (n.type === "ternary_expression") {
+    const c = n.childForFieldName("condition"), yes = n.childForFieldName("consequence"), no = n.childForFieldName("alternative");
+    if (c && yes) branches(c, src.range(yes), no ? src.range(no) : undefined, EQ, op, f.guards);
   } else if (n.type === "if_statement") {
     const c = n.childForFieldName("condition"), body = n.childForFieldName("consequence");
-    if (c && body) equalities(c, src.range(body), EQ, op, f.guards);
+    if (c && body) guardIf(n, c, body, EQ, op, f.guards, src);
   } else if (n.type === "switch_statement") {
     const v = n.childForFieldName("value"), cases = namedChildren(n.childForFieldName("body") ?? n);
     const subject = v?.type === "parenthesized_expression" && v.namedChildCount === 1 ? v.namedChild(0)! : v;

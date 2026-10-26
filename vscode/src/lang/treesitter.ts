@@ -65,7 +65,17 @@ export function walk(root: Node, visit: (n: Node) => void) {
 }
 
 /** Operand for a whole expression that is never a state or a location. */
-export const other = (n: Node, src: Source): Operand => ({ name: src.range(n), text: n.text, form: "other", receiver: "" });
+export const other = (n: Node, src: Source): Operand => {
+  const o: Operand = { name: src.range(n), text: n.text, form: "other", receiver: "" };
+  // `!x`, `not self.x`: the location negated, so a flag flipped in place is a known move.
+  const inner = negated(n);
+  if (inner && /^[\w$@.:>-]+$/.test(inner.text)) {
+    let leaf = inner;
+    while (leaf.namedChildCount) leaf = namedChildren(leaf).at(-1)!;
+    o.negates = src.range(leaf);
+  }
+  return o;
+};
 
 const BINARY = new Set(["binary_expression", "binary", "boolean_operator", "comparison_operator", "conjunction_expression", "disjunction_expression", "equality_expression"]);
 
@@ -77,14 +87,28 @@ function sides(n: Node): { l?: Node; r?: Node; op: string } {
   return { l: n.childForFieldName("left") ?? named[0], r: n.childForFieldName("right") ?? named[named.length - 1], op };
 }
 
+/** `!x` or `not x`: the negated expression. */
+function negated(n: Node): Node | undefined {
+  const named = namedChildren(n);
+  return named.length === 1 && children(n).some((c) => !c.isNamed && (c.type === "!" || c.type === "not")) ? named[0] : undefined;
+}
+
 /** Equality and inequality tests in an `if` condition, through `&&`, `||` and parentheses. Under `||` the
- *  body can run without the test, so those guards are not certain; under `!` they are dropped. */
+ *  body can run without the test, so those guards are not certain; under `!` they are dropped. A bare
+ *  name is a truth test (`if (busy)`, `if (!busy)`): the name against `true` or `false`. */
 export function equalities(
   cond: Node, body: Range, ops: { eq: readonly string[]; ne: readonly string[] }, operand: (n: Node) => Operand, out: Guard[], certain = true,
 ) {
   if (cond.type === "parenthesized_expression") {
     const c = namedChildren(cond)[0];
     if (c) equalities(c, body, ops, operand, out, certain);
+    return;
+  }
+  const inner = negated(cond);
+  for (const [x, value] of [[cond, "true"], [inner, "false"]] as const) {
+    const o = x && operand(x);
+    if (o?.form !== "name") continue;
+    out.push({ left: o, right: { name: o.name, text: value, form: "literal", receiver: "" }, equal: true, body, certain, truth: true });
     return;
   }
   if (!BINARY.has(cond.type)) return;
@@ -97,6 +121,47 @@ export function equalities(
     equalities(r, body, ops, operand, out, certain && all);
   }
 }
+
+const EXIT = /^(return|throw|raise|break|continue)(_statement|_expression)?$|^jump_expression$/;
+const LOGICAL = new Set(["&&", "||", "and", "or"]);
+
+/** Code after an `if` with no else whose body always leaves (`if (!ready) return;`): it runs only when the
+ *  test failed. Undefined otherwise. */
+function rest(n: Node, body: Node, src: Source): Range | undefined {
+  const parent = n.parent;
+  if (!parent || n.childForFieldName("alternative") || children(n).some((c) => c.type === "else" || /else|elif|elsif/.test(c.type))) return undefined;
+  const stmts = namedChildren(body).filter((c) => !c.type.includes("comment"));
+  const last = EXIT.test(body.type) ? body : stmts[stmts.length - 1];
+  if (!last || !EXIT.test(last.type) || n.endIndex >= parent.endIndex) return undefined;
+  const end = src.range(n);
+  return { ...src.range(parent), start_line: end.end_line, start_col: end.end_col };
+}
+
+type Ops = { eq: readonly string[]; ne: readonly string[] };
+
+/** The condition over `yes`, and the opposite of a single test over `no`: the else branch, or the code
+ *  after an `if` whose body always leaves. Under `&&` or `||` the opposite is not one test, so it is left out. */
+export function branches(cond: Node, yes: Range, no: Range | undefined, ops: Ops, operand: (n: Node) => Operand, out: Guard[]) {
+  const from = out.length;
+  equalities(cond, yes, ops, operand, out);
+  let c = cond;
+  while (c.type === "parenthesized_expression" && namedChildren(c)[0]) c = namedChildren(c)[0];
+  const compound = BINARY.has(c.type) && LOGICAL.has(sides(c).op);
+  if (no && out.length - from === 1 && !compound) out.push({ ...out[from], equal: !out[from].equal, body: no });
+}
+
+/** Guards of an `if`: see `branches`. */
+export function guardIf(n: Node, cond: Node, body: Node, ops: Ops, operand: (n: Node) => Operand, out: Guard[], src: Source) {
+  const alt = n.childForFieldName("alternative");
+  branches(cond, src.range(body), alt ? src.range(alt) : rest(n, body, src), ops, operand, out);
+}
+
+/** Function literals across grammars: code that runs when whoever receives it calls it. */
+const LAMBDAS = new Set([
+  "arrow_function", "function_expression", "function", "generator_function", "lambda", "lambda_expression", "lambda_literal",
+  "closure_expression", "func_literal", "anonymous_function", "anonymous_function_creation_expression", "anonymous_method_expression",
+  "function_literal", "function_expression_body",
+]);
 
 /** A grammar plus the visitor that turns its trees into facts. */
 export class Grammar implements Syntax {
@@ -115,7 +180,10 @@ export class Grammar implements Syntax {
     const tree = p.parse(source);
     if (tree) {
       const src = new Source(source);
-      walk(tree.rootNode, (n) => this.visit(n, src, f));
+      walk(tree.rootNode, (n) => {
+        this.visit(n, src, f);
+        if (LAMBDAS.has(n.type)) f.lambdas.push(src.range(n));
+      });
       tree.delete();
     }
     p.delete();

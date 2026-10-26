@@ -2,7 +2,7 @@ import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
 import { cmpStr } from "../core/ir";
 import { Operand } from "../core/syntax";
-import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
+import { equalities, guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "rust";
 
@@ -62,7 +62,7 @@ export const RUST = new Grammar("tree-sitter-rust.wasm", (n, src, f) => {
     }
     case "if_expression": {
       const c = n.childForFieldName("condition"), body = n.childForFieldName("consequence");
-      if (c && body) equalities(c, src.range(body), EQ, op, f.guards);
+      if (c && body) guardIf(n, c, body, EQ, op, f.guards, src);
       break;
     }
     case "match_expression": {

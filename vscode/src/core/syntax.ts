@@ -32,6 +32,8 @@ export interface Operand {
   form: "name" | "literal" | "other";
   /** Source text of the object a member is read on (`c` in `c.state`); empty for bare names. */
   receiver: string;
+  /** For `!x`: the name token of `x`, so writing `x = !x` flips a flag. */
+  negates?: Range;
 }
 
 /** A write to a named location. Increments and compound assignments have an `other` value. */
@@ -52,6 +54,8 @@ export interface Guard {
   body: Range;
   /** False under `||` or `!`, where the body can run without the test holding. */
   certain: boolean;
+  /** A bare truth test (`if (x)`): `right` is `true` or `false`, and holds only for a boolean location. */
+  truth?: boolean;
 }
 
 export interface Facts {
@@ -64,9 +68,11 @@ export interface Facts {
   /** Name tokens of constant declarations (`const`, enum members), so a constant can be a state when the
    *  index does not mark its kind, and so can a local one. */
   consts: Range[];
+  /** Function literals (`() => …`, `lambda`, closures). One passed to a call runs when the callee calls it. */
+  lambdas: Range[];
 }
 
-export const noFacts = (): Facts => ({ calls: [], params: [], decls: [], assigns: [], guards: [], consts: [] });
+export const noFacts = (): Facts => ({ calls: [], params: [], decls: [], assigns: [], guards: [], consts: [], lambdas: [] });
 
 export interface Syntax {
   facts(source: string): Facts;

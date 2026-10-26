@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Automaton view: states are the values of the program's state machines; inputs are callbacks handed to code outside the repo, values a handler dispatches on, and entry points. Independent locations are separate regions.
+- Calls into libraries are external nodes under their package instead of unresolved.
+- State machines include boolean flags (`if (busy)`, `x = !x`), count initializers, and read guards from `else` branches, early returns and ternaries.
+- Zoomed-out views draw readable labels.
+- Schema 5: `event` nodes and `guard` edges.
+
 - Symbols and references now come from the editor's language servers, per language. SCIP indexers, their downloads and the `hesperus` CLI are removed.
 - Rust, C#, C/C++, Dart/Flutter, Python, Java, Kotlin, PHP and Ruby support, alongside Go and JavaScript/TypeScript.
 - Generic fallback for any other language the editor has a server for: definitions and references, with `may` call edges.

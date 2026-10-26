@@ -1,5 +1,6 @@
 import ELK from "elkjs/lib/elk.bundled.js";
 import { Rollup, View } from "./core/aggregate";
+import { AState, Automaton, Dim, Input } from "./core/automaton";
 import { cmpStr, Graph, GraphNode } from "./core/ir";
 
 /** Rollups between a box and one node outside the repo. */
@@ -42,6 +43,7 @@ interface ElkEdge {
    *  ancestor: an edge into a container's own descendant is routed in that container. */
   container?: string;
   sections?: { startPoint: { x: number; y: number }; endPoint: { x: number; y: number }; bendPoints?: { x: number; y: number }[] }[];
+  labels?: { text: string; width: number; height: number; x?: number; y?: number }[];
 }
 
 const width = (n: GraphNode) => Math.min(MAX_W, Math.max(MIN_W, Math.ceil(n.name.length * CHAR) + PAD + 14));
@@ -226,4 +228,94 @@ export async function layout(graph: Graph, view: View, opts: { flow?: boolean } 
   });
   boxes.sort((a, b) => cmpStr(a.id, b.id));
   return { width: out.width ?? 0, height: out.height ?? 0, boxes, wires, omitted };
+}
+
+/** A state drawn as a pill; `lines` are its values, `loops` the inputs that leave it as it is. */
+export interface StateBox { id: string; region: string; x: number; y: number; w: number; h: number; lines: string[]; initial: boolean; loops: string[]; mayLoops: string[] }
+/** A transition; `inputs` are input ids, `label` where its names are drawn. */
+export interface Arc { from: string; to: string; inputs: string[]; may: boolean; points: { x: number; y: number }[]; label: { text: string; x: number; y: number } }
+export interface RegionBox { id: string; title: string; x: number; y: number; w: number; h: number; truncated: boolean }
+export interface AutomatonLayout { width: number; height: number; regions: RegionBox[]; states: StateBox[]; arcs: Arc[]; inputs: Input[]; dims: Dim[]; quiet: number }
+
+const STATE_H = 30, LOOP_H = 14, REGION_HEAD = 40, GAP = 28, ARROW = 0;
+/** Names on a transition past this many collapse to a count. */
+const LABEL_NAMES = 3;
+
+const names = (ids: string[], byId: Map<string, Input>) => {
+  const ns = ids.map((i) => byId.get(i)?.name ?? i);
+  return ns.length > LABEL_NAMES ? `${ns.slice(0, LABEL_NAMES).join(", ")} +${ns.length - LABEL_NAMES}` : ns.join(", ");
+};
+
+/** Each region laid out on its own (states left to right from the initial one), then the regions
+ *  packed in rows, largest first. Deterministic: sorted input, fixed seed. */
+export async function automatonLayout(a: Automaton): Promise<AutomatonLayout> {
+  const inputs = new Map(a.inputs.map((i) => [i.id, i]));
+  const dims = new Map(a.dims.map((d) => [d.id, d]));
+  const elk = new ELK();
+  const laid = await Promise.all(a.regions.map(async (r) => {
+    const multi = r.dims.length > 1;
+    const lines = (s: AState) => r.dims.map((d) => {
+      const v = s.values[d].map((k) => dims.get(d)?.names[k] ?? k).join(" | ");
+      return multi ? `${dims.get(d)?.name ?? d} = ${v}` : v;
+    });
+    const loopText = (s: AState) => (s.loops.length || s.mayLoops.length ? "↺ " + names([...s.loops, ...s.mayLoops], inputs) : "");
+    const size = (s: AState) => {
+      const text = Math.max(...lines(s).map((l) => l.length), 4) * CHAR + 28;
+      return { width: Math.min(MAX_W + 80, Math.max(MIN_W, text, loopText(s).length * 6 + 12)), height: STATE_H + (lines(s).length - 1) * 16 + (loopText(s) ? LOOP_H : 0) };
+    };
+    const root: ElkNode & { edges: ElkEdge[] } = {
+      id: "root",
+      layoutOptions: {
+        "elk.algorithm": "layered",
+        "elk.direction": "RIGHT",
+        "elk.randomSeed": "1",
+        "elk.edgeRouting": "ORTHOGONAL",
+        "elk.spacing.nodeNode": "24",
+        "elk.layered.spacing.nodeNodeBetweenLayers": "64",
+        "elk.spacing.edgeLabel": "4",
+        "elk.edgeLabels.placement": "CENTER",
+        "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
+        "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+      },
+      // The initial state first, so it sits on the left.
+      children: [...r.states].sort((x, y) => Number(y.initial) - Number(x.initial) || cmpStr(x.id, y.id)).map((s) => ({ id: s.id, ...size(s), ...(s.initial ? { layoutOptions: { "elk.layered.layering.layerConstraint": "FIRST" } } : {}) })),
+      edges: r.edges.map((e, i) => {
+        const text = names(e.inputs, inputs);
+        return { id: `e${i}`, sources: [e.from], targets: [e.to], labels: [{ text, width: Math.ceil(text.length * 6) + 6, height: 14 }] };
+      }),
+    };
+    const out = (await elk.layout(root as never)) as typeof root & { width: number; height: number };
+    return { r, out, lines, loopText };
+  }));
+  // Shelf packing: rows no wider than a square's side of the total area, at least the widest region.
+  const sized = laid.map((l) => ({ ...l, w: l.out.width + ARROW + 24, h: l.out.height + REGION_HEAD + 16 }))
+    .sort((x, y) => y.r.states.length - x.r.states.length || cmpStr(x.r.id, y.r.id));
+  const area = sized.reduce((s, x) => s + x.w * x.h, 0);
+  const rowW = Math.max(Math.sqrt(area) * 1.6, ...sized.map((x) => x.w));
+  const regions: RegionBox[] = [], states: StateBox[] = [], arcs: Arc[] = [];
+  let x = 0, y = 0, rowH = 0, width = 0;
+  for (const s of sized) {
+    if (x > 0 && x + s.w > rowW) (x = 0, y += rowH + GAP, rowH = 0);
+    const title = s.r.dims.map((d) => dims.get(d)?.name ?? d).join(" × ");
+    regions.push({ id: s.r.id, title, x, y, w: s.w, h: s.h, truncated: s.r.truncated });
+    const ox = x + ARROW + 12, oy = y + REGION_HEAD;
+    const byState = new Map(s.r.states.map((st) => [st.id, st]));
+    for (const c of s.out.children ?? []) {
+      const st = byState.get(c.id)!;
+      states.push({ id: st.id, region: s.r.id, x: ox + (c.x ?? 0), y: oy + (c.y ?? 0), w: c.width ?? 0, h: c.height ?? 0, lines: s.lines(st), initial: st.initial, loops: st.loops, mayLoops: st.mayLoops });
+    }
+    s.out.edges.forEach((e, i) => {
+      const src = s.r.edges[i], sec = e.sections?.[0], lab = e.labels?.[0];
+      if (!sec) return;
+      arcs.push({
+        from: src.from, to: src.to, inputs: src.inputs, may: src.may,
+        points: [sec.startPoint, ...(sec.bendPoints ?? []), sec.endPoint].map((p) => ({ x: ox + p.x, y: oy + p.y })),
+        label: { text: lab?.text ?? "", x: ox + (lab?.x ?? 0), y: oy + (lab?.y ?? 0) + 10 },
+      });
+    });
+    x += s.w + GAP;
+    rowH = Math.max(rowH, s.h);
+    width = Math.max(width, x - GAP);
+  }
+  return { width, height: y + rowH, regions, states, arcs, inputs: a.inputs, dims: a.dims, quiet: a.quiet };
 }
