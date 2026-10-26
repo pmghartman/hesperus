@@ -1,16 +1,11 @@
-import { spawnSync } from "node:child_process";
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { Node } from "web-tree-sitter";
-import { Command, Frontend, Tool } from "../core/frontend";
+import { Frontend } from "../core/frontend";
 import { cmpStr } from "../core/ir";
 import { Facts, Operand } from "../core/syntax";
 import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "cpp";
 
-const VERSION = "v0.4.1";
-const asset = (name: string, sha256: string) => ({ archive: "none" as const, sha256, url: `https://github.com/sourcegraph/scip-clang/releases/download/${VERSION}/${name}` });
 
 const LITERALS = new Set(["number_literal", "string_literal", "raw_string_literal", "char_literal", "true", "false", "nullptr", "null"]);
 
@@ -150,58 +145,11 @@ export const CPP = new Grammar("tree-sitter-cpp.wasm", (n, src, f) => {
   }
 });
 
-/** scip-clang finds no system headers on macOS by itself, and a failed include silently drops the code after it. */
-function sysroot(): string[] {
-  if (process.platform !== "darwin") return [];
-  const r = spawnSync("xcrun", ["--show-sdk-path"], { encoding: "utf8" });
-  return r.status === 0 && r.stdout.trim() ? ["-isysroot", r.stdout.trim()] : [];
-}
-
-const isFile = (p: string) => fs.statSync(p, { throwIfNoEntry: false })?.isFile() ?? false;
-const UNITS = new Set(["c", "cc", "cpp", "cxx", "c++"]);
-
-/** C and C++, resolved by scip-clang. */
+/** C/C++: symbols and references come from the editor's language server. */
 export const Cpp: Frontend = {
   id: LANGUAGE_ID,
   extensions: ["c", "cc", "cpp", "cxx", "c++", "h", "hh", "hpp", "hxx", "h++", "ipp"],
-  tool: (): Tool => ({
-    name: "scip-clang",
-    version: VERSION,
-    install: {
-      kind: "release",
-      assets: {
-        "darwin-arm64": asset("scip-clang-arm64-darwin", "34a2eb7a5ef9bbe9849cded59f4eb22a2331bd5b64a5cec2b17ee09b8aa515de"),
-        "linux-x64": asset("scip-clang-x86_64-linux", "a434d26a079fd80e1996ba79276cb1ef86b2b2ad28b13e24386285db32c59046"),
-      },
-    },
-  }),
-  binIn: (dir) => path.join(dir, "bin", "scip-clang"),
-  searchDirs: () => [],
-  roots: () => [""],
-  /** scip-clang reads a compilation database. Use the repo's own; without one, compile every translation
-   *  unit with default flags and the usual include directories, which resolves self-contained code only. */
-  command(repo, bin, out, scratch): Command {
-    const abs = path.resolve(repo);
-    let db = ["compile_commands.json", "build/compile_commands.json"].map((p) => path.join(abs, p)).find(isFile);
-    if (!db) {
-      const files: string[] = [];
-      const walk = (d: string, rel: string) => {
-        for (const e of fs.readdirSync(d, { withFileTypes: true }).sort((a, b) => cmpStr(a.name, b.name))) {
-          if (e.name.startsWith(".")) continue;
-          const r = rel ? `${rel}/${e.name}` : e.name;
-          if (e.isDirectory()) walk(path.join(d, e.name), r);
-          else if (UNITS.has(e.name.slice(e.name.lastIndexOf(".") + 1).toLowerCase())) files.push(r);
-        }
-      };
-      walk(abs, "");
-      const flags = ["-std=c++17", "-I.", "-Iinclude", "-Isrc", ...sysroot()].join(" ");
-      const entries = files.map((file) => ({ directory: abs, command: `clang++ ${flags} -c ${file}`, file }));
-      fs.mkdirSync(path.join(scratch, "cpp-db"), { recursive: true });
-      db = path.join(scratch, "cpp-db", "compile_commands.json");
-      fs.writeFileSync(db, JSON.stringify(entries));
-    }
-    return { cmd: bin, args: [`--compdb-path=${db}`, `--index-output-path=${out}`], cwd: abs };
-  },
+  editor: { id: "ms-vscode.cpptools", name: "C/C++" },
   init: () => CPP.init(),
   syntax: () => CPP,
 };

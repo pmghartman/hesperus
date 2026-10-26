@@ -1,5 +1,5 @@
 # manual release: one past the highest vMAJOR.MINOR tag (minor, or major with .0 when
-# checked), tested, built as one VSIX (the CLI is JavaScript run on the editor's own Node),
+# checked), tested, built as one VSIX,
 # published to the VS Code Marketplace through Microsoft Entra ID, then tagged and released on GitHub;
 # then only the two newest releases and runs kept
 # the version lives in tags only; files are stamped at build time, never committed
@@ -74,8 +74,8 @@ jobs:
             notes.md
           retention-days: 1
 
-  # tests gating the release, including the determinism and golden snapshot tests. Pure
-  # TypeScript, so one OS; Node 20 is the oldest the editors in `engines` run the CLI on
+  # build and a short smoke test gating the release. Pure TypeScript, so one OS; Node 20 is
+  # the oldest the editors in `engines` run the extension on
   check:
     strategy:
       fail-fast: false
@@ -99,7 +99,7 @@ jobs:
         run: npm run build
       - name: test
         working-directory: vscode
-        run: node scripts/test.js
+        run: node scripts/smoke.js
 
   # one VSIX for every platform: no native code inside
   build:

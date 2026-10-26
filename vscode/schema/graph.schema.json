@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "hesperus graph",
-  "description": "Schema version 3. A `state` is a constant value a field or variable is assigned; `transition` edges run between a location's states. Mirrored by vscode/src/core/ir.ts; change both together.",
+  "description": "Schema version 4. A file with `unindexed` set was in a language the editor could not resolve: it is a file node with no definitions or edges inside it; `doc` says why. A `state` is a constant value a field or variable is assigned; `transition` edges run between a location's states. Mirrored by vscode/src/core/ir.ts; change both together.",
   "type": "object",
   "required": ["schema_version", "nodes", "edges"],
   "additionalProperties": false,
   "properties": {
-    "schema_version": { "const": 3 },
+    "schema_version": { "const": 4 },
     "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
     "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } }
   },
@@ -40,7 +40,8 @@
         "range": { "$ref": "#/$defs/range" },
         "signature": { "type": "string" },
         "doc": { "type": "string" },
-        "hash": { "type": "string" }
+        "hash": { "type": "string" },
+        "unindexed": { "const": true }
       }
     },
     "edge": {

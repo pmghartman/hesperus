@@ -2,12 +2,13 @@
 (() => {
   const vs = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
-  const LANG = { go: "Go", javascript: "JavaScript / TypeScript" };
+  const LANG = { go: "Go", javascript: "JavaScript / TypeScript", rust: "Rust", csharp: "C#", cpp: "C / C++", dart: "Dart / Flutter" };
   for (const id of ["open", "reindex", "collapse", "fit"]) $(id).onclick = () => vs.postMessage({ type: id });
   for (const c of document.querySelectorAll("input[data-kind]"))
     c.onchange = () => vs.postMessage({ type: "kind", kind: c.dataset.kind });
   $("external").onchange = () => vs.postMessage({ type: "external" });
   $("files").onchange = () => vs.postMessage({ type: "files" });
+  $("unindexed").onchange = () => vs.postMessage({ type: "unindexed" });
   $("find").onsubmit = (e) => {
     e.preventDefault();
     vs.postMessage({ type: "find", query: $("q").value });
@@ -32,6 +33,7 @@
     for (const c of document.querySelectorAll("input[data-kind]")) c.checked = !m.hidden.includes(c.dataset.kind);
     $("external").checked = m.external;
     $("files").checked = m.files;
+    $("unindexed").checked = m.unindexed;
     if (m.found !== undefined) $("found").textContent = m.found;
 
     // Fields and variables with states: a click expands one in place and centres on it.
@@ -55,9 +57,7 @@
       ms.append(row);
     }
 
-    const ul = $("langs");
-    ul.replaceChildren();
-    const li = (name, count, tool, missing) => {
+    const add = (ul, name, count, note, bad, action) => {
       const row = document.createElement("li");
       const n = document.createElement("span"), c = document.createElement("span");
       n.className = "name";
@@ -66,22 +66,33 @@
       c.textContent = count;
       row.append(n, c);
       ul.append(row);
-      if (tool) {
+      if (note) {
         const t = document.createElement("li");
-        t.className = "tool" + (missing ? " missing" : "");
-        t.textContent = tool;
+        t.className = "tool" + (bad ? " missing" : "");
+        t.textContent = note;
+        if (action) {
+          const b = document.createElement("button");
+          b.className = "link";
+          b.textContent = action.label;
+          b.onclick = () => vs.postMessage({ type: "install", id: action.id });
+          t.append(" ", b);
+        }
         ul.append(t);
       }
     };
-    if (!m.tools) li("—", "");
-    else {
-      for (const l of m.tools.languages) {
-        const t = m.tools.tools.find((x) => x.name === l.tool);
-        li(LANG[l.id] ?? l.id, `${l.files.toLocaleString()} files`, t && `${t.name} ${t.version}${t.bin ? "" : " · downloads on first index"}`, t && !t.bin);
-      }
-      if (!m.tools.languages.length) li("No supported language found", "");
-      if (m.tools.other_files) li("Other, not analyzed", `${m.tools.other_files.toLocaleString()} files`);
-    }
+    const ul = $("langs");
+    ul.replaceChildren();
+    for (const l of m.languages)
+      add(ul, LANG[l.id] ?? l.id, `${l.files.toLocaleString()} files`, `${l.editor.name} extension${l.installed ? "" : " · not installed"}`, !l.installed);
+    if (!m.languages.length) add(ul, "No supported language found", "");
+    if (m.other) add(ul, "Other, not analyzed", `${m.other.toLocaleString()} files`);
+
+    const miss = $("missing");
+    miss.replaceChildren();
+    $("missing-section").hidden = !m.missing.length;
+    for (const u of m.missing)
+      add(miss, LANG[u.lang] ?? u.lang, `${u.files.toLocaleString()} files`, u.reason, true,
+        u.installed ? undefined : { id: u.editor.id, label: `Install ${u.editor.name}` });
   });
   vs.postMessage({ type: "ready" });
 })();

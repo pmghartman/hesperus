@@ -35,6 +35,27 @@ export function withoutExternal(g: Graph, v: View): View {
   return { nodes: v.nodes.filter((id) => !out.has(id)), rollups: v.rollups.filter((r) => !out.has(r.from) && !out.has(r.to)), groups };
 }
 
+/** `v` without unindexed files and the containers left holding only them. */
+export function withoutUnindexed(g: Graph, v: View): View {
+  const kids = new Map<string, string[]>();
+  for (const e of g.edges) if (e.kind === "contains") (kids.get(e.from) ?? kids.set(e.from, []).get(e.from)!).push(e.to);
+  const hide = new Set(g.nodes.filter((n) => n.unindexed).map((n) => n.id));
+  const seen = new Set<string>();
+  const empty = (id: string): boolean => {
+    if (hide.has(id)) return true;
+    const k = kids.get(id);
+    if (!k || seen.has(id)) return false;
+    seen.add(id);
+    const all = k.every(empty);
+    if (all) hide.add(id);
+    return all;
+  };
+  for (const id of kids.keys()) empty(id);
+  const groups = v.groups.filter((gr) => !gr.members.every((m) => hide.has(m)));
+  for (const gr of v.groups) if (!groups.includes(gr)) hide.add(gr.id);
+  return { nodes: v.nodes.filter((id) => !hide.has(id)), rollups: v.rollups.filter((r) => !hide.has(r.from) && !hide.has(r.to)), groups };
+}
+
 /** A state machine: a field or variable with `state` children. */
 export interface Machine { id: string; name: string; states: number; transitions: number }
 

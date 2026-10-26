@@ -1,9 +1,7 @@
-import * as path from "node:path";
 import { Node } from "web-tree-sitter";
-import { Command, Frontend, Tool } from "../core/frontend";
+import { Frontend } from "../core/frontend";
 import { cmpStr } from "../core/ir";
 import { Facts, Operand } from "../core/syntax";
-import { mirror } from "./mirror";
 import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "csharp";
@@ -150,28 +148,11 @@ export const CSHARP = new Grammar("tree-sitter-c_sharp.wasm", (n, src, f) => {
   }
 });
 
-const VERSION = "0.2.16";
-
-/** C#, resolved by scip-dotnet. */
+/** C#: symbols and references come from the editor's language server. */
 export const CSharp: Frontend = {
   id: LANGUAGE_ID,
   extensions: ["cs"],
-  tool: (): Tool => ({ name: "scip-dotnet", version: VERSION, install: { kind: "dotnet", package: "scip-dotnet", version: VERSION } }),
-  binIn: (dir) => path.join(dir, "bin", process.platform === "win32" ? "scip-dotnet.exe" : "scip-dotnet"),
-  searchDirs: () => (process.env.HOME ? [path.join(process.env.HOME, ".dotnet", "tools")] : []),
-  /** scip-dotnet takes a solution or project and restores it, so each outermost one is a root. */
-  roots(files) {
-    const sol = files.filter((f) => /\.(sln|slnx)$/i.test(f));
-    const projs = files.filter((f) => /\.csproj$/i.test(f));
-    const dirs = (sol.length ? sol : projs).filter((f) => !f.split("/").includes("testdata")).map((f) => f.slice(0, Math.max(f.lastIndexOf("/"), 0)));
-    if (!dirs.length) throw new Error("C# files found but no .sln or .csproj anywhere in the repo; scip-dotnet indexes MSBuild projects.");
-    return [...new Set(dirs.filter((d) => !dirs.some((o) => o !== d && (o === "" || d.startsWith(o + "/")))))].sort(cmpStr);
-  },
-  /** Restore writes obj/ beside the projects, so index a copy. */
-  command(repo, bin, out, scratch): Command {
-    const dir = mirror(repo, scratch, "csharp");
-    return { cmd: bin, args: ["index", "--output", out], cwd: dir, env: { DOTNET_CLI_TELEMETRY_OPTOUT: "1", DOTNET_NOLOGO: "1" } };
-  },
+  editor: { id: "ms-dotnettools.csharp", name: "C#" },
   init: () => CSHARP.init(),
   syntax: () => CSHARP,
 };

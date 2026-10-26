@@ -1,5 +1,5 @@
 // Versioned IR. Change deliberately and bump SCHEMA_VERSION; mirrored by schema/graph.schema.json.
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 export const TOOL_NAME = "hesperus";
 export const REPO_ID = "repo";
 
@@ -30,6 +30,8 @@ export interface GraphNode {
   doc?: string;
   /** Content hash of the defining file; marks staleness only. */
   hash?: string;
+  /** A file in a language nothing resolved; `doc` says why. */
+  unindexed?: true;
 }
 
 export interface GraphEdge {
@@ -116,6 +118,7 @@ export function node(n: GraphNode): GraphNode {
   if (n.signature !== undefined) o.signature = n.signature;
   if (n.doc !== undefined) o.doc = n.doc;
   if (n.hash !== undefined) o.hash = n.hash;
+  if (n.unindexed) o.unindexed = true;
   return o;
 }
 

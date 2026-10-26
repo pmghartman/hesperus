@@ -226,7 +226,7 @@
     const nodeLayer = el("g", {}, scene), wireLayer = el("g", { class: "wires" }, scene);
     const nodeEls = new Map();
     for (const b of order) {
-      const g = el("g", { class: `node k-${b.node.kind}` + (b.container ? " container" : ""), "data-id": b.id }, nodeLayer);
+      const g = el("g", { class: `node k-${b.node.kind}` + (b.container ? " container" : "") + (b.node.unindexed ? " unindexed" : ""), "data-id": b.id }, nodeLayer);
       el("rect", { class: "body", x: b.x, y: b.y, width: b.w, height: b.h, rx: b.container ? 6 : 4 }, g);
       el("rect", { class: "bar", x: b.x, y: b.y + 1, width: 3, height: (b.container ? HEAD : b.h) - 2, rx: 1.5 }, g);
       const cy = b.y + (b.container ? HEAD : LEAF_H) / 2;

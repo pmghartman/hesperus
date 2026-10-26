@@ -21,6 +21,8 @@ export interface Inputs {
   readSource: (path: string) => string | undefined;
   /** (document language, repo-relative path) to a syntax provider. */
   syntaxFor: (language: string, path: string) => Syntax | undefined;
+  /** Files of languages that could not be indexed; each becomes a bare file node. */
+  unindexed?: { path: string; reason: string }[];
 }
 
 interface Def { path: string; ident: Range }
@@ -173,6 +175,13 @@ export function build(inp: Inputs): Graph {
     nodes.set(fid, { id: fid, kind: "file", name: baseName(path), path, hash: hashOf(path) });
     const pkgs = filePkgs.get(path);
     parent.set(fid, pkgs ? minBy(pkgs, cmpStr)! : REPO_ID);
+  }
+  for (const u of inp.unindexed ?? []) {
+    const fid = fileId(u.path);
+    if (nodes.has(fid)) continue;
+    const text = inp.readSource(u.path);
+    nodes.set(fid, { id: fid, kind: "file", name: baseName(u.path), path: u.path, hash: text === undefined ? undefined : sha256Hex(text), doc: u.reason, unindexed: true });
+    parent.set(fid, REPO_ID);
   }
   for (const pkgs of filePkgs.values()) {
     for (const pid of pkgs) {

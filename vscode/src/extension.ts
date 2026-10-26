@@ -1,22 +1,11 @@
 import * as vscode from "vscode";
-import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import * as path from "node:path";
 import * as aggregate from "./core/aggregate";
 import { EdgeKind, Graph, GraphNode } from "./core/ir";
 import { layout } from "./layout";
-import type { Tools } from "./engine";
-import { install } from "./tools";
-
-// The CLI runs on the editor's own Node (Electron as Node), so nothing else needs installing,
-// and indexing never blocks the extension host.
-const CLI = path.join(__dirname, "cli.js");
-
-function cli(args: string[]): Promise<string> {
-  return new Promise((resolve, reject) =>
-    execFile(process.execPath, [CLI, ...args], { maxBuffer: 1 << 30, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } }, (err, out, errOut) =>
-      err ? reject(new Error(errOut.trim().replace(/^error: /, "") || err.message)) : resolve(out)));
-}
+import { index, LangResult, load, scan, Scan, sourceFiles, status, unindexedLanguages } from "./engine";
+import { editorIndex, ensureExtension, hasExtension, installExtension } from "./editor";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -37,7 +26,7 @@ const FIND_RANK: Record<string, number> = { function: 0, method: 0, type: 1, pac
 // One graph tab per window; the sidebar is its control panel (status, errors, view options).
 class Hesperus {
   private status: Status = STATUS.idle;
-  private tools?: Tools;
+  private scanned?: Scan;
   private graph?: Graph;
   private parent = new Map<string, string>();
   private machines: aggregate.Machine[] = [];
@@ -45,9 +34,11 @@ class Hesperus {
   private hidden = new Set<EdgeKind>();
   private external = true;
   private files = false;
+  private unindexed = true;
   private panel?: vscode.WebviewPanel;
   private sidebar?: vscode.WebviewView;
   private busy?: Promise<void>;
+  private log = vscode.window.createOutputChannel("Hesperus");
 
   constructor(private ctx: vscode.ExtensionContext) {}
 
@@ -106,23 +97,31 @@ class Hesperus {
     const repo = folder.uri.fsPath;
     try {
       this.setStatus(STATUS.checking);
-      this.tools = JSON.parse(await cli(["tools", repo, "--tools-dir", this.toolsDir]));
-      const st: { state: string; detail: string } = JSON.parse(await cli(["status", repo]));
+      this.scanned = scan(repo);
+      const st = status(repo);
       if (force || st.state !== "ready") {
         const reason = force ? "Re-index requested." : st.state === "missing" ? "No cache yet." : st.detail;
-        for (const t of this.tools!.tools.filter((t) => !t.bin)) {
-          this.setStatus({ state: "installing", label: `Downloading ${t.name} ${t.version}…`, reason: "One-time download into the extension's storage." });
-          await install(t);
+        if (!this.scanned.languages.length) throw new Error("No supported language found in this folder.");
+        // Each language resolves on its own; one that cannot (extension missing or silent) leaves its files
+        // as unindexed nodes and the rest of the repo still builds.
+        const results: LangResult[] = [];
+        for (const l of this.scanned.languages) {
+          try {
+            this.setStatus({ state: "installing", label: `Checking the ${l.editor.name} extension…`, reason });
+            await ensureExtension(l);
+            const ix = await editorIndex(repo, l.id, sourceFiles(repo, l.id), (s) => this.setStatus({ state: "indexing", label: `${l.editor.name}: ${s}`, reason }));
+            results.push({ lang: l.id, index: ix });
+          } catch (e) {
+            this.log.appendLine(`${l.id}: ${msg(e)}`);
+            results.push({ lang: l.id, error: msg(e) });
+          }
         }
-        this.tools = JSON.parse(await cli(["tools", repo, "--tools-dir", this.toolsDir]));
-        const names = this.tools!.tools.map((t) => t.name).join(" + ");
-        this.setStatus({ state: "indexing", label: `Indexing with ${names}…`, reason });
-        await cli(["index", repo, "--tools-dir", this.toolsDir]);
+        await index(repo, results);
         this.graph = undefined;
         this.expanded.clear();
       }
       if (!this.graph) {
-        this.graph = JSON.parse(await cli(["graph", repo])) as Graph;
+        this.graph = load(repo);
         this.parent = new Map(this.graph.edges.filter((e) => e.kind === "contains").map((e) => [e.to, e.from]));
         this.expanded = aggregate.overview(this.graph, aggregate.OVERVIEW_NODES, this.opts);
         this.machines = aggregate.machines(this.graph);
@@ -139,7 +138,8 @@ class Hesperus {
     if (!this.panel || !this.graph || !folder) return;
     try {
       const all = aggregate.view(this.graph, this.expanded, this.opts);
-      const v = this.external ? all : aggregate.withoutExternal(this.graph, all);
+      const ext = this.external ? all : aggregate.withoutExternal(this.graph, all);
+      const v = this.unindexed ? ext : aggregate.withoutUnindexed(this.graph, ext);
       this.panel.webview.postMessage({ type: "layout", layout: await layout(this.graph, v), hidden: [...this.hidden], ...extra });
     } catch (e) {
       this.setStatus({ state: "error", label: "Error", detail: msg(e) });
@@ -160,8 +160,11 @@ class Hesperus {
       hidden: [...this.hidden],
       external: this.external,
       files: this.files,
+      unindexed: this.unindexed,
       repo: this.folder?.name ?? null,
-      tools: this.tools ?? null,
+      languages: (this.scanned?.languages ?? []).map((l) => ({ ...l, installed: hasExtension(l.editor.id) })),
+      other: this.scanned?.other_files ?? 0,
+      missing: this.graph ? unindexedLanguages(this.graph).map((m) => ({ ...m, installed: hasExtension(m.editor.id) })) : [],
       machines: this.machines,
       found,
     });
@@ -217,6 +220,15 @@ class Hesperus {
       this.files = !this.files;
       this.postSidebar();
       await this.render();
+    } else if (m.type === "unindexed") {
+      this.unindexed = !this.unindexed;
+      this.postSidebar();
+      await this.render();
+    } else if (m.type === "install" && m.id) {
+      if (!this.panel) this.open();
+      this.setStatus({ state: "installing", label: "Installing extension…", reason: m.id });
+      await installExtension(m.id);
+      await this.load(true);
     } else if (m.type === "external") {
       this.external = !this.external;
       this.postSidebar();
@@ -291,7 +303,7 @@ const GRAPH_BODY = `<svg id="view" xmlns="http://www.w3.org/2000/svg"><g id="sce
 
 const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" class="state"></div></header>
 <pre id="detail" hidden></pre>
-<div class="actions"><button id="open">Open Graph</button><button id="reindex" class="secondary" title="Re-run the indexers">Re-index</button></div>
+<div class="actions"><button id="open">Open Graph</button><button id="reindex" class="secondary" title="Read the repo again through the editor's language servers">Re-index</button></div>
 <form id="find"><input id="q" type="search" placeholder="Find a function, type, or package" spellcheck="false" aria-label="Find"></form><div id="found" class="muted"></div>
 <section><h3>Show<span class="tools"><button id="fit" class="link" title="Fit the graph to the window">Fit</button><button id="collapse" class="link" title="Collapse every container">Collapse All</button></span></h3>
 <label><input type="checkbox" data-kind="call"><span class="swatch call"></span>Calls</label>
@@ -299,8 +311,10 @@ const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" 
 <label><input type="checkbox" data-kind="override"><span class="swatch override"></span>Overrides</label>
 <label><input type="checkbox" data-kind="transition"><span class="swatch transition"></span>State transitions</label>
 <label title="Packages outside the repo, such as the standard library"><input type="checkbox" id="external"><span class="swatch external"></span>External libraries</label>
+<label title="Files in a language the editor could not resolve, drawn with no definitions or edges"><input type="checkbox" id="unindexed"><span class="swatch unindexed"></span>Unindexed files</label>
 <label title="Off: packages and folders are boundaries around their types and functions. On: files sit between them."><input type="checkbox" id="files"><span class="swatch files"></span>Files</label>
 <div class="legend"><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l"/></svg>resolved</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l may"/></svg>may</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l unresolved"/></svg>unresolved</span></div></section>
 <section><h3>State machines</h3><ul id="machines" class="machines"></ul></section>
+<section id="missing-section" hidden><h3>Not indexed</h3><ul id="missing" class="langs"></ul></section>
 <section><h3>Languages</h3><ul id="langs" class="langs"></ul></section>
 <p class="hint">Zoom in to open boxes, zoom out to close them, or click a box to toggle it. ⌘/Ctrl-click or double-click opens its source. Hover to trace edges; click a wire or shift-click a box to pin it, Esc to clear.</p>`;

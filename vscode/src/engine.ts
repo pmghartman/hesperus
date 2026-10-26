@@ -1,13 +1,12 @@
-// What the CLI and the extension run: frontend registry, indexer runs, cache state.
+// What the extension runs: frontend registry, repo scan, graph from per-language indexes, cache state.
 // Language knowledge stays in src/lang; core stays language-free.
-import { spawn, spawnSync } from "node:child_process";
-import { launch } from "./shell";
+import { spawnSync } from "node:child_process";
+import { BRIDGE_TOOL } from "./core/bridge";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { build } from "./core/build";
-import { CACHE_DIR, checkHeader, Header, ioMessage, readCache, readHeader, writeCache } from "./core/cache";
-import { Command, dirName, extension, Frontend, Install } from "./core/frontend";
+import { CACHE_DIR, checkHeader, Header, readCache, readHeader, writeCache } from "./core/cache";
+import { extension, Frontend } from "./core/frontend";
 import { sha256Hex } from "./core/hash";
 import { cmpStr, Graph, SCHEMA_VERSION, TOOL_NAME } from "./core/ir";
 import * as scip from "./core/scip";
@@ -30,10 +29,8 @@ let ready: Promise<void> | undefined;
 /** Loads every grammar once; needed before indexing. */
 export const init = () => (ready ??= Promise.all(FRONTENDS.map((f) => f.init())).then(() => {}));
 
-// Output shape of `hesperus tools`; keys sorted, as the Rust CLI printed them.
-export interface ToolStatus { bin: string | null; dir: string | null; install: Install; name: string; version: string }
-export interface Language { files: number; id: string; tool: string }
-export interface Tools { languages: Language[]; other_files: number; tools: ToolStatus[] }
+export interface Language { files: number; id: string; editor: Frontend["editor"] }
+export interface Scan { languages: Language[]; other_files: number }
 export interface Status { detail: string; state: "ready" | "stale" | "missing" }
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -116,26 +113,15 @@ function listFiles(repo: string): string[] {
   return out;
 }
 
-/** The pinned install under `toolsDir` first, then PATH, then the frontend's usual places. */
-function findTool(f: Frontend, toolsDir?: string): string | null {
-  const t = f.tool();
-  const dirs = (process.env.PATH ?? "").split(path.delimiter).concat(f.searchDirs());
-  const candidates = [...(toolsDir ? [f.binIn(path.join(toolsDir, dirName(t)))] : []), ...dirs.map((d) => path.join(d, t.name))];
-  return candidates.find(isFile) ?? null;
-}
-
-export function tools(repo: string, toolsDir?: string): Tools {
+/** Languages found in the repo, with the editor extension each needs. */
+export function scan(repo: string): Scan {
   const [counts, other] = fileCounts(repo);
   const languages: Language[] = [];
-  const out: ToolStatus[] = [];
   for (const f of FRONTENDS) {
     const files = counts.get(f.id) ?? 0;
-    if (files === 0) continue;
-    const t = f.tool();
-    languages.push({ files, id: f.id, tool: t.name });
-    out.push({ bin: findTool(f, toolsDir), dir: toolsDir ? path.join(toolsDir, dirName(t)) : null, install: t.install, name: t.name, version: t.version });
+    if (files > 0) languages.push({ files, id: f.id, editor: f.editor });
   }
-  return { languages, other_files: other, tools: out };
+  return { languages, other_files: other };
 }
 
 export function status(repo: string, lockfiles: readonly string[] = []): Status {
@@ -159,92 +145,52 @@ export function load(repo: string, lockfiles: readonly string[] = []): Graph {
   return readCache(repo, header(repo, lockfiles, cached.indexer));
 }
 
-export interface IndexOpts { scip?: readonly string[]; toolsDir?: string; lockfiles?: readonly string[] }
+/** Repo-relative files the language owns, sorted. */
+export function sourceFiles(repo: string, lang: string): string[] {
+  return listFiles(repo).filter((p) => owner(p)?.id === lang).sort(cmpStr);
+}
 
-/** Indexes the repo into its cache; without `scip` files, runs each detected language's indexer. */
-export async function index(repo: string, o: IndexOpts = {}): Promise<Graph> {
+/** One language's outcome: an index, or why there is none. */
+export type LangResult = { lang: string; index: scip.Index } | { lang: string; error: string };
+
+/** Builds the graph from each language's own result and writes the cache. A language that failed
+ *  contributes its files as unindexed nodes; the rest of the repo is unaffected. */
+export async function index(repo: string, results: readonly LangResult[], lockfiles: readonly string[] = []): Promise<Graph> {
   await init();
-  const indexes = o.scip?.length
-    ? o.scip.map((p) => scip.decode(readOrThrow(p)))
-    : await runIndexers(repo, o.toolsDir);
-  const indexer = [...new Set(indexes.map(scip.toolOf))].sort(cmpStr).join(", ");
-  const g = makeGraph(repo, scip.merge(indexes));
-  writeCache(repo, header(repo, o.lockfiles ?? [], indexer), g);
+  const indexes = results.flatMap((r) => ("index" in r ? [r.index] : []));
+  const unindexed = results
+    .filter((r): r is { lang: string; error: string } => "error" in r)
+    .flatMap((r) => sourceFiles(repo, r.lang).map((path) => ({ path, reason: r.error })));
+  const g = makeGraph(repo, scip.merge(indexes), unindexed);
+  writeCache(repo, header(repo, lockfiles, `${BRIDGE_TOOL.name} ${BRIDGE_TOOL.version}`), g);
   return g;
-}
-
-function readOrThrow(p: string): Buffer {
-  try {
-    return fs.readFileSync(p);
-  } catch (e) {
-    throw new Error(`${p}: ${ioMessage(e)}`);
-  }
-}
-
-/** Runs the indexer of every frontend with files in the repo. Indexer output and any
- *  scratch files go to a temp dir, so the repo itself is never written. */
-async function runIndexers(repo: string, toolsDir?: string): Promise<scip.Index[]> {
-  const files = listFiles(repo);
-  const [counts] = fileCounts(repo, files);
-  const active = FRONTENDS.filter((f) => counts.has(f.id));
-  if (!active.length) throw new Error(`no supported language in ${repo} (supported: ${FRONTENDS.map((f) => f.id).join(", ")})`);
-  const missing = active.filter((f) => findTool(f, toolsDir) === null).map((f) => `${f.tool().name} ${f.tool().version} (for ${f.id})`);
-  if (missing.length) throw new Error(`indexer not installed: ${missing.join(", ")}. \`hesperus tools <repo>\` lists how to install each.`);
-  const scratch = path.join(os.tmpdir(), `hesperus-${process.pid}`);
-  fs.rmSync(scratch, { recursive: true, force: true });
-  fs.mkdirSync(scratch, { recursive: true });
-  try {
-    const out: scip.Index[] = [];
-    for (const f of active) {
-      const roots = f.roots(files);
-      for (const [i, root] of roots.entries()) {
-        const ix = await runOne(f, path.join(repo, root), findTool(f, toolsDir)!, scratch, `${f.id}-${i}`);
-        if (root !== "") for (const d of ix.documents) d.relative_path = `${root}/${d.relative_path}`;
-        out.push(ix);
-      }
-    }
-    return out;
-  } finally {
-    // Does not follow symlinks, so overlays pointing into the repo are safe to remove.
-    fs.rmSync(scratch, { recursive: true, force: true });
-  }
-}
-
-async function runOne(f: Frontend, repo: string, bin: string, scratch: string, name: string): Promise<scip.Index> {
-  const out = path.join(scratch, `${name}.scip`);
-  const c = f.command(repo, bin, out, scratch);
-  if (c.prepare) await exec(c.prepare);
-  await exec(c);
-  return scip.decode(readOrThrow(out));
-}
-
-async function exec(c: Command): Promise<void> {
-  const { code, signal, stderr } = await new Promise<{ code: number | null; signal: string | null; stderr: string }>((resolve, reject) => {
-    const l = launch(c.cmd, c.args);
-    const p = spawn(l.cmd, l.args, { shell: l.shell, cwd: c.cwd, env: { ...process.env, ...c.env }, stdio: ["ignore", "ignore", "pipe"] });
-    let err = "";
-    p.stderr.setEncoding("utf8");
-    // Only the tail is reported; keep memory bounded on chatty indexers.
-    p.stderr.on("data", (d: string) => (err = (err + d).slice(-65536)));
-    p.on("error", (e) => reject(new Error(`${c.cmd}: ${ioMessage(e)}`)));
-    p.on("close", (code, signal) => resolve({ code, signal, stderr: err }));
-  });
-  if (code !== 0) {
-    const tail = stderr.split(/\r?\n/).filter((l, i, a) => i < a.length - 1 || l !== "").slice(-20).join("\n");
-    throw new Error(`${c.cmd} failed (${signal ? `signal: ${signal}` : `exit status: ${code}`}):\n${tail}`);
-  }
 }
 
 /** Only documents in git's view of the tree: indexers also report generated, ignored,
  *  and out-of-repo files (build output, cgo caches), which are not the code under review. */
-export function makeGraph(repo: string, index: scip.Index): Graph {
+export function makeGraph(repo: string, index: scip.Index, unindexed: { path: string; reason: string }[] = []): Graph {
   const tree = new Set(listFiles(repo));
   const documents = index.documents.filter((d) => safeRel(d.relative_path) && tree.has(d.relative_path));
   return build({
     index: { ...index, documents },
     readSource: (p) => (safeRel(p) ? readUtf8(path.join(repo, p)) : undefined),
     syntaxFor: (_lang, p) => owner(p)?.syntax(p),
+    unindexed,
   });
 }
 
 export { CACHE_DIR };
+
+export interface Unindexed { lang: string; files: number; editor: Frontend["editor"]; reason: string }
+
+/** Languages with unindexed files in the graph, from the graph itself so a cached one reports them too. */
+export function unindexedLanguages(g: Graph): Unindexed[] {
+  const out = new Map<string, Unindexed>();
+  for (const n of g.nodes) {
+    const f = n.unindexed && n.path !== undefined ? owner(n.path) : undefined;
+    if (!f) continue;
+    const u = out.get(f.id) ?? out.set(f.id, { lang: f.id, files: 0, editor: f.editor, reason: n.doc ?? "" }).get(f.id)!;
+    u.files++;
+  }
+  return [...out.values()].sort((a, b) => cmpStr(a.lang, b.lang));
+}

@@ -1,10 +1,7 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { Node } from "web-tree-sitter";
-import { Command, Frontend, Tool } from "../core/frontend";
+import { Frontend } from "../core/frontend";
 import { cmpStr, Range } from "../core/ir";
 import { Facts, Guard, Operand } from "../core/syntax";
-import { mirror } from "./mirror";
 import { Grammar, namedChildren, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "dart";
@@ -225,33 +222,11 @@ export const DART = new Grammar("tree-sitter-dart.wasm", (n, src, f) => {
   }
 });
 
-const VERSION = "1.8.1";
-const isFile = (p: string) => fs.statSync(p, { throwIfNoEntry: false })?.isFile() ?? false;
-
-/** Dart and Flutter, resolved by scip_dart. */
+/** Dart and Flutter: symbols and references come from the editor's language server. */
 export const Dart: Frontend = {
   id: LANGUAGE_ID,
   extensions: ["dart"],
-  tool: (): Tool => ({ name: "scip_dart", version: VERSION, install: { kind: "dart", package: "scip_dart", version: VERSION } }),
-  binIn: (dir) => path.join(dir, "bin", process.platform === "win32" ? "scip_dart.bat" : "scip_dart"),
-  searchDirs: () => (process.env.HOME ? [path.join(process.env.HOME, ".pub-cache", "bin")] : []),
-  /** One root per outermost pubspec; a package nested in another (an `example/`) is part of it. */
-  roots(files) {
-    const dirs = files.filter((f) => f === "pubspec.yaml" || f.endsWith("/pubspec.yaml")).map((f) => f.slice(0, Math.max(f.lastIndexOf("/"), 0)));
-    if (!dirs.length) throw new Error("Dart files found but no pubspec.yaml anywhere in the repo; scip_dart indexes Dart packages.");
-    return dirs.filter((d) => !dirs.some((o) => o !== d && (o === "" || d.startsWith(o + "/")))).sort(cmpStr);
-  },
-  /** `pub get` writes .dart_tool and pubspec.lock beside the package, so run both in a copy. scip_dart
-   *  indexes nothing when given a relative directory. Flutter packages need Flutter's own `pub get`. */
-  command(repo, bin, out, scratch): Command {
-    const dir = path.resolve(mirror(repo, scratch, "dart"));
-    const pubspec = path.join(dir, "pubspec.yaml");
-    const flutter = isFile(pubspec) && /^\s*sdk:\s*flutter\s*$/m.test(fs.readFileSync(pubspec, "utf8"));
-    return {
-      cmd: bin, args: [dir, "--output", out], cwd: dir,
-      prepare: { cmd: flutter ? "flutter" : "dart", args: ["pub", "get"], cwd: dir },
-    };
-  },
+  editor: { id: "Dart-Code.dart-code", name: "Dart and Flutter" },
   init: () => DART.init(),
   syntax: () => DART,
 };

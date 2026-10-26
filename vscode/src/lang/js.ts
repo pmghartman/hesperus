@@ -1,11 +1,7 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { Node } from "web-tree-sitter";
-import { CACHE_DIR } from "../core/cache";
-import { Command, extension, Frontend, Tool } from "../core/frontend";
+import { Frontend, extension } from "../core/frontend";
 import { cmpStr } from "../core/ir";
 import { Facts, Operand } from "../core/syntax";
-import { PKG_ROOT } from "../root";
 import { equalities, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "javascript";
@@ -165,47 +161,11 @@ export const JS = new Grammar("tree-sitter-javascript.wasm", visit);
 export const TS = new Grammar("tree-sitter-typescript.wasm", visit);
 export const TSX = new Grammar("tree-sitter-tsx.wasm", visit);
 
-const CONFIGS = ["tsconfig.json", "jsconfig.json"];
-const TOOL_DIR = path.join(PKG_ROOT, "indexers", "scip-typescript");
-
-const isFile = (p: string) => fs.statSync(p, { throwIfNoEntry: false })?.isFile() ?? false;
-
-/** JavaScript and TypeScript, resolved by scip-typescript. */
+/** JavaScript and TypeScript: the editor's built-in TypeScript server answers. */
 export const Js: Frontend = {
   id: LANGUAGE_ID,
   extensions: ["js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx"],
-  tool: (): Tool => ({
-    name: "scip-typescript",
-    version: "0.5.2",
-    install: {
-      kind: "npm",
-      package_json: fs.readFileSync(path.join(TOOL_DIR, "package.json"), "utf8"),
-      package_lock: fs.readFileSync(path.join(TOOL_DIR, "package-lock.json"), "utf8"),
-    },
-  }),
-  binIn: (dir) => path.join(dir, "node_modules", ".bin", process.platform === "win32" ? "scip-typescript.cmd" : "scip-typescript"),
-  searchDirs: () => [],
-  roots: () => [""],
-  /** scip-typescript needs a tsconfig and writes one into the project when inferring it.
-   *  Index a scratch overlay instead: symlinks to the repo's entries plus our config.
-   *  `preserveSymlinks` keeps paths, and so symbols, relative to the overlay root. */
-  command(repo, bin, out, scratch): Command {
-    const overlay = path.join(scratch, "js-overlay");
-    fs.mkdirSync(overlay, { recursive: true });
-    // Absolute targets: a relative one would resolve against the overlay.
-    const abs = path.resolve(repo);
-    const hasConfig = CONFIGS.some((c) => isFile(path.join(abs, c)));
-    const names = fs.readdirSync(abs).sort(cmpStr);
-    for (const name of names) {
-      if (name === ".git" || name === CACHE_DIR) continue;
-      link(path.join(abs, name), path.join(overlay, name));
-    }
-    if (!hasConfig) {
-      const cfg = `{"compilerOptions":{"allowJs":true,"noEmit":true,"preserveSymlinks":true}}`;
-      fs.writeFileSync(path.join(overlay, "tsconfig.json"), cfg);
-    }
-    return { cmd: bin, args: ["index", "--no-progress-bar", "--cwd", overlay, "--output", out, overlay], cwd: overlay };
-  },
+  editor: { id: "vscode.typescript-language-features", name: "TypeScript and JavaScript" },
   init: async () => {
     await Promise.all([JS.init(), TS.init(), TSX.init()]);
   },
@@ -217,9 +177,3 @@ export const Js: Frontend = {
     return undefined;
   },
 };
-
-/** Junctions on Windows need no elevation, unlike directory symlinks. */
-function link(src: string, dst: string) {
-  const dir = fs.statSync(src, { throwIfNoEntry: false })?.isDirectory() ?? false;
-  fs.symlinkSync(src, dst, process.platform === "win32" ? (dir ? "junction" : "file") : undefined);
-}

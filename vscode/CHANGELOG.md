@@ -2,7 +2,9 @@
 
 ## Unreleased
 
-- Rust, C#, C/C++ and Dart/Flutter frontends (rust-analyzer, scip-dotnet, scip-clang, scip_dart). Indexers that restore or build run on a scratch copy of the repo.
+- Symbols and references now come from the editor's language servers, per language. SCIP indexers, their downloads and the `hesperus` CLI are removed.
+- Rust, C#, C/C++ and Dart/Flutter support, alongside Go and JavaScript/TypeScript.
+- A missing language extension is offered for install; if skipped or silent, that language's files appear as unindexed nodes (a sidebar toggle) and the rest of the repo still builds.
 
 ## 0.1.0
 

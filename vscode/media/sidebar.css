@@ -54,3 +54,4 @@ input[type=checkbox]:checked::after { content: ""; width: 7px; height: 4px; marg
 .langs .tool { display: block; min-height: 0; color: var(--vscode-descriptionForeground); font-size: 11px; margin: -4px 0 4px; }
 .langs .tool.missing { color: var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground)); }
 .hint { margin: 14px 0 0; font-size: 11px; color: var(--vscode-descriptionForeground); }
+.swatch.unindexed { background: transparent; border: 1px dashed var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground)); height: 6px; width: 12px; }
