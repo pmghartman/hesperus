@@ -48,15 +48,26 @@ export async function editorIndex(
   opts: { patience: number; needCode: boolean; frontend?: Frontend } = { patience: 90, needCode: false },
 ): Promise<Index> {
   const docs = new Map<string, vscode.Uri>(files.map((f) => [f, vscode.Uri.file(path.join(repo, f))]));
-  const outline = async (f: string) =>
+  const ask = async (f: string) =>
     (await vscode.commands.executeCommand<(vscode.DocumentSymbol | vscode.SymbolInformation)[]>("vscode.executeDocumentSymbolProvider", docs.get(f)!)) ?? [];
+  // Some servers (cpptools) answer only for documents the editor has opened, and an unparsed file
+  // answers empty at first: open it, then retry an empty answer a few times.
+  const outline = async (f: string) => {
+    let s = await ask(f);
+    for (let i = 0; i < 4 && !s.length; i++) {
+      if (i === 0) await Promise.resolve(vscode.workspace.openTextDocument(docs.get(f)!)).catch(() => {});
+      await sleep(500 * (i + 1));
+      s = await ask(f);
+    }
+    return s;
+  };
   // A server that is still starting answers with nothing: wait for the first answer from a few files,
   // not for every empty one.
   const probe = files.slice(0, 8);
   let answered = false;
   for (let t = 0; t < opts.patience && !answered; t++) {
     report(t === 0 ? "Waiting for the language server…" : `Waiting for the language server… ${t}s`);
-    answered = (await Promise.all(probe.map(outline))).some((s) => s.length > 0);
+    answered = (await Promise.all(probe.map(ask))).some((s) => s.length > 0);
     if (!answered) await sleep(1000);
   }
   let read = 0;
