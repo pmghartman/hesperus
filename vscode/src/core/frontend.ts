@@ -8,6 +8,8 @@ export interface Frontend {
   extensions: readonly string[];
   /** The editor extension that answers symbol and reference queries for these files. */
   editor: { id: string; name: string };
+  /** A declaration and its definition live in different files (C/C++ headers) and are one symbol. */
+  declarationsAcrossFiles?: boolean;
   /** Loads grammars; `syntax` needs it first. */
   init(): Promise<void>;
   /** Syntax provider for a repo-relative path this frontend owns. */

@@ -6,7 +6,9 @@ import { cmpStr, Graph, GraphNode } from "./core/ir";
 export interface Stub { id: string; name: string; rollups: Rollup[] }
 /** `parent` is the drawn box this one sits in, if any. `ext` lists the outside nodes a leaf box
  *  reaches; they are drawn as a line in the box, not wires, since every box calls the standard library. */
-export interface Box { id: string; x: number; y: number; w: number; h: number; node: GraphNode; container: boolean; expandable: boolean; parent?: string; ext?: Stub[] }
+export interface Box { id: string; x: number; y: number; w: number; h: number; node: GraphNode; container: boolean; expandable: boolean; parent?: string; ext?: Stub[];
+  /** Flow view: where the box sits in the picture. `entry` has no callers; `sink` is outside the repo. */
+  role?: "entry" | "sink" }
 /** All rollups between two nodes share one wire, both directions: returns run against their
  *  calls, and routing them separately sends every one around the outside. Kinds stay listed for
  *  filtering; each rollup keeps its own direction. `from` is the end most rollups leave.
@@ -43,7 +45,7 @@ const width = (n: GraphNode) => Math.min(MAX_W, Math.max(MIN_W, Math.ceil(n.name
 
 // Positions come from ELK only; inputs are sorted and the seed is fixed so equal input
 // gives equal output.
-export async function layout(graph: Graph, view: View): Promise<Layout> {
+export async function layout(graph: Graph, view: View, opts: { flow?: boolean } = {}): Promise<Layout> {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const parent = new Map<string, string>();
   const hasKids = new Set<string>();
@@ -82,15 +84,31 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
   const mk = (id: string): ElkNode => {
     const ch = kids.get(id);
     const node = byId.get(id);
+    const pin: Record<string, string> = roles.has(id) && !up(id) ? { "elk.layered.layering.layerConstraint": roles.get(id) === "entry" ? "FIRST" : "LAST" } : {};
     if (ch)
-      return { id, children: ch.map(mk), layoutOptions: { "elk.padding": "[top=38,left=12,bottom=12,right=12]" } };
+      return { id, children: ch.map(mk), layoutOptions: { "elk.padding": "[top=38,left=12,bottom=12,right=12]", ...pin } };
     const ext = stubs.get(id);
     if (ext) {
       const text = Math.ceil(ext.map((x) => x.name).join(", ").length * CHAR) + 30;
       return { id, width: Math.max(node ? width(node) : MIN_W, Math.min(MAX_W, text)), height: LEAF_H + EXT_H };
     }
-    return { id, width: node ? width(node) : MIN_W, height: LEAF_H };
+    return { id, width: node ? width(node) : MIN_W, height: LEAF_H, ...(roles.has(id) ? { layoutOptions: pin } : {}) };
   };
+  // Flow view: the entries a program starts from and the packages it ends in, pinned to the two sides.
+  const outsideNode = (id: string) => ["external_package", "external"].includes(byId.get(id)?.kind ?? "");
+  const roles = new Map<string, "entry" | "sink">();
+  if (opts.flow) {
+    const called = new Set<string>(), calls = new Set<string>();
+    for (const r of view.rollups) {
+      if (r.kind !== "call" && r.kind !== "override") continue;
+      called.add(r.to);
+      calls.add(r.from);
+    }
+    for (const id of view.nodes) {
+      if (outsideNode(id)) roles.set(id, "sink");
+      else if (calls.has(id) && !called.has(id)) roles.set(id, "entry");
+    }
+  }
   const byPair = new Map<string, Rollup[]>();
   for (const r of view.rollups) {
     const k = cmpStr(r.from, r.to) < 0 ? r.from + "\0" + r.to : r.to + "\0" + r.from;
@@ -109,7 +127,7 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
   const stubs = new Map<string, Stub[]>();
   const keys = [...pairs.keys()].sort(cmpStr).filter((k) => {
     const [from, to] = k.split("\0");
-    if (outside(from) === outside(to)) return true;
+    if (opts.flow || outside(from) === outside(to)) return true;
     const [inner, ext] = outside(to) ? [from, to] : [to, from];
     if (kids.has(inner)) return true;
     if (!stubs.has(inner)) stubs.set(inner, []);
@@ -172,7 +190,7 @@ export async function layout(graph: Graph, view: View): Promise<Layout> {
       const node = byId.get(c.id);
       origin.set(c.id, { x, y });
       if (node)
-        boxes.push({ id: c.id, x, y, w: c.width ?? 0, h: c.height ?? 0, node, container: !!c.children, expandable: hasKids.has(c.id), ...(n.id === "root" ? {} : { parent: n.id }), ...(stubs.has(c.id) ? { ext: stubs.get(c.id) } : {}) });
+        boxes.push({ id: c.id, x, y, w: c.width ?? 0, h: c.height ?? 0, node, container: !!c.children, expandable: hasKids.has(c.id), ...(n.id === "root" ? {} : { parent: n.id }), ...(stubs.has(c.id) ? { ext: stubs.get(c.id) } : {}), ...(roles.has(c.id) ? { role: roles.get(c.id) } : {}) });
       walk(c, x, y);
     }
   };

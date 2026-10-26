@@ -25,14 +25,20 @@ export interface Group {
 }
 
 /** `nodes` holds graph ids and the ids of visible groups. */
-export interface View { nodes: string[]; rollups: Rollup[]; groups: Group[] }
+export interface View {
+  nodes: string[];
+  rollups: Rollup[];
+  groups: Group[];
+  /** Flow view: boxes left out because nothing flows to or from them. */
+  isolated?: number;
+}
 
 /** `v` without nodes outside the repo, their group, and the rollups that reach them. */
 export function withoutExternal(g: Graph, v: View): View {
   const out = new Set(g.nodes.filter((n) => n.kind === "external_package" || n.kind === "external").map((n) => n.id));
   const groups = v.groups.filter((gr) => !gr.members.every((m) => out.has(m)));
   for (const gr of v.groups) if (!groups.includes(gr)) out.add(gr.id);
-  return { nodes: v.nodes.filter((id) => !out.has(id)), rollups: v.rollups.filter((r) => !out.has(r.from) && !out.has(r.to)), groups };
+  return { ...v, nodes: v.nodes.filter((id) => !out.has(id)), rollups: v.rollups.filter((r) => !out.has(r.from) && !out.has(r.to)), groups };
 }
 
 /** `v` without unindexed files and the containers left holding only them. */
@@ -53,7 +59,7 @@ export function withoutUnindexed(g: Graph, v: View): View {
   for (const id of kids.keys()) empty(id);
   const groups = v.groups.filter((gr) => !gr.members.every((m) => hide.has(m)));
   for (const gr of v.groups) if (!groups.includes(gr)) hide.add(gr.id);
-  return { nodes: v.nodes.filter((id) => !hide.has(id)), rollups: v.rollups.filter((r) => !hide.has(r.from) && !hide.has(r.to)), groups };
+  return { ...v, nodes: v.nodes.filter((id) => !hide.has(id)), rollups: v.rollups.filter((r) => !hide.has(r.from) && !hide.has(r.to)), groups };
 }
 
 /** A state machine: a field or variable with `state` children. */
@@ -96,6 +102,23 @@ export interface ViewOptions {
   /** Draw files. Off by default: the logic view keeps packages and directories as boundaries
    *  and shows the types and functions in them directly. */
   files?: boolean;
+  /** Stage flow: directories, packages and files are units, drawn flat and never as boundaries; opening
+   *  one replaces it with what it holds. Tiers and unconnected boxes are left out, so the picture is
+   *  what calls what, entries first. Language-free: it reads only containment and call edges. */
+  flow?: boolean;
+}
+
+/** Flow view: a structure node is drawn only while shut. Open ones, and ones that are their parent's
+ *  only child, dissolve into their children. */
+function flowThrough(g: Graph, par: Map<string, string>, expanded: ReadonlySet<string>): (id: string) => boolean {
+  const kind = new Map(g.nodes.map((n) => [n.id, n.kind]));
+  const kids = new Map<string, number>();
+  for (const e of g.edges) if (e.kind === "contains") kids.set(e.from, (kids.get(e.from) ?? 0) + 1);
+  return (id) => {
+    const p = par.get(id);
+    if (!STRUCTURE.has(kind.get(id) ?? "") || !kids.get(id) || p === undefined) return false;
+    return expanded.has(id) || kids.get(p) === 1;
+  };
 }
 
 /** Nodes views pass through: never drawn, opened with their parent. Files (unless asked for),
@@ -117,7 +140,7 @@ export function passThrough(g: Graph, par: Map<string, string> = parents(g), opt
  *  The repo root is always expanded. */
 export function view(g: Graph, expanded: ReadonlySet<string>, opts: ViewOptions = {}): View {
   const par = parents(g);
-  const through = passThrough(g, par, opts);
+  const through = opts.flow ? flowThrough(g, par, expanded) : passThrough(g, par, opts);
   const memo = new Map<string, string>();
   const rep = (id: string): string => {
     const hit = memo.get(id);
@@ -138,7 +161,7 @@ export function view(g: Graph, expanded: ReadonlySet<string>, opts: ViewOptions 
     memo.set(id, cur);
     return cur;
   };
-  const groups = tiers(g, par, rep, expanded, through);
+  const groups = opts.flow ? [] : tiers(g, par, rep, expanded, through);
   const tierOf = new Map<string, Group>();
   for (const gr of groups) for (const m of gr.members) tierOf.set(m, gr);
   // A collapsed tier stands for everything beneath its members; the outermost one wins.
@@ -175,7 +198,13 @@ export function view(g: Graph, expanded: ReadonlySet<string>, opts: ViewOptions 
     r.edges.push(i);
   });
   const rollups = [...acc.values()].sort((x, y) => cmpStr(x.from, y.from) || cmpStr(x.to, y.to) || cmpEdgeKind(x.kind, y.kind));
-  return { nodes, rollups, groups: live };
+  if (!opts.flow) return { nodes, rollups, groups: live };
+  // A box nothing flows to or from says nothing about what the program does; its ancestors stay if a
+  // linked box sits inside.
+  const keep = new Set<string>();
+  for (const r of rollups) for (const id of [r.from, r.to]) for (let x: string | undefined = id; x !== undefined && !keep.has(x); x = par.get(x)) keep.add(x);
+  const linked = nodes.filter((id) => keep.has(id));
+  return { nodes: linked, rollups, groups: live, isolated: nodes.length - linked.length };
 }
 
 /** The first view opens down to logic instead of showing one box per top-level folder. */

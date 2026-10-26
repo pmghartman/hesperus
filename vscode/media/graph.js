@@ -15,14 +15,13 @@
 
   let L = null, hidden = [], boxes = new Map();
   let t = { x: 0, y: 0, k: 1 }, userMoved = false;
-  // Semantic zoom: zooming in opens boxes that fill the screen, zooming out closes containers
-  // that have shrunk. The host owns the expansion state; this only asks.
+  // Semantic zoom: zooming in opens boxes that fill the screen. Zooming out never closes. The host owns the expansion state; this only asks.
   const saved = vs.getState() ?? {};
   let auto = saved.auto ?? true, pending = null, seq = 0, net = 0, settle = 0, moving = false, quiet = 0, pinned = null;
   const cursor = { x: 0, y: 0 };
   // The box under the cursor opens once it is this tall on screen (a leaf box is 26 units).
   // QUIET_MS after a relayout swallows trackpad momentum, so one gesture opens one level.
-  const OPEN_PX = 56, CLOSE_FRAC = 0.2, SETTLE_MS = 220, MORPH_MS = 320, QUIET_MS = 450;
+  const OPEN_PX = 56, SETTLE_MS = 220, MORPH_MS = 320, QUIET_MS = 450;
 
   // ---- view transform ----
   // Bumped by every user camera move, so a running relayout animation stops steering the camera.
@@ -111,33 +110,23 @@
 
   // ---- semantic zoom ----
   const onScreen = (b) => ({ x: t.x + b.x * t.k, y: t.y + b.y * t.k, w: b.w * t.k, h: b.h * t.k });
-  const dist = (s) => Math.hypot(s.x + s.w / 2 - cursor.x, s.y + s.h / 2 - cursor.y);
-  const byDist = (a, b) => dist(a.s) - dist(b.s) || (a.b.id < b.b.id ? -1 : 1);
   const under = (s) => cursor.x >= s.x && cursor.x <= s.x + s.w && cursor.y >= s.y && cursor.y <= s.y + s.h;
-  // Only the gesture's direction acts (zoom in opens, zoom out closes), so a relayout can never undo itself.
+  // Only the gesture's direction acts (zoom in opens), so a relayout can never undo itself.
   function semantic() {
     const dir = net;
     net = 0;
     // A reply that never comes (host error) must not wedge zooming.
     if (pending && performance.now() - pending.at > 5000) pending = null;
     if (!auto || !L || pending || moving || Math.abs(dir) < 1e-3) return;
-    const W = svg.clientWidth, H = svg.clientHeight;
+    const W = svg.clientWidth;
     const all = L.boxes.map((b) => ({ b, s: onScreen(b) }));
-    let open = [], close = [];
+    if (dir <= 0) return;
     // Opens only what the user zooms toward; leaf boxes never overlap, so this is one box at most.
-    if (dir > 0)
-      open = all.filter(({ b, s }) => b.expandable && !b.container && under(s) && (s.h >= OPEN_PX || s.w >= W * 0.45));
-    else {
-      const small = all.filter(({ b, s }) => b.container && s.w < W * CLOSE_FRAC && s.h < H * CLOSE_FRAC);
-      const ids = new Set(small.map((x) => x.b.id));
-      // Outermost only: closing a container closes everything in it.
-      const inner = (b) => { for (let p = b.parent; p; p = boxes.get(p)?.parent) if (ids.has(p)) return true; return false; };
-      close = small.filter(({ b }) => !inner(b)).sort(byDist);
-    }
-    if (!open.length && !close.length) return;
-    const anchor = (open[0] ?? close[0]).b.id;
+    const open = all.filter(({ b, s }) => b.expandable && !b.container && under(s) && (s.h >= OPEN_PX || s.w >= W * 0.45));
+    if (!open.length) return;
+    const anchor = open[0].b.id;
     pending = { seq: ++seq, open: open.map((x) => x.b.id), anchor, at: performance.now() };
-    vs.postMessage({ type: "zoom", open: pending.open, close: close.map((x) => x.b.id), anchor, seq: pending.seq });
+    vs.postMessage({ type: "zoom", open: pending.open, close: [], anchor, seq: pending.seq });
   }
 
   // ---- drawing ----
@@ -180,26 +169,13 @@
     el("text", { class: "letter", x: x + 6, y: cy + 4, "text-anchor": "middle" }, g).textContent = LETTER[kind] ?? "·";
   }
 
-  // Where the camera ends up after a relayout: keeps the user's place, or frames what just opened.
+  // Where the camera ends up after a relayout: keeps the user's place.
   function target(prev, m, zoom) {
-    const W = svg.clientWidth, H = svg.clientHeight, gap = 32;
+    const W = svg.clientWidth, H = svg.clientHeight;
     const keep = (id) => {
       const a = prev.get(id), b = boxes.get(id);
       return a && b ? { k: t.k, x: t.x + (a.x - b.x) * t.k, y: t.y + (a.y - b.y) * t.k } : null;
     };
-    if (zoom?.open.length) {
-      const got = zoom.open.map((id) => boxes.get(id)).filter(Boolean);
-      const x0 = Math.min(...got.map((b) => b.x)), y0 = Math.min(...got.map((b) => b.y));
-      const x1 = Math.max(...got.map((b) => b.x + b.w)), y1 = Math.max(...got.map((b) => b.y + b.h));
-      const k = Math.max(0.03, Math.min(t.k, (W - 2 * gap) / (x1 - x0 || 1), (H - 2 * gap) / (y1 - y0 || 1)));
-      // Hold the anchor's centre on screen, then slide so everything that opened is in view.
-      const a = prev.get(zoom.anchor), b = boxes.get(zoom.anchor);
-      const cx = a ? t.x + (a.x + a.w / 2) * t.k : W / 2, cy = a ? t.y + (a.y + a.h / 2) * t.k : H / 2;
-      let x = b ? cx - (b.x + b.w / 2) * k : W / 2 - ((x0 + x1) / 2) * k, y = b ? cy - (b.y + b.h / 2) * k : H / 2 - ((y0 + y1) / 2) * k;
-      x = Math.min(Math.max(x, W - gap - x1 * k), gap - x0 * k);
-      y = Math.min(Math.max(y, H - gap - y1 * k), gap - y0 * k);
-      return { k, x, y };
-    }
     const anchor = zoom?.anchor ?? m.anchor;
     if (anchor) return keep(anchor) ?? { ...t };
     if (m.focus && boxes.get(m.focus)) {
@@ -236,6 +212,8 @@
         el("path", { class: "chev", d: b.container ? `M${x},${cy - 2}l4,4l4,-4` : `M${x + 2},${cy - 4}l4,4l-4,4` }, g);
         x += 14;
       }
+      // Entry: nothing in the repo calls it, so control comes in from outside.
+      if (b.role === "entry") el("path", { class: "entry-mark", d: `M${b.x - 16},${cy}h13m-4,-4l4,4l-4,4` }, g);
       glyph(g, b.node.kind, x, cy);
       x += 18;
       const kind = b.node.kind === "tier" ? "group" : b.node.kind.replace("_", " ");

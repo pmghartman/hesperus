@@ -7,6 +7,7 @@
   for (const c of document.querySelectorAll("input[data-kind]"))
     c.onchange = () => vs.postMessage({ type: "kind", kind: c.dataset.kind });
   $("external").onchange = () => vs.postMessage({ type: "external" });
+  $("flow").onchange = () => vs.postMessage({ type: "flow" });
   $("files").onchange = () => vs.postMessage({ type: "files" });
   $("unindexed").onchange = () => vs.postMessage({ type: "unindexed" });
   $("find").onsubmit = (e) => {
@@ -33,6 +34,9 @@
     for (const c of document.querySelectorAll("input[data-kind]")) c.checked = !m.hidden.includes(c.dataset.kind);
     $("external").checked = m.external;
     $("files").checked = m.files;
+    $("flow").checked = m.flow;
+    $("isolated").hidden = !(m.flow && m.isolated);
+    $("isolated").textContent = `${m.isolated} boxes with no calls to or from them are not drawn.`;
     $("unindexed").checked = m.unindexed;
     if (m.found !== undefined) $("found").textContent = m.found;
 

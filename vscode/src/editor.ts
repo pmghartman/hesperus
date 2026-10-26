@@ -6,7 +6,8 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { BridgeFile, BridgeRef, BridgeSymbol, bridge, pool, Span } from "./core/bridge";
 import { Index } from "./core/scip";
-import type { Language } from "./engine";
+import { init, type Language } from "./engine";
+import type { Frontend } from "./core/frontend";
 
 const K = vscode.SymbolKind;
 // SCIP kind numbers: Class 7, Constant 8, Constructor 9, Enum 11, EnumMember 12, Field 15, Function 17,
@@ -44,7 +45,7 @@ const rel = (repo: string, uri: vscode.Uri) => {
 export async function editorIndex(
   repo: string, lang: string, files: string[], report: (s: string) => void,
   /** `patience`: seconds to wait for the first answer. `needCode`: refuse a language the server only outlines as data. */
-  opts: { patience: number; needCode: boolean } = { patience: 90, needCode: false },
+  opts: { patience: number; needCode: boolean; frontend?: Frontend } = { patience: 90, needCode: false },
 ): Promise<Index> {
   const docs = new Map<string, vscode.Uri>(files.map((f) => [f, vscode.Uri.file(path.join(repo, f))]));
   const outline = async (f: string) =>
@@ -66,18 +67,40 @@ export async function editorIndex(
   });
   if (!answered) throw new Error(`No language server answered for ${lang} files. Install the editor's extension for the language (C/C++, C#, Rust analyzer, Dart) and reload.`);
   if (opts.needCode && !loaded.some((f) => hasCode(f.symbols))) throw new Error(`The editor outlines ${lang} files but finds no functions or types in them.`);
-  let n = 0;
-  return bridge(loaded, async (d): Promise<BridgeRef[]> => {
-    if (++n % 25 === 0) report(`Finding references ${n}…`);
-    const at = new vscode.Position(d.selection.start.line, d.selection.start.character);
-    const locs = (await vscode.commands.executeCommand<vscode.Location[]>("vscode.executeReferenceProvider", docs.get(d.path)!, at)) ?? [];
+  const inRepo = (locs: vscode.Location[]): BridgeRef[] => {
     const out: BridgeRef[] = [];
     for (const l of locs) {
       const p = rel(repo, l.uri);
       if (p !== undefined) out.push({ path: p, span: span(l.range) });
     }
     return out;
-  }, 16);
+  };
+  await init();
+  const fe = opts.frontend;
+  // Syntax columns are UTF-8 bytes; the editor counts UTF-16 units.
+  const utf16 = (lines: string[], line: number, col: number) => Buffer.from(lines[line] ?? "", "utf8").subarray(0, col).toString("utf8").length;
+  const sites = (f: BridgeFile): Span[] => {
+    const facts = fe?.syntax(f.path)?.facts(f.text);
+    if (!facts) return [];
+    const lines = f.text.split("\n");
+    const pos = (line: number, col: number) => ({ line, character: utf16(lines, line, col) });
+    return facts.calls.map(({ callee: c }) => ({ start: pos(c.start_line, c.start_col), end: pos(c.end_line, c.end_col) }));
+  };
+  let n = 0;
+  return bridge(loaded, async (d): Promise<BridgeRef[]> => {
+    if (++n % 25 === 0) report(`Finding references ${n}…`);
+    const at = new vscode.Position(d.selection.start.line, d.selection.start.character);
+    return inRepo((await vscode.commands.executeCommand<vscode.Location[]>("vscode.executeReferenceProvider", docs.get(d.path)!, at)) ?? []);
+  }, {
+    concurrency: 16,
+    unify: fe?.declarationsAcrossFiles,
+    sites,
+    definitionsOf: async (p, at) => {
+      if (++n % 25 === 0) report(`Resolving calls ${n}…`);
+      const r = (await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>("vscode.executeDefinitionProvider", docs.get(p)!, new vscode.Position(at.line, at.character))) ?? [];
+      return inRepo(r.map((x) => ("targetUri" in x ? new vscode.Location(x.targetUri, x.targetSelectionRange ?? x.targetRange) : x)));
+    },
+  });
 }
 
 /** The language's editor extension, installed and active; offers to install it when missing. */

@@ -97,3 +97,5 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 #tip .dim { color: var(--muted); }
 
 .node.unindexed .body { stroke-dasharray: 4 3; opacity: .65; }
+
+.entry-mark { fill: none; stroke: var(--vscode-focusBorder, #4a9eff); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }

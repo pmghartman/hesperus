@@ -4,7 +4,7 @@ import * as path from "node:path";
 import * as aggregate from "./core/aggregate";
 import { EdgeKind, Graph, GraphNode } from "./core/ir";
 import { layout } from "./layout";
-import { genericFiles, index, LangResult, load, scan, Scan, sourceFiles, status, unindexedLanguages } from "./engine";
+import { FRONTENDS, genericFiles, index, LangResult, load, scan, Scan, sourceFiles, status, unindexedLanguages } from "./engine";
 import { editorIndex, ensureExtension, hasExtension, installExtension } from "./editor";
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -34,6 +34,8 @@ class Hesperus {
   private hidden = new Set<EdgeKind>();
   private external = true;
   private files = false;
+  private flow = true;
+  private isolated = 0;
   private unindexed = true;
   private panel?: vscode.WebviewPanel;
   private sidebar?: vscode.WebviewView;
@@ -43,7 +45,7 @@ class Hesperus {
   constructor(private ctx: vscode.ExtensionContext) {}
 
   private get opts(): aggregate.ViewOptions {
-    return { files: this.files };
+    return { files: this.files, flow: this.flow };
   }
   private get folder() {
     return vscode.workspace.workspaceFolders?.[0];
@@ -109,7 +111,7 @@ class Hesperus {
           try {
             this.setStatus({ state: "installing", label: `Checking the ${l.editor.name} extension…`, reason });
             await ensureExtension(l);
-            const ix = await editorIndex(repo, l.id, sourceFiles(repo, l.id), (s) => this.setStatus({ state: "indexing", label: `${l.editor.name}: ${s}`, reason }));
+            const ix = await editorIndex(repo, l.id, sourceFiles(repo, l.id), (s) => this.setStatus({ state: "indexing", label: `${l.editor.name}: ${s}`, reason }), { patience: 90, needCode: false, frontend: FRONTENDS.find((f) => f.id === l.id) });
             results.push({ lang: l.id, index: ix });
           } catch (e) {
             this.log.appendLine(`${l.id}: ${msg(e)}`);
@@ -151,7 +153,9 @@ class Hesperus {
       const all = aggregate.view(this.graph, this.expanded, this.opts);
       const ext = this.external ? all : aggregate.withoutExternal(this.graph, all);
       const v = this.unindexed ? ext : aggregate.withoutUnindexed(this.graph, ext);
-      this.panel.webview.postMessage({ type: "layout", layout: await layout(this.graph, v), hidden: [...this.hidden], ...extra });
+      this.isolated = v.isolated ?? 0;
+      this.postSidebar();
+      this.panel.webview.postMessage({ type: "layout", layout: await layout(this.graph, v, { flow: this.flow }), hidden: [...this.hidden], ...extra });
     } catch (e) {
       this.setStatus({ state: "error", label: "Error", detail: msg(e) });
     }
@@ -171,6 +175,8 @@ class Hesperus {
       hidden: [...this.hidden],
       external: this.external,
       files: this.files,
+      flow: this.flow,
+      isolated: this.isolated,
       unindexed: this.unindexed,
       repo: this.folder?.name ?? null,
       languages: (this.scanned?.languages ?? []).map((l) => ({ ...l, installed: hasExtension(l.editor.id) })),
@@ -224,11 +230,16 @@ class Hesperus {
       if (!this.panel) this.open();
       await this.load(true);
     } else if (m.type === "collapse") {
-      this.expanded.clear();
+      this.expanded = this.graph && this.flow ? aggregate.overview(this.graph, aggregate.OVERVIEW_NODES, this.opts) : new Set();
       await this.render();
       this.panel?.webview.postMessage({ type: "fit" });
     } else if (m.type === "fit") this.panel?.webview.postMessage({ type: "fit" });
-    else if (m.type === "files") {
+    else if (m.type === "flow" && this.graph) {
+      this.flow = !this.flow;
+      this.expanded = aggregate.overview(this.graph, aggregate.OVERVIEW_NODES, this.opts);
+      await this.render();
+      this.panel?.webview.postMessage({ type: "fit" });
+    } else if (m.type === "files") {
       this.files = !this.files;
       this.postSidebar();
       await this.render();
@@ -310,7 +321,7 @@ function page(webview: vscode.Webview, media: vscode.Uri, name: string, body: st
 }
 
 const GRAPH_BODY = `<svg id="view" xmlns="http://www.w3.org/2000/svg"><g id="scene"></g></svg>
-<div id="tools"><button id="auto" title="Semantic Zoom: zooming in opens boxes, zooming out closes them" aria-pressed="true"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3M5 7h4M7 5v4"/></svg></button><span class="sep"></span><button id="out" title="Zoom Out"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button><span id="zoom">100%</span><button id="in" title="Zoom In"><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9"/></svg></button><button id="fit" title="Fit to Window"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button></div>
+<div id="tools"><button id="auto" title="Semantic Zoom: zooming in opens boxes" aria-pressed="true"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3M5 7h4M7 5v4"/></svg></button><span class="sep"></span><button id="out" title="Zoom Out"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button><span id="zoom">100%</span><button id="in" title="Zoom In"><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9"/></svg></button><button id="fit" title="Fit to Window"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button></div>
 <div id="msg">Loading…</div><div id="tip" hidden></div>`;
 
 const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" class="state"></div></header>
@@ -322,6 +333,8 @@ const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" 
 <label><input type="checkbox" data-kind="flow"><span class="swatch flow"></span>Data flow</label>
 <label><input type="checkbox" data-kind="override"><span class="swatch override"></span>Overrides</label>
 <label><input type="checkbox" data-kind="transition"><span class="swatch transition"></span>State transitions</label>
+<label title="Units are folders, packages and files, drawn flat with entries on the left and outside libraries on the right. Open one to see what is inside. Off: nested boxes."><input type="checkbox" id="flow"><span class="swatch files"></span>Stage flow</label>
+<div id="isolated" class="muted" hidden></div>
 <label title="Packages outside the repo, such as the standard library"><input type="checkbox" id="external"><span class="swatch external"></span>External libraries</label>
 <label title="Files in a language the editor could not resolve, drawn with no definitions or edges"><input type="checkbox" id="unindexed"><span class="swatch unindexed"></span>Unindexed files</label>
 <label title="Off: packages and folders are boundaries around their types and functions. On: files sit between them."><input type="checkbox" id="files"><span class="swatch files"></span>Files</label>
@@ -329,4 +342,4 @@ const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" 
 <section><h3>State machines</h3><ul id="machines" class="machines"></ul></section>
 <section id="missing-section" hidden><h3>Not indexed</h3><ul id="missing" class="langs"></ul></section>
 <section><h3>Languages</h3><ul id="langs" class="langs"></ul></section>
-<p class="hint">Zoom in to open boxes, zoom out to close them, or click a box to toggle it. ⌘/Ctrl-click or double-click opens its source. Hover to trace edges; click a wire or shift-click a box to pin it, Esc to clear.</p>`;
+<p class="hint">Zoom in to open boxes, or click a box to toggle it. ⌘/Ctrl-click or double-click opens its source. Hover to trace edges; click a wire or shift-click a box to pin it, Esc to clear.</p>`;

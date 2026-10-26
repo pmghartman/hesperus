@@ -150,6 +150,7 @@ export const Cpp: Frontend = {
   id: LANGUAGE_ID,
   extensions: ["c", "cc", "cpp", "cxx", "c++", "h", "hh", "hpp", "hxx", "h++", "ipp"],
   editor: { id: "ms-vscode.cpptools", name: "C/C++" },
+  declarationsAcrossFiles: true,
   init: () => CPP.init(),
   syntax: () => CPP,
 };

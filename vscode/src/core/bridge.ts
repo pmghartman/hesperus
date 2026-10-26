@@ -36,7 +36,9 @@ const size = (r: Span) => (r.end.line - r.start.line) * 1e6 + (r.end.character -
 
 const posKey = (a: Pos, b: Pos) => a.line - b.line || a.character - b.character;
 
-interface Walk { defs: BridgeDef[]; infos: Map<string, SymbolInformation[]>; byFile: Map<string, Occurrence[]> }
+/** `qual` is the id without the file, to pair a declaration with its definition in another file. */
+interface Entry { occ: Occurrence; def: BridgeDef; size: number; qual: string; shape: BridgeSymbol["shape"]; info: SymbolInformation }
+interface Walk { defs: BridgeDef[]; infos: Map<string, SymbolInformation[]>; byFile: Map<string, Occurrence[]>; entries: Entry[] }
 
 function descriptor(s: BridgeSymbol, ordinal: number): string {
   const n = esc(s.name);
@@ -54,20 +56,21 @@ function split(s: BridgeSymbol): { owners: string[]; leaf: BridgeSymbol } {
 }
 
 function walk(files: BridgeFile[], texts: Map<string, string[]>): Walk {
-  const out: Walk = { defs: [], infos: new Map(), byFile: new Map() };
-  const seen = new Map<string, { occ: Occurrence; def: BridgeDef; size: number }>();
+  const out: Walk = { defs: [], infos: new Map(), byFile: new Map(), entries: [] };
+  const seen = new Map<string, Entry>();
   for (const f of files) {
     const lines = texts.get(f.path)!;
     const occs: Occurrence[] = [];
     const infos: SymbolInformation[] = [];
     const base = `lsp ${f.language} workspace . ${f.path.split("/").map((p) => esc(p) + "/").join("")}`;
-    const visit = (list: BridgeSymbol[], prefix: string, parent: string) => {
+    const visit = (list: BridgeSymbol[], prefix: string, parent: string, qprefix: string) => {
       const ordinals = new Map<string, number>();
       for (const raw of [...list].sort((a, b) => posKey(a.selection.start, b.selection.start) || cmpStr(a.name, b.name))) {
         const { owners, leaf } = split(raw);
-        let pre = prefix, par = parent;
+        let pre = prefix, par = parent, qpre = qprefix;
         for (const o of owners) {
           pre += `${esc(o)}#`;
+          qpre += `${esc(o)}#`;
           par = pre;
         }
         const key = `${pre}\0${leaf.shape}\0${leaf.name}`;
@@ -82,15 +85,18 @@ function walk(files: BridgeFile[], texts: Map<string, string[]>): Walk {
           if (size(raw.range) > old.size) Object.assign(old.occ, occ), (old.def.selection = sel), (old.size = size(raw.range));
           continue;
         }
-        seen.set(id, { occ, def: { id, path: f.path, selection: sel }, size: size(raw.range) });
+        const info: SymbolInformation = { symbol: id, documentation: [], relationships: [], kind: leaf.kind, display_name: leaf.name, enclosing_symbol: par };
+        const entry: Entry = { occ, def: { id, path: f.path, selection: sel }, size: size(raw.range), qual: qpre + descriptor(leaf, 0), shape: leaf.shape, info };
+        seen.set(id, entry);
+        out.entries.push(entry);
         occs.push(occ);
-        infos.push({ symbol: id, documentation: [], relationships: [], kind: leaf.kind, display_name: leaf.name, enclosing_symbol: par });
+        infos.push(info);
         out.defs.push(seen.get(id)!.def);
         // Bodies hold locals the graph models itself; only containers hold more definitions.
-        if (leaf.shape === "namespace" || leaf.shape === "type") visit(raw.children, id, id);
+        if (leaf.shape === "namespace" || leaf.shape === "type") visit(raw.children, id, id, qpre + descriptor(leaf, 0));
       }
     };
-    visit(f.symbols, base, "");
+    visit(f.symbols, base, "", "");
     out.byFile.set(f.path, occs);
     out.infos.set(f.path, infos);
   }
@@ -118,20 +124,80 @@ export async function pool<T, R>(xs: T[], n: number, fn: (x: T) => Promise<R>): 
 
 const sameSpan = (a: Span, b: Span) => posKey(a.start, b.start) === 0 && posKey(a.end, b.end) === 0;
 
+export interface BridgeOptions {
+  concurrency?: number;
+  /** A declaration and its definition in another file are one symbol (header and source files). */
+  unify?: boolean;
+  /** Call-site name tokens of a file, from syntax. */
+  sites?: (f: BridgeFile) => Span[];
+  /** Where the language server says the name at `at` is defined. */
+  definitionsOf?: (path: string, at: Pos) => Promise<BridgeRef[]>;
+}
+
+/** Pairs a declaration with its definition when exactly two files declare the same qualified name.
+ *  More than two (overloads, shared names) stays apart: a guess would invent edges. */
+function unify(w: Walk) {
+  const groups = new Map<string, Entry[]>();
+  for (const e of w.entries) (groups.get(e.qual) ?? groups.set(e.qual, []).get(e.qual)!).push(e);
+  const alias = new Map<string, string>();
+  for (const g of groups.values()) {
+    if (g.length !== 2 || g[0].def.path === g[1].def.path || g[0].shape !== g[1].shape) continue;
+    // Types keep the fuller definition's id; members keep the declaration's, so they stay in their class.
+    const whole = g[0].shape === "type" || g[0].shape === "namespace";
+    const [a, b] = [...g].sort((x, y) => (whole ? y.size - x.size : x.size - y.size) || cmpStr(x.def.id, y.def.id));
+    alias.set(b.def.id, a.def.id);
+  }
+  if (!alias.size) return;
+  // Ids embed their owners, so an aliased type renames its members too.
+  const olds = [...alias.keys()].sort((x, y) => y.length - x.length || cmpStr(x, y));
+  const to = (id: string) => {
+    for (const o of olds) if (id.startsWith(o)) return alias.get(o)! + id.slice(o.length);
+    return id;
+  };
+  for (const e of w.entries) {
+    e.occ.symbol = e.def.id = e.info.symbol = to(e.def.id);
+    if (e.info.enclosing_symbol) e.info.enclosing_symbol = to(e.info.enclosing_symbol);
+  }
+  for (const [path, infos] of w.infos) {
+    const seen = new Set<string>();
+    w.infos.set(path, infos.filter((i) => !seen.has(i.symbol) && seen.add(i.symbol)));
+  }
+}
+
+const within = (p: Pos, s: Span) => posKey(s.start, p) <= 0 && posKey(p, s.end) <= 0;
+
 /** One SCIP index for `files`; `refsOf` asks the language server where a definition is used. */
-export async function bridge(files: BridgeFile[], refsOf: (d: BridgeDef) => Promise<BridgeRef[]>, concurrency = 8): Promise<Index> {
+export async function bridge(files: BridgeFile[], refsOf: (d: BridgeDef) => Promise<BridgeRef[]>, opts: BridgeOptions = {}): Promise<Index> {
   const sorted = [...files].sort((a, b) => cmpStr(a.path, b.path));
   const texts = new Map(sorted.map((f) => [f.path, f.text.split("\n")] as const));
   const w = walk(sorted, texts);
+  if (opts.unify) unify(w);
+  const concurrency = opts.concurrency ?? 8;
   const refs = await pool(w.defs, concurrency, refsOf);
+  const covered = new Set<string>();
+  const key = (path: string, p: Pos) => `${path}\0${p.line}:${p.character}`;
   w.defs.forEach((d, i) => {
     for (const r of refs[i]) {
       const lines = texts.get(r.path);
       const occs = w.byFile.get(r.path);
       if (!lines || !occs || (r.path === d.path && sameSpan(r.span, d.selection))) continue;
       occs.push({ symbol: d.id, symbol_roles: 0, ...span(lines, r.span) });
+      covered.add(key(r.path, r.span.start));
     }
   });
+  // Find-references misses calls (macros, templates, headers still loading); a call site's own
+  // definition lookup does not. Only sites the references left unexplained are asked.
+  const { sites, definitionsOf } = opts;
+  if (sites && definitionsOf) {
+    const byPath = new Map<string, BridgeDef[]>();
+    for (const d of w.defs) (byPath.get(d.path) ?? byPath.set(d.path, []).get(d.path)!).push(d);
+    const todo = sorted.flatMap((f) => sites(f).filter((s) => !covered.has(key(f.path, s.start))).map((s) => ({ path: f.path, site: s })));
+    const found = await pool(todo, concurrency, (t) => definitionsOf(t.path, t.site.start));
+    todo.forEach((t, i) => {
+      const hit = found[i].map((l) => (byPath.get(l.path) ?? []).find((d) => within(l.span.start, d.selection))).find((d) => d !== undefined);
+      if (hit) w.byFile.get(t.path)!.push({ symbol: hit.id, symbol_roles: 0, ...span(texts.get(t.path)!, t.site) });
+    });
+  }
   return {
     metadata: { version: 0, tool_info: { name: BRIDGE_TOOL.name, version: BRIDGE_TOOL.version, arguments: [] }, project_root: "", text_document_encoding: 1 },
     documents: sorted.map((f) => ({
