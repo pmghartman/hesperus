@@ -6,16 +6,20 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { build } from "./core/build";
 import { CACHE_DIR, checkHeader, Header, ioMessage, readCache, readHeader, writeCache } from "./core/cache";
-import { dirName, extension, Frontend, Install } from "./core/frontend";
+import { Command, dirName, extension, Frontend, Install } from "./core/frontend";
 import { sha256Hex } from "./core/hash";
 import { cmpStr, Graph, SCHEMA_VERSION, TOOL_NAME } from "./core/ir";
 import * as scip from "./core/scip";
+import { Cpp } from "./lang/cpp";
+import { CSharp } from "./lang/csharp";
+import { Dart } from "./lang/dart";
 import { Go } from "./lang/go";
 import { Js } from "./lang/js";
+import { Rust } from "./lang/rust";
 import { PKG_ROOT } from "./root";
 
 /** Every language frontend. Order is irrelevant to output: indexes merge canonically. */
-export const FRONTENDS: readonly Frontend[] = [Go, Js];
+export const FRONTENDS: readonly Frontend[] = [Go, Js, Rust, CSharp, Cpp, Dart];
 const LOCKFILES = ["Cargo.lock", "go.sum", "package-lock.json", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "yarn.lock"];
 
 /** Stamped into package.json at release; recorded in the cache header so an update re-indexes. */
@@ -128,10 +132,7 @@ export function tools(repo: string, toolsDir?: string): Tools {
     if (files === 0) continue;
     const t = f.tool();
     languages.push({ files, id: f.id, tool: t.name });
-    const install: Install = t.install.kind === "go"
-      ? { kind: "go", package: t.install.package }
-      : { kind: "npm", package_json: t.install.package_json, package_lock: t.install.package_lock };
-    out.push({ bin: findTool(f, toolsDir), dir: toolsDir ? path.join(toolsDir, dirName(t)) : null, install, name: t.name, version: t.version });
+    out.push({ bin: findTool(f, toolsDir), dir: toolsDir ? path.join(toolsDir, dirName(t)) : null, install: t.install, name: t.name, version: t.version });
   }
   return { languages, other_files: other, tools: out };
 }
@@ -211,20 +212,25 @@ async function runIndexers(repo: string, toolsDir?: string): Promise<scip.Index[
 async function runOne(f: Frontend, repo: string, bin: string, scratch: string, name: string): Promise<scip.Index> {
   const out = path.join(scratch, `${name}.scip`);
   const c = f.command(repo, bin, out, scratch);
+  if (c.prepare) await exec(c.prepare);
+  await exec(c);
+  return scip.decode(readOrThrow(out));
+}
+
+async function exec(c: Command): Promise<void> {
   const { code, signal, stderr } = await new Promise<{ code: number | null; signal: string | null; stderr: string }>((resolve, reject) => {
-    const p = spawn(c.cmd, c.args, { cwd: c.cwd, stdio: ["ignore", "ignore", "pipe"] });
+    const p = spawn(c.cmd, c.args, { cwd: c.cwd, env: { ...process.env, ...c.env }, stdio: ["ignore", "ignore", "pipe"] });
     let err = "";
     p.stderr.setEncoding("utf8");
     // Only the tail is reported; keep memory bounded on chatty indexers.
     p.stderr.on("data", (d: string) => (err = (err + d).slice(-65536)));
-    p.on("error", (e) => reject(new Error(`${bin}: ${ioMessage(e)}`)));
+    p.on("error", (e) => reject(new Error(`${c.cmd}: ${ioMessage(e)}`)));
     p.on("close", (code, signal) => resolve({ code, signal, stderr: err }));
   });
   if (code !== 0) {
     const tail = stderr.split(/\r?\n/).filter((l, i, a) => i < a.length - 1 || l !== "").slice(-20).join("\n");
-    throw new Error(`${bin} failed (${signal ? `signal: ${signal}` : `exit status: ${code}`}):\n${tail}`);
+    throw new Error(`${c.cmd} failed (${signal ? `signal: ${signal}` : `exit status: ${code}`}):\n${tail}`);
   }
-  return scip.decode(readOrThrow(out));
 }
 
 /** Only documents in git's view of the tree: indexers also report generated, ignored,

@@ -144,7 +144,7 @@ export function states(inp: StateInputs): StateOut {
     const d = docOf.get(w.path)!;
     const here = { caller: w.caller, site: { path: w.path, range: w.site } };
     const s = w.value.form === "name" ? d.symAt(w.value.name) : undefined;
-    const p = s?.startsWith("local ") ? inp.paramOf(w.path, s) : undefined;
+    const p = s === undefined ? undefined : inp.paramOf(w.path, s);
     if (!p) return [{ value: value(d, w.value, w.loc), ...here }];
     // `if p != "" { x = p }`: a value the parameter is tested against never reaches the write.
     const barred = new Set(d.facts.guards.flatMap((g) => {

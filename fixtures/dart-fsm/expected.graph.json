@@ -1,0 +1,1129 @@
+{
+  "schema_version": 3,
+  "nodes": [
+    {
+      "id": "ext:dart:core",
+      "kind": "external_package",
+      "name": "dart:core"
+    },
+    {
+      "id": "file:lib/conn.dart",
+      "kind": "file",
+      "name": "conn.dart",
+      "path": "lib/conn.dart",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "local:scip-dart pub fsm . lib/`conn.dart`/words().:state",
+      "kind": "variable",
+      "name": "state",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 69,
+        "start_col": 6,
+        "end_line": 69,
+        "end_col": 11
+      }
+    },
+    {
+      "id": "pkg:fsm:lib/conn.dart",
+      "kind": "package",
+      "name": "conn.dart"
+    },
+    {
+      "id": "repo",
+      "kind": "repo",
+      "name": "repo"
+    },
+    {
+      "id": "scip-dart pub dart:core 3.13.0 dart:core/`string.dart`/String#split().",
+      "kind": "external",
+      "name": "split"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "kind": "type",
+      "name": "Conn",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 4,
+        "start_col": 6,
+        "end_line": 4,
+        "end_col": 10
+      },
+      "signature": "class Conn",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/Conn#close().",
+      "kind": "method",
+      "name": "close",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 38,
+        "start_col": 7,
+        "end_line": 38,
+        "end_col": 12
+      },
+      "signature": "void close(State next)",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/Conn#dial().",
+      "kind": "method",
+      "name": "dial",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 8,
+        "start_col": 7,
+        "end_line": 8,
+        "end_col": 11
+      },
+      "signature": "void dial()",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/Conn#event().",
+      "kind": "method",
+      "name": "event",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 15,
+        "start_col": 7,
+        "end_line": 15,
+        "end_col": 12
+      },
+      "signature": "void event(bool ok)",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/Conn#hangup().",
+      "kind": "method",
+      "name": "hangup",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 57,
+        "start_col": 7,
+        "end_line": 57,
+        "end_col": 13
+      },
+      "signature": "void hangup()",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/Conn#live().",
+      "kind": "method",
+      "name": "live",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 46,
+        "start_col": 7,
+        "end_line": 46,
+        "end_col": 11
+      },
+      "signature": "bool live()",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/Conn#pause().",
+      "kind": "method",
+      "name": "pause",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 61,
+        "start_col": 7,
+        "end_line": 61,
+        "end_col": 12
+      },
+      "signature": "void pause()",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/Conn#reset().",
+      "kind": "method",
+      "name": "reset",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 42,
+        "start_col": 7,
+        "end_line": 42,
+        "end_col": 12
+      },
+      "signature": "void reset()",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/Conn#shut().",
+      "kind": "method",
+      "name": "shut",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 51,
+        "start_col": 7,
+        "end_line": 51,
+        "end_col": 11
+      },
+      "signature": "void shut(State to)",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "kind": "field",
+      "name": "state",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 5,
+        "start_col": 8,
+        "end_line": 5,
+        "end_col": 13
+      },
+      "signature": "State state",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/Conn#tries.",
+      "kind": "field",
+      "name": "tries",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 6,
+        "start_col": 6,
+        "end_line": 6,
+        "end_col": 11
+      },
+      "signature": "int tries",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/State#",
+      "kind": "type",
+      "name": "State",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 1,
+        "start_col": 5,
+        "end_line": 1,
+        "end_col": 10
+      },
+      "signature": "enum State",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/State#closed.",
+      "kind": "field",
+      "name": "closed",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 1,
+        "start_col": 34,
+        "end_line": 1,
+        "end_col": 40
+      },
+      "signature": "State closed",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/State#dialing.",
+      "kind": "field",
+      "name": "dialing",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 1,
+        "start_col": 19,
+        "end_line": 1,
+        "end_col": 26
+      },
+      "signature": "State dialing",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/State#idle.",
+      "kind": "field",
+      "name": "idle",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 1,
+        "start_col": 13,
+        "end_line": 1,
+        "end_col": 17
+      },
+      "signature": "State idle",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/State#open.",
+      "kind": "field",
+      "name": "open",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 1,
+        "start_col": 28,
+        "end_line": 1,
+        "end_col": 32
+      },
+      "signature": "State open",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "scip-dart pub fsm . lib/`conn.dart`/words().",
+      "kind": "function",
+      "name": "words",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 67,
+        "start_col": 4,
+        "end_line": 67,
+        "end_col": 9
+      },
+      "signature": "int words(String s)",
+      "hash": "eda933d87e775ccee904ceb3b39391f32bcc31ad3f5fbab4ccae578f0f75384f"
+    },
+    {
+      "id": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:#initial",
+      "kind": "state",
+      "name": "initial",
+      "doc": "Before any write: declaration initializers and literal elements."
+    },
+    {
+      "id": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:local:space",
+      "kind": "state",
+      "name": "space",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 68,
+        "start_col": 8,
+        "end_line": 68,
+        "end_col": 13
+      }
+    },
+    {
+      "id": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:local:word",
+      "kind": "state",
+      "name": "word",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 68,
+        "start_col": 19,
+        "end_line": 68,
+        "end_col": 23
+      }
+    },
+    {
+      "id": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:#any",
+      "kind": "state",
+      "name": "any",
+      "doc": "Any state: a write no guard on this location encloses."
+    },
+    {
+      "id": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:#initial",
+      "kind": "state",
+      "name": "initial",
+      "doc": "Before any write: declaration initializers and literal elements."
+    },
+    {
+      "id": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:?",
+      "kind": "unresolved",
+      "name": "?",
+      "doc": "A value that is not a constant."
+    },
+    {
+      "id": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#closed.",
+      "kind": "state",
+      "name": "closed",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 1,
+        "start_col": 34,
+        "end_line": 1,
+        "end_col": 40
+      }
+    },
+    {
+      "id": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#dialing.",
+      "kind": "state",
+      "name": "dialing",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 1,
+        "start_col": 19,
+        "end_line": 1,
+        "end_col": 26
+      }
+    },
+    {
+      "id": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#idle.",
+      "kind": "state",
+      "name": "idle",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 1,
+        "start_col": 13,
+        "end_line": 1,
+        "end_col": 17
+      }
+    },
+    {
+      "id": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#open.",
+      "kind": "state",
+      "name": "open",
+      "path": "lib/conn.dart",
+      "range": {
+        "start_line": 1,
+        "start_col": 28,
+        "end_line": 1,
+        "end_col": 32
+      }
+    }
+  ],
+  "edges": [
+    {
+      "from": "ext:dart:core",
+      "to": "scip-dart pub dart:core 3.13.0 dart:core/`string.dart`/String#split().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "file:lib/conn.dart",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "file:lib/conn.dart",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "write",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 5,
+          "start_col": 8,
+          "end_line": 5,
+          "end_col": 13
+        }
+      }
+    },
+    {
+      "from": "file:lib/conn.dart",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#tries.",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "write",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 6,
+          "start_col": 6,
+          "end_line": 6,
+          "end_col": 11
+        }
+      }
+    },
+    {
+      "from": "file:lib/conn.dart",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/State#",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "file:lib/conn.dart",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/words().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "local:scip-dart pub fsm . lib/`conn.dart`/words().:state",
+      "to": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:#initial",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "local:scip-dart pub fsm . lib/`conn.dart`/words().:state",
+      "to": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:local:space",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "local:scip-dart pub fsm . lib/`conn.dart`/words().:state",
+      "to": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:local:word",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "pkg:fsm:lib/conn.dart",
+      "to": "file:lib/conn.dart",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "repo",
+      "to": "ext:dart:core",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "repo",
+      "to": "pkg:fsm:lib/conn.dart",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub dart:core 3.13.0 dart:core/`string.dart`/String#split().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/words().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "return",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 70,
+          "start_col": 20,
+          "end_line": 70,
+          "end_col": 25
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#close().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#dial().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#event().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#hangup().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#live().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#pause().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#reset().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#shut().",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#tries.",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#close().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "write",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 39,
+          "start_col": 4,
+          "end_line": 39,
+          "end_col": 9
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#dial().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "write",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 10,
+          "start_col": 6,
+          "end_line": 10,
+          "end_col": 11
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#dial().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#tries.",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "write",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 11,
+          "start_col": 6,
+          "end_line": 11,
+          "end_col": 11
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#event().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "write",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 19,
+          "start_col": 10,
+          "end_line": 19,
+          "end_col": 15
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#event().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "write",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 21,
+          "start_col": 10,
+          "end_line": 21,
+          "end_col": 15
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#event().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "write",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 23,
+          "start_col": 10,
+          "end_line": 23,
+          "end_col": 15
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#event().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "write",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 29,
+          "start_col": 10,
+          "end_line": 29,
+          "end_col": 15
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#hangup().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#shut().",
+      "kind": "call",
+      "provenance": "resolved",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 58,
+          "start_col": 4,
+          "end_line": 58,
+          "end_col": 8
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#hangup().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#shut().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "arg0:to",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 58,
+          "start_col": 4,
+          "end_line": 58,
+          "end_col": 8
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#pause().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#shut().",
+      "kind": "call",
+      "provenance": "resolved",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 62,
+          "start_col": 4,
+          "end_line": 62,
+          "end_col": 8
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#pause().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#shut().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "arg0:to",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 62,
+          "start_col": 4,
+          "end_line": 62,
+          "end_col": 8
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#reset().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "write",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 43,
+          "start_col": 4,
+          "end_line": 43,
+          "end_col": 9
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#shut().",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "write",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 53,
+          "start_col": 6,
+          "end_line": 53,
+          "end_col": 11
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#dial().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "read",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 9,
+          "start_col": 8,
+          "end_line": 9,
+          "end_col": 13
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#event().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "read",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 16,
+          "start_col": 12,
+          "end_line": 16,
+          "end_col": 17
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#live().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "read",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 47,
+          "start_col": 11,
+          "end_line": 47,
+          "end_col": 16
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:#any",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:#initial",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:?",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#closed.",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#dialing.",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#idle.",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#state.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#open.",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/Conn#tries.",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/Conn#event().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "read",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 20,
+          "start_col": 19,
+          "end_line": 20,
+          "end_col": 24
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/State#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/State#closed.",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/State#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/State#dialing.",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/State#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/State#idle.",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/State#",
+      "to": "scip-dart pub fsm . lib/`conn.dart`/State#open.",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/words().",
+      "to": "local:scip-dart pub fsm . lib/`conn.dart`/words().:state",
+      "kind": "contains",
+      "provenance": "resolved"
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/words().",
+      "to": "scip-dart pub dart:core 3.13.0 dart:core/`string.dart`/String#split().",
+      "kind": "call",
+      "provenance": "resolved",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 70,
+          "start_col": 20,
+          "end_line": 70,
+          "end_col": 25
+        }
+      }
+    },
+    {
+      "from": "scip-dart pub fsm . lib/`conn.dart`/words().",
+      "to": "scip-dart pub dart:core 3.13.0 dart:core/`string.dart`/String#split().",
+      "kind": "flow",
+      "provenance": "resolved",
+      "label": "arg0",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 70,
+          "start_col": 20,
+          "end_line": 70,
+          "end_col": 25
+        }
+      }
+    },
+    {
+      "from": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:#initial",
+      "to": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:local:space",
+      "kind": "transition",
+      "provenance": "resolved",
+      "label": "words",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 69,
+          "start_col": 6,
+          "end_line": 69,
+          "end_col": 11
+        }
+      }
+    },
+    {
+      "from": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:local:space",
+      "to": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:local:word",
+      "kind": "transition",
+      "provenance": "resolved",
+      "label": "words",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 74,
+          "start_col": 10,
+          "end_line": 74,
+          "end_col": 15
+        }
+      }
+    },
+    {
+      "from": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:local:word",
+      "to": "state:local:scip-dart pub fsm . lib/`conn.dart`/words().:state:local:space",
+      "kind": "transition",
+      "provenance": "resolved",
+      "label": "words",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 80,
+          "start_col": 10,
+          "end_line": 80,
+          "end_col": 15
+        }
+      }
+    },
+    {
+      "from": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:#any",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:?",
+      "kind": "transition",
+      "provenance": "unresolved",
+      "label": "close",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 39,
+          "start_col": 4,
+          "end_line": 39,
+          "end_col": 9
+        }
+      }
+    },
+    {
+      "from": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:#any",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#closed.",
+      "kind": "transition",
+      "provenance": "may",
+      "label": "hangup",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 58,
+          "start_col": 4,
+          "end_line": 58,
+          "end_col": 8
+        }
+      }
+    },
+    {
+      "from": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:#any",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#idle.",
+      "kind": "transition",
+      "provenance": "may",
+      "label": "reset",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 43,
+          "start_col": 4,
+          "end_line": 43,
+          "end_col": 9
+        }
+      }
+    },
+    {
+      "from": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:#initial",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#idle.",
+      "kind": "transition",
+      "provenance": "resolved",
+      "label": "conn.dart",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 5,
+          "start_col": 8,
+          "end_line": 5,
+          "end_col": 13
+        }
+      }
+    },
+    {
+      "from": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#dialing.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#closed.",
+      "kind": "transition",
+      "provenance": "resolved",
+      "label": "event",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 23,
+          "start_col": 10,
+          "end_line": 23,
+          "end_col": 15
+        }
+      }
+    },
+    {
+      "from": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#dialing.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#idle.",
+      "kind": "transition",
+      "provenance": "resolved",
+      "label": "event",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 21,
+          "start_col": 10,
+          "end_line": 21,
+          "end_col": 15
+        }
+      }
+    },
+    {
+      "from": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#dialing.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#open.",
+      "kind": "transition",
+      "provenance": "resolved",
+      "label": "event",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 19,
+          "start_col": 10,
+          "end_line": 19,
+          "end_col": 15
+        }
+      }
+    },
+    {
+      "from": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#idle.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#closed.",
+      "kind": "transition",
+      "provenance": "resolved",
+      "label": "event",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 29,
+          "start_col": 10,
+          "end_line": 29,
+          "end_col": 15
+        }
+      }
+    },
+    {
+      "from": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#idle.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#dialing.",
+      "kind": "transition",
+      "provenance": "resolved",
+      "label": "dial",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 10,
+          "start_col": 6,
+          "end_line": 10,
+          "end_col": 11
+        }
+      }
+    },
+    {
+      "from": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#open.",
+      "to": "state:scip-dart pub fsm . lib/`conn.dart`/Conn#state.:scip-dart pub fsm . lib/`conn.dart`/State#closed.",
+      "kind": "transition",
+      "provenance": "resolved",
+      "label": "event",
+      "site": {
+        "path": "lib/conn.dart",
+        "range": {
+          "start_line": 29,
+          "start_col": 10,
+          "end_line": 29,
+          "end_col": 15
+        }
+      }
+    }
+  ]
+}

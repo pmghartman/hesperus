@@ -56,7 +56,8 @@ function classify(sym: Symbol, info?: SymbolInformation): NodeKind | undefined {
   if (!last) return undefined;
   const parentIsType = n >= 2 && sym.descriptors[n - 2].kind === "type";
   if (last.kind === "method" || (last.kind === "term" && callableKind(info))) return parentIsType ? "method" : "function";
-  if (last.kind === "type") return "type";
+  // Some indexers name enum members like types (`State#Idle#`); the index kind says they are values.
+  if (last.kind === "type") return info !== undefined && CONSTANT_KINDS.includes(info.kind) && parentIsType ? "field" : "type";
   if (last.kind === "term") return parentIsType || (info?.kind ?? 0) === KIND_FIELD ? "field" : "variable";
   return undefined;
 }
@@ -305,6 +306,13 @@ export function build(inp: Inputs): Graph {
     }
   }
 
+  // Indexers that leave the symbol kind unset: the syntax says which definitions are constants.
+  const constRanges = new Map(ctxs.map((c) => [c.doc.relative_path, new Set(c.facts.consts.map(rangeKey))]));
+  const declaredConst = (sym: string) => {
+    const d = defs.get(sym);
+    return !!d && !!constRanges.get(d.path)?.has(rangeKey(d.ident));
+  };
+
   const st = states({
     docs: ctxs.map((ctx) => {
       const localDefs = new Map<string, Range>();
@@ -325,7 +333,7 @@ export function build(inp: Inputs): Graph {
     },
     paramOf: (path, sym) => paramSym.get(pathSym(path, sym)),
     argsTo: (callable, idx) => argsTo.get(`${callable}\0${idx}`) ?? [],
-    isConstantKind: (sym) => CONSTANT_KINDS.includes(info.get(sym)?.kind ?? 0),
+    isConstantKind: (sym) => CONSTANT_KINDS.includes(info.get(sym)?.kind ?? 0) || declaredConst(sym),
     nameOf: (id) => nodes.get(id)?.name ?? id,
     defSite: (sym) => {
       const d = defs.get(sym);

@@ -8,7 +8,20 @@ export type Install =
   /** `GOBIN=<dir>/bin go install <package>`; the package carries its `@version`. */
   | { kind: "go"; package: string }
   /** Write these files into the directory, then `npm ci --ignore-scripts`. */
-  | { kind: "npm"; package_json: string; package_lock: string };
+  | { kind: "npm"; package_json: string; package_lock: string }
+  /** Download one file per `${process.platform}-${process.arch}`, check its sha256, unpack it to `<dir>/bin`. */
+  | { kind: "release"; assets: Record<string, Asset> }
+  /** `dotnet tool install --tool-path <dir>/bin <package> --version <version>`. */
+  | { kind: "dotnet"; package: string; version: string }
+  /** `dart pub global activate <package> <version>` with PUB_CACHE=<dir>. */
+  | { kind: "dart"; package: string; version: string };
+
+export interface Asset {
+  url: string;
+  sha256: string;
+  /** `gz` is one gzipped binary, `zip` holds it at the archive root, `none` is the binary itself. */
+  archive: "gz" | "zip" | "none";
+}
 
 export interface Tool {
   name: string;
@@ -20,7 +33,15 @@ export interface Tool {
 /** Install directory name, unique per version so upgrades never mix. */
 export const dirName = (t: Tool) => `${t.name}-${t.version}`;
 
-export interface Command { cmd: string; args: string[]; cwd: string }
+/** `env` is added to the process environment; indexers that build (cargo, dotnet) point their output at `scratch`. */
+export interface Command {
+  cmd: string;
+  args: string[];
+  cwd: string;
+  env?: Record<string, string>;
+  /** Runs first and must succeed (e.g. `pub get`). */
+  prepare?: Command;
+}
 
 export interface Frontend {
   id: string;

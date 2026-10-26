@@ -24,8 +24,9 @@ Target user: an engineer reviewing architecture, often of AI-written code, who d
 - `vscode/src/core`: owns the IR, merging, aggregation, cache, and canonical serialization. Imports nothing from `vscode` or `src/lang`.
 - `vscode/src/cli.ts`: thin wrapper over core (`hesperus`). Doubles as the test harness. The extension runs it on the editor's own Node.
 - `vscode/src/engine.ts`, `tools.ts`: orchestration. `tools.ts` downloads the pinned SCIP indexers; the CLI itself never touches the network.
-- Language frontends (`vscode/src/lang`) emit the IR. Implemented: Go and JavaScript/TypeScript.
-  - SCIP indexer output is the symbol resolver (scip-go 0.2.9, scip-typescript 0.5.2).
+- Language frontends (`vscode/src/lang`) emit the IR. Implemented: Go, JavaScript/TypeScript, Rust, C#, C/C++, Dart/Flutter.
+  - SCIP indexer output is the symbol resolver (scip-go 0.2.9, scip-typescript 0.5.2, rust-analyzer 2026-10-19, scip-dotnet 0.2.16, scip-clang v0.4.1, scip_dart 1.8.1). `Install` kinds in `core/frontend.ts`: go, npm, release (pinned sha256 per platform), dotnet, dart.
+  - Indexers that restore or build (cargo without a lockfile, dotnet, dart) run on a copy under scratch (`lang/mirror.ts`), never in the repo.
   - tree-sitter (`lang/treesitter.ts`) supplies syntax for calls and def-use inside bodies, resolved through SCIP definitions.
   - Planned, not built: headless LSP fallback where no SCIP indexer exists; native per-language analyzers as optional frontends.
 - Extension (`vscode/src/extension.ts`, `layout.ts`, `media/`): activity-bar sidebar plus a graph webview tab. Layout is precomputed deterministically with ELK. Cmd/Ctrl-click or double-click opens a node's source range.

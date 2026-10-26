@@ -61,7 +61,8 @@ export interface Facts {
   decls: Range[];
   assigns: Assign[];
   guards: Guard[];
-  /** Name tokens of constant declarations, so a local constant can be a state. */
+  /** Name tokens of constant declarations (`const`, enum members), so a constant can be a state when the
+   *  index does not mark its kind, and so can a local one. */
   consts: Range[];
 }
 

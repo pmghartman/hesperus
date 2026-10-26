@@ -27,6 +27,10 @@ The sidebar shows status and errors, finds nodes by name, toggles calls, data fl
 | --- | --- | --- |
 | Go | scip-go 0.2.9 | Go toolchain |
 | JavaScript, TypeScript | scip-typescript 0.5.2 | Node.js 22.13+ with npm |
+| Rust | rust-analyzer 2026-10-19 (`scip`) | Rust toolchain (`cargo`) |
+| C# | scip-dotnet 0.2.16 | .NET SDK |
+| C, C++ | scip-clang v0.4.1 | A C/C++ compiler; `compile_commands.json` for non-trivial builds. macOS arm64 and Linux x64 only |
+| Dart, Flutter | scip_dart 1.8.1 | Dart SDK (Flutter's for Flutter packages) |
 
 Files in other languages are counted in the sidebar and not analyzed.
 
