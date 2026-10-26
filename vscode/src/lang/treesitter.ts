@@ -7,13 +7,17 @@ import { PKG_ROOT } from "../root";
 
 let runtime: Promise<void> | undefined;
 const loaded = new Map<string, Promise<Language>>();
+// Loaded one at a time: concurrent side-module links race on the runtime's shared symbols.
+let chain: Promise<unknown> = Promise.resolve();
 
 /** Loads a grammar by its wasm file name in grammars/. */
 export function loadGrammar(file: string): Promise<Language> {
   let l = loaded.get(file);
   if (!l) {
     runtime ??= Parser.init();
-    l = runtime.then(() => Language.load(path.join(PKG_ROOT, "grammars", file)));
+    const load = chain.then(() => runtime).then(() => Language.load(path.join(PKG_ROOT, "grammars", file)));
+    chain = load.catch(() => {});
+    l = load;
     loaded.set(file, l);
   }
   return l;
