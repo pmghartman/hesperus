@@ -189,7 +189,8 @@ export function view(g: Graph, expanded: ReadonlySet<string>, opts: ViewOptions 
   g.edges.forEach((e, i) => {
     if (e.kind === "contains") return;
     const a = rep2(e.from), b = rep2(e.to);
-    if (a === b) return;
+    // The repo root is never drawn; an edge that lifts to it has no box to land on.
+    if (a === b || a === REPO_ID || b === REPO_ID) return;
     const k = `${a}\0${b}\0${e.kind}`;
     let r = acc.get(k);
     if (!r) acc.set(k, (r = { from: a, to: b, kind: e.kind, weight: 0, resolved: 0, may: 0, unresolved: 0, edges: [] }));

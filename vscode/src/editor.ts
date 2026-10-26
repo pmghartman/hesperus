@@ -10,6 +10,7 @@ import { init, type Language } from "./engine";
 import type { Frontend } from "./core/frontend";
 
 const K = vscode.SymbolKind;
+const QUERY_MS = 20000;
 // SCIP kind numbers: Class 7, Constant 8, Constructor 9, Enum 11, EnumMember 12, Field 15, Function 17,
 // Interface 21, Method 26, Namespace 29, Property 41, Struct 49, Variable 61.
 const SHAPES: Partial<Record<vscode.SymbolKind, Pick<BridgeSymbol, "shape" | "kind">>> = {
@@ -98,17 +99,19 @@ export async function editorIndex(
     return facts.calls.map(({ callee: c }) => ({ start: pos(c.start_line, c.start_col), end: pos(c.end_line, c.end_col) }));
   };
   let n = 0;
-  return bridge(loaded, async (d): Promise<BridgeRef[]> => {
-    if (++n % 25 === 0) report(`Finding references ${n}…`);
+  // A server that never answers one query must not stall the run: give up on it after this long.
+  const within = <T>(p: Thenable<T>, fallback: T) => Promise.race([Promise.resolve(p), sleep(QUERY_MS).then(() => fallback)]);
+  return bridge(loaded, async (d, done, total): Promise<BridgeRef[]> => {
+    if (done % 10 === 0 || done === total) report(`Finding references ${done}/${total}…`);
     const at = new vscode.Position(d.selection.start.line, d.selection.start.character);
-    return inRepo((await vscode.commands.executeCommand<vscode.Location[]>("vscode.executeReferenceProvider", docs.get(d.path)!, at)) ?? []);
+    return inRepo((await within(vscode.commands.executeCommand<vscode.Location[]>("vscode.executeReferenceProvider", docs.get(d.path)!, at), [])) ?? []);
   }, {
-    concurrency: 16,
+    concurrency: 32,
     unify: fe?.declarationsAcrossFiles,
     sites,
     definitionsOf: async (p, at) => {
       if (++n % 25 === 0) report(`Resolving calls ${n}…`);
-      const r = (await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>("vscode.executeDefinitionProvider", docs.get(p)!, new vscode.Position(at.line, at.character))) ?? [];
+      const r = (await within(vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>("vscode.executeDefinitionProvider", docs.get(p)!, new vscode.Position(at.line, at.character)), [])) ?? [];
       return inRepo(r.map((x) => ("targetUri" in x ? new vscode.Location(x.targetUri, x.targetSelectionRange ?? x.targetRange) : x)));
     },
   });

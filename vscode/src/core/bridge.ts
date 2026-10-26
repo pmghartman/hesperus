@@ -19,7 +19,7 @@ export interface BridgeSymbol {
   children: BridgeSymbol[];
 }
 export interface BridgeFile { path: string; language: string; text: string; symbols: BridgeSymbol[] }
-export interface BridgeDef { id: string; path: string; selection: Span }
+export interface BridgeDef { id: string; path: string; selection: Span; shape: BridgeSymbol["shape"] }
 export interface BridgeRef { path: string; span: Span }
 
 const PLAIN = /^[A-Za-z0-9_+\-$]+$/;
@@ -86,7 +86,7 @@ function walk(files: BridgeFile[], texts: Map<string, string[]>): Walk {
           continue;
         }
         const info: SymbolInformation = { symbol: id, documentation: [], relationships: [], kind: leaf.kind, display_name: leaf.name, enclosing_symbol: par };
-        const entry: Entry = { occ, def: { id, path: f.path, selection: sel }, size: size(raw.range), qual: qpre + descriptor(leaf, 0), shape: leaf.shape, info };
+        const entry: Entry = { occ, def: { id, path: f.path, selection: sel, shape: leaf.shape }, size: size(raw.range), qual: qpre + descriptor(leaf, 0), shape: leaf.shape, info };
         seen.set(id, entry);
         out.entries.push(entry);
         occs.push(occ);
@@ -167,13 +167,18 @@ function unify(w: Walk) {
 const within = (p: Pos, s: Span) => posKey(s.start, p) <= 0 && posKey(p, s.end) <= 0;
 
 /** One SCIP index for `files`; `refsOf` asks the language server where a definition is used. */
-export async function bridge(files: BridgeFile[], refsOf: (d: BridgeDef) => Promise<BridgeRef[]>, opts: BridgeOptions = {}): Promise<Index> {
+export async function bridge(files: BridgeFile[], refsOf: (d: BridgeDef, done: number, total: number) => Promise<BridgeRef[]>, opts: BridgeOptions = {}): Promise<Index> {
   const sorted = [...files].sort((a, b) => cmpStr(a.path, b.path));
   const texts = new Map(sorted.map((f) => [f.path, f.text.split("\n")] as const));
   const w = walk(sorted, texts);
   if (opts.unify) unify(w);
   const concurrency = opts.concurrency ?? 8;
-  const refs = await pool(w.defs, concurrency, refsOf);
+  // Types and namespaces never carry edges of their own (containment comes from the outline), so only
+  // callables and values are asked. Each answer can take a language server seconds on a large repo.
+  const asked = w.defs.map((d, i) => ({ d, i })).filter(({ d }) => d.shape === "method" || d.shape === "term");
+  const refs: BridgeRef[][] = w.defs.map(() => []);
+  let done = 0;
+  await pool(asked, concurrency, async ({ d, i }) => void (refs[i] = await refsOf(d, ++done, asked.length)));
   const covered = new Set<string>();
   const key = (path: string, p: Pos) => `${path}\0${p.line}:${p.character}`;
   w.defs.forEach((d, i) => {

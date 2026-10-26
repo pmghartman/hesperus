@@ -110,7 +110,9 @@ export async function layout(graph: Graph, view: View, opts: { flow?: boolean } 
     }
   }
   const byPair = new Map<string, Rollup[]>();
+  const drawn = new Set(view.nodes);
   for (const r of view.rollups) {
+    if (!drawn.has(r.from) || !drawn.has(r.to)) continue;
     const k = cmpStr(r.from, r.to) < 0 ? r.from + "\0" + r.to : r.to + "\0" + r.from;
     if (!byPair.has(k)) byPair.set(k, []);
     byPair.get(k)!.push(r);
