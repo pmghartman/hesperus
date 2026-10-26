@@ -188,8 +188,8 @@ jobs:
           body_path: changelog/notes.md
           files: dist/*.vsix
 
-  # only the two newest numbered releases kept; their tags stay, since the changelog and the
-  # next version are read off tags. Only this workflow's two newest runs, this one included,
+  # only the two newest numbered releases and tags kept; the next version is read off the
+  # highest tag and the changelog off the tags left. Only this workflow's two newest runs, this one included,
   # and the two newest `marketplace` deployments
   prune:
     needs: [release]
@@ -209,7 +209,15 @@ jobs:
           gh release list --limit 200 --json tagName,createdAt --jq '[.[] | select(.tagName | test("^v[0-9]"))] | sort_by(.createdAt) | reverse | .[2:] | .[].tagName' |
           while read -r t; do
             echo "deleting release $t"
-            gh release delete "$t" --yes
+            gh release delete "$t" --yes --cleanup-tag
+          done
+      - name: tags
+        run: |
+          gh api --paginate "repos/$GH_REPO/git/matching-refs/tags/v" --jq '.[].ref | ltrimstr("refs/tags/") | select(test("^v[0-9]+[.][0-9]+$"))' |
+          sort -t. -k1.2,1n -k2,2n | head -n -2 |
+          while read -r t; do
+            echo "deleting tag $t"
+            gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$t"
           done
       - name: runs
         run: |
