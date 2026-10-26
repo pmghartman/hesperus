@@ -6,6 +6,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import * as zlib from "node:zlib";
 import type { Install } from "./core/frontend";
+import { launch } from "./shell";
 import type { ToolStatus } from "./engine";
 
 const PREREQ: Record<Install["kind"], string> = {
@@ -17,8 +18,9 @@ const PREREQ: Record<Install["kind"], string> = {
 };
 
 function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv }, kind: Install["kind"]): Promise<void> {
+  const l = launch(cmd, args);
   return new Promise((resolve, reject) =>
-    execFile(cmd, args, { ...opts, maxBuffer: 1 << 26 }, (err, _out, errOut) => {
+    execFile(l.cmd, l.args, { ...opts, shell: l.shell, maxBuffer: 1 << 26 }, (err, _out, errOut) => {
       if (!err) return resolve();
       const missing = (err as NodeJS.ErrnoException).code === "ENOENT";
       reject(new Error(missing ? `\`${cmd}\` not found. Downloading this indexer needs ${PREREQ[kind]}.` : `${cmd} ${args.join(" ")} failed:\n${errOut.trim() || err.message}`));

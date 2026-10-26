@@ -1,6 +1,7 @@
 // What the CLI and the extension run: frontend registry, indexer runs, cache state.
 // Language knowledge stays in src/lang; core stays language-free.
 import { spawn, spawnSync } from "node:child_process";
+import { launch } from "./shell";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -219,7 +220,8 @@ async function runOne(f: Frontend, repo: string, bin: string, scratch: string, n
 
 async function exec(c: Command): Promise<void> {
   const { code, signal, stderr } = await new Promise<{ code: number | null; signal: string | null; stderr: string }>((resolve, reject) => {
-    const p = spawn(c.cmd, c.args, { cwd: c.cwd, env: { ...process.env, ...c.env }, stdio: ["ignore", "ignore", "pipe"] });
+    const l = launch(c.cmd, c.args);
+    const p = spawn(l.cmd, l.args, { shell: l.shell, cwd: c.cwd, env: { ...process.env, ...c.env }, stdio: ["ignore", "ignore", "pipe"] });
     let err = "";
     p.stderr.setEncoding("utf8");
     // Only the tail is reported; keep memory bounded on chatty indexers.

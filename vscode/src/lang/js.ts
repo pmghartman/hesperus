@@ -183,7 +183,7 @@ export const Js: Frontend = {
       package_lock: fs.readFileSync(path.join(TOOL_DIR, "package-lock.json"), "utf8"),
     },
   }),
-  binIn: (dir) => path.join(dir, "node_modules", ".bin", "scip-typescript"),
+  binIn: (dir) => path.join(dir, "node_modules", ".bin", process.platform === "win32" ? "scip-typescript.cmd" : "scip-typescript"),
   searchDirs: () => [],
   roots: () => [""],
   /** scip-typescript needs a tsconfig and writes one into the project when inferring it.
