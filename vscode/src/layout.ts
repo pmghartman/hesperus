@@ -9,12 +9,15 @@ export interface Stub { id: string; name: string; rollups: Rollup[] }
  *  reaches; they are drawn as a line in the box, not wires, since every box calls the standard library. */
 export interface Box { id: string; x: number; y: number; w: number; h: number; node: GraphNode; container: boolean; expandable: boolean; parent?: string; ext?: Stub[];
   /** Flow view: where the box sits in the picture. `entry` has no callers; `sink` is outside the repo. */
-  role?: "entry" | "sink" }
+  role?: "entry" | "sink";
+  /** Lint findings this box takes part in: the worst severity, and what they say. */
+  flag?: Flag }
+export interface Flag { severity: "error" | "warning" | "info"; notes: string[] }
 /** All rollups between two nodes share one wire, both directions: returns run against their
  *  calls, and routing them separately sends every one around the outside. Kinds stay listed for
  *  filtering; each rollup keeps its own direction. `from` is the end most rollups leave.
  *  `points` is an orthogonal polyline: start, bend points, end. */
-export interface Wire { from: string; to: string; rollups: Rollup[]; points: { x: number; y: number }[]; labels: string[] }
+export interface Wire { from: string; to: string; rollups: Rollup[]; points: { x: number; y: number }[]; labels: string[]; flag?: Flag }
 export interface Layout { width: number; height: number; boxes: Box[]; wires: Wire[]; /** Wires left out to keep layout fast: the lightest ones. */ omitted: number }
 
 /** ELK's layered layout grows steeply with wires; past this the picture is a hairball anyway. */
@@ -50,7 +53,7 @@ const width = (n: GraphNode) => Math.min(MAX_W, Math.max(MIN_W, Math.ceil(n.name
 
 // Positions come from ELK only; inputs are sorted and the seed is fixed so equal input
 // gives equal output.
-export async function layout(graph: Graph, view: View, opts: { flow?: boolean } = {}): Promise<Layout> {
+export async function layout(graph: Graph, view: View, opts: { flow?: boolean; /** Wires kept first when there are too many. */ keep?: (r: Rollup) => boolean } = {}): Promise<Layout> {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const parent = new Map<string, string>();
   const hasKids = new Set<string>();
@@ -100,7 +103,7 @@ export async function layout(graph: Graph, view: View, opts: { flow?: boolean } 
     return { id, width: node ? width(node) : MIN_W, height: LEAF_H, ...(roles.has(id) ? { layoutOptions: pin } : {}) };
   };
   // Flow view: the entries a program starts from and the packages it ends in, pinned to the two sides.
-  const outsideNode = (id: string) => ["external_package", "external"].includes(byId.get(id)?.kind ?? "");
+  const outsideNode = (id: string) => ["external_package", "external", "boundary"].includes(byId.get(id)?.kind ?? "");
   const roles = new Map<string, "entry" | "sink">();
   if (opts.flow) {
     const called = new Set<string>(), calls = new Set<string>();
@@ -133,12 +136,18 @@ export async function layout(graph: Graph, view: View, opts: { flow?: boolean } 
   let omitted = 0;
   if (pairs.size > MAX_WIRES) {
     const weight = (rs: Rollup[]) => rs.reduce((s, r) => s + r.weight, 0);
-    const keep = [...pairs].sort(([ka, a], [kb, b]) => weight(b) - weight(a) || cmpStr(ka, kb)).slice(0, MAX_WIRES);
+    const first = (rs: Rollup[]) => (opts.keep && rs.some(opts.keep) ? 1 : 0);
+    const keep = [...pairs].sort(([ka, a], [kb, b]) => first(b) - first(a) || weight(b) - weight(a) || cmpStr(ka, kb)).slice(0, MAX_WIRES);
     omitted = pairs.size - keep.length;
     pairs.clear();
     for (const [k, rs] of keep) pairs.set(k, rs);
   }
-  const outside = (id: string) => ["external_package", "external"].includes(byId.get(id)?.kind ?? "");
+  // Calls across a boundary are the point of the picture: always wires, never a line of text in the box.
+  const bounded = (id: string) => {
+    for (let p: string | undefined = id; p !== undefined; p = parent.get(p)) if (byId.get(p)?.kind === "boundary") return true;
+    return false;
+  };
+  const outside = (id: string) => ["external_package", "external"].includes(byId.get(id)?.kind ?? "") && !bounded(id);
   const stubs = new Map<string, Stub[]>();
   const keys = [...pairs.keys()].sort(cmpStr).filter((k) => {
     const [from, to] = k.split("\0");

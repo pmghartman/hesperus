@@ -82,6 +82,42 @@ async function player(repo) {
   assert.equal(a.regions.find((r) => r.dims.length === 1)?.states.length, 2, "muted");
 }
 
+// Boundary lint: calls into axios and child_process cross the network and process boundaries; a policy
+// denies one, a baseline taken before the second call makes it new, and the boundary view draws both
+// boundaries as sinks.
+async function boundaries(repo) {
+  const { crossings, boundaryGraph } = require("../out/core/boundary");
+  const { lint, parsePolicy, snapshot, accept } = require("../out/core/lint");
+  const aggregate = require("../out/core/aggregate");
+  const { layout } = require("../out/layout");
+  const API = "function load() { return axios.get(\"/x\"); }\nfunction run() { spawn(\"ls\"); }\n";
+  const lines = API.split("\n");
+  const tok = (name) => { const l = lines.findIndex((x) => x.includes(name + "(")), c = lines[l].indexOf(name + "("); return sp(l, c, l, c + name.length); };
+  const def = (name, l) => ({ name, shape: "method", kind: 12, range: sp(l, 0, l, lines[l].length), selection: sp(l, 9, l, 9 + name.length), children: [] });
+  fs.writeFileSync(path.join(repo, "api.js"), API);
+  const make = async (withSpawn) => {
+    const sites = [tok("get"), ...(withSpawn ? [tok("spawn")] : [])];
+    const outside = { [tok("get").start.character]: { package: "axios", names: ["AxiosInstance", "get"] }, [tok("spawn").start.character]: { package: "node", names: ['"node:child_process"', "spawn"] } };
+    const opts = { sites: (f) => (f.path === "api.js" ? sites : []), definitionsOf: async (p, at) => (p === "api.js" && sites.some((s) => s.start.line === at.line && s.start.character === at.character) ? [outside[at.character]] : []) };
+    return makeGraph(repo, await bridge([{ path: "api.js", language: "javascript", text: API, symbols: [def("load", 0), def("run", 1)] }], async () => [], opts), []);
+  };
+  const before = await make(false), g = await make(true);
+  assert.deepEqual(crossings(g).map((c) => `${c.boundary}:${c.package}`), ["network:axios", "process:node:child_process"], "classified");
+  const policy = parsePolicy(JSON.stringify({ rules: [{ paths: ["api.js"], deny: ["network"], reason: "no I/O here" }] }));
+  const r = lint(g, policy, snapshot(before, policy, "c0"));
+  const rules = r.findings.map((f) => `${f.rule}:${f.boundary}`).sort();
+  assert.deepEqual(rules, ["boundary-denied:network", "new-crossing:process", "new-dependency:process"], `findings: ${rules}`);
+  assert.equal(r.findings.find((f) => f.rule === "boundary-denied").severity, "error");
+  assert.deepEqual(lint(g, policy, accept(snapshot(before, policy, "c0"), r.findings.map((f) => f.key))).findings.map((f) => f.rule), ["boundary-denied"], "accepted");
+  assert.equal(lint(g, policy).findings.filter((f) => f.rule !== "boundary-denied").length, 0, "no baseline, nothing new");
+  const bg = boundaryGraph(g);
+  const v = aggregate.view(bg, aggregate.overview(bg, aggregate.OVERVIEW_NODES, { flow: true }), { flow: true });
+  const laid = await layout(bg, v, { flow: true });
+  const sinks = laid.boxes.filter((b) => b.node.kind === "boundary").map((b) => `${b.id}:${b.role}`).sort();
+  assert.deepEqual(sinks, ["boundary:network:sink", "boundary:process:sink"], `boundary boxes: ${sinks}`);
+  assert.ok(laid.wires.some((w) => w.to === "boundary:network"), "wire to the network");
+}
+
 (async () => {
   await init();
   const files = [
@@ -116,6 +152,12 @@ async function player(repo) {
     assert.deepEqual(moves, ["#initial>false", "false>true", "true>false"], "flag machine");
     assert.equal(await make(), out);
     await player(repo);
+    const other = fs.mkdtempSync(path.join(os.tmpdir(), "hesperus-boundary-"));
+    try {
+      await boundaries(other);
+    } finally {
+      fs.rmSync(other, { recursive: true, force: true });
+    }
     console.log("smoke ok");
   } finally {
     fs.rmSync(repo, { recursive: true, force: true });

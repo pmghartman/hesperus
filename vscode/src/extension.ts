@@ -1,12 +1,17 @@
 import * as vscode from "vscode";
 import { randomBytes } from "node:crypto";
 import * as path from "node:path";
+import * as fs from "node:fs";
 import * as aggregate from "./core/aggregate";
+import { BOUNDARIES, BOUNDARY_INFO, boundaryGraph, boundaryId, libraryNodes } from "./core/boundary";
 import { EdgeKind, Graph, GraphNode } from "./core/ir";
+import { accept, defaultPolicy, Finding, lint, Policy, POLICY_FILE, Report, Severity, snapshot } from "./core/lint";
 import { automaton } from "./core/automaton";
-import { automatonLayout, layout, MAX_WIRES } from "./layout";
-import { FRONTENDS, genericFiles, index, LangResult, load, scan, Scan, sourceFiles, status, unindexedLanguages } from "./engine";
+import { automatonLayout, Flag, layout, MAX_WIRES } from "./layout";
+import { FRONTENDS, genericFiles, ignored, index, isSource, LangResult, load, scan, Scan, sourceFiles, status, unindexedLanguages } from "./engine";
 import { editorIndex, ensureExtension, hasExtension, installExtension } from "./editor";
+import { LintSurface } from "./linter";
+import { gitHead, readBaseline, readPolicy, STARTER_POLICY, writeBaseline, writeReport } from "./review";
 
 /** More boxes than this stalls the layout for minutes. */
 const MAX_BOXES = 500;
@@ -25,19 +30,37 @@ const STATUS = {
 } as const;
 
 /** Callable and structural nodes rank above variables and fields when names tie. */
-const FIND_RANK: Record<string, number> = { function: 0, method: 0, type: 1, package: 2, directory: 3, file: 3, external_package: 4 };
+const FIND_RANK: Record<string, number> = { function: 0, method: 0, type: 1, package: 2, directory: 3, file: 3, boundary: 4, external_package: 4 };
 
-// One graph tab per window; the sidebar is its control panel (status, errors, view options).
+const WORSE: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
+/** Folders whose changes never touch the graph, before asking git. */
+const NOISE = /(^|\/)(\.git|\.hesperus|node_modules|out|dist|build|target|\.next|__pycache__|\.venv|venv)\//;
+
+// One graph tab per window; the sidebar is its control panel (status, findings, view options). While an
+// agent edits the repo, changed files re-index, findings land in Problems, and the graph marks what is new.
 class Hesperus {
   private status: Status = STATUS.idle;
   private scanned?: Scan;
   private graph?: Graph;
+  /** The graph as drawn: `graph`, with outside calls filed under boundaries when that view is on. */
+  private shown?: Graph;
   private parent = new Map<string, string>();
+  private policy: Policy = defaultPolicy();
+  private policyError?: string;
+  private report?: Report;
+  /** Draw outside calls grouped by what they reach (database, network, ...) instead of by package. */
+  private boundaries = true;
+  private lintUi: LintSurface;
+  private watchTimer?: NodeJS.Timeout;
+  private changed = new Set<string>();
+  /** A change arrived mid-index; index again once it finishes. */
+  private again = false;
   private machines: aggregate.Machine[] = [];
   private expanded = new Set<string>();
   // Guards tie code to the states it runs in; the automaton view is their picture, so boxes leave them out.
   private hidden = new Set<EdgeKind>(["guard"]);
-  private external = true;
+  /** Outside libraries no boundary claims. Off by default: every box calls the standard library. */
+  private external = false;
   private files = false;
   private flow = true;
   private isolated = 0;
@@ -49,7 +72,9 @@ class Hesperus {
   private busy?: Promise<void>;
   private log = vscode.window.createOutputChannel("Hesperus");
 
-  constructor(private ctx: vscode.ExtensionContext) {}
+  constructor(private ctx: vscode.ExtensionContext) {
+    this.lintUi = new LintSurface(ctx);
+  }
 
   private get opts(): aggregate.ViewOptions {
     return { files: this.files, flow: this.flow };
@@ -93,14 +118,21 @@ class Hesperus {
     return this.load(false);
   }
 
-  /** Downloads missing indexers and indexes when the cache is missing or stale (or `force`), then renders. */
-  load(force: boolean): Promise<void> {
-    if (this.busy) return this.busy;
-    this.busy = this.doLoad(force).finally(() => (this.busy = undefined));
+  /** Downloads missing indexers and indexes when the cache is missing or stale (or `force`), then renders.
+   *  `keep` holds the user's place: what is open stays open (a re-index after an edit). */
+  load(force: boolean, keep = false): Promise<void> {
+    if (this.busy) {
+      if (keep) this.again = true;
+      return this.busy;
+    }
+    this.busy = this.doLoad(force, keep).finally(() => {
+      this.busy = undefined;
+      if (this.again) (this.again = false, this.load(true, true));
+    });
     return this.busy;
   }
 
-  private async doLoad(force: boolean) {
+  private async doLoad(force: boolean, keep = false) {
     const folder = this.folder;
     if (!folder) return this.setStatus({ state: "error", label: "Error", detail: "Open a folder to see its graph." });
     const repo = folder.uri.fsPath;
@@ -117,6 +149,8 @@ class Hesperus {
         for (const l of this.scanned.languages) {
           try {
             this.setStatus({ state: "installing", label: `Checking the ${l.editor.name} extension…`, reason });
+            // In the background (no Hesperus view open) a missing extension is not worth a prompt.
+            if (!this.panel && !this.sidebar && !hasExtension(l.editor.id)) throw new Error(`The ${l.editor.name} extension (${l.editor.id}) is not installed.`);
             await ensureExtension(l);
             const ix = await editorIndex(repo, l.id, sourceFiles(repo, l.id), (s) => this.setStatus({ state: "indexing", label: `${l.editor.name}: ${s}`, reason }), { patience: 90, needCode: false, frontend: FRONTENDS.find((f) => f.id === l.id) });
             results.push({ lang: l.id, index: ix });
@@ -138,19 +172,65 @@ class Hesperus {
         }
         await index(repo, results);
         this.graph = undefined;
-        this.expanded.clear();
+        if (!keep) this.expanded.clear();
       }
       if (!this.graph) {
         this.graph = load(repo);
-        this.parent = new Map(this.graph.edges.filter((e) => e.kind === "contains").map((e) => [e.to, e.from]));
-        this.expanded = aggregate.overview(this.graph, aggregate.OVERVIEW_NODES, this.opts);
         this.machines = aggregate.machines(this.graph);
+        this.relint(keep && this.expanded.size > 0);
       }
       this.setStatus({ state: "ready", label: "Ready", nodes: this.graph.nodes.length, edges: this.graph.edges.length });
       await this.render();
     } catch (e) {
       this.setStatus({ state: "error", label: "Error", detail: msg(e) });
     }
+  }
+
+  /** Reads the policy and baseline, lints, publishes findings, and rebuilds the drawn graph. The first lint
+   *  of a repo accepts what it already does, so only what changes after that is new. */
+  private relint(keepView = false) {
+    const folder = this.folder;
+    if (!folder || !this.graph) return;
+    const repo = folder.uri.fsPath;
+    try {
+      this.policy = readPolicy(repo);
+      this.policyError = undefined;
+    } catch (e) {
+      this.policy = defaultPolicy();
+      this.policyError = msg(e);
+    }
+    let base = readBaseline(repo);
+    if (!base) writeBaseline(repo, (base = snapshot(this.graph, this.policy, gitHead(repo))));
+    this.report = lint(this.graph, this.policy, base);
+    try {
+      writeReport(repo, this.graph, this.report);
+    } catch (e) {
+      this.log.appendLine(`report: ${msg(e)}`);
+    }
+    this.lintUi.publish(folder.uri, this.report, this.policyError);
+    this.reshape(keepView);
+  }
+
+  /** The drawn graph for the current options; `keepView` keeps open what still exists. */
+  private reshape(keepView = false) {
+    if (!this.graph) return;
+    this.shown = this.boundaries ? boundaryGraph(this.graph, this.policy.boundaries) : this.graph;
+    this.parent = new Map(this.shown.edges.filter((e) => e.kind === "contains").map((e) => [e.to, e.from]));
+    if (keepView) {
+      const ids = new Set(this.shown.nodes.map((n) => n.id));
+      this.expanded = new Set([...this.expanded].filter((id) => ids.has(id) || aggregate.isGroup(id)));
+    } else this.expanded = aggregate.overview(this.shown, aggregate.OVERVIEW_NODES, this.opts);
+  }
+
+  /** Findings drawn on the graph: per call edge (from, to), the worst severity and the messages. */
+  private flags(): Map<string, Flag> {
+    const out = new Map<string, Flag>();
+    for (const f of this.report?.findings ?? []) {
+      const [from, to] = f.key.startsWith("in ") ? [f.external, f.local] : [f.local, f.external];
+      const k = `${from}\0${to}`;
+      out.set(k, merge(out.get(k), { severity: f.severity, notes: [f.message] }));
+    }
+    return out;
   }
 
   private async render(extra: { anchor?: string; focus?: string; seq?: number } = {}) {
@@ -163,11 +243,25 @@ class Hesperus {
         this.panel.webview.postMessage({ type: "automaton", layout: a, ...extra });
         return;
       }
-      const all = aggregate.view(this.graph, this.expanded, this.opts);
-      const ext = this.external ? all : aggregate.withoutExternal(this.graph, all);
-      const v = this.unindexed ? ext : aggregate.withoutUnindexed(this.graph, ext);
+      const g = this.shown ?? this.graph;
+      const all = aggregate.view(g, this.expanded, this.opts);
+      const ext = this.external ? all : this.boundaries ? aggregate.withoutNodes(all, libraryNodes(g)) : aggregate.withoutExternal(g, all);
+      const v = this.unindexed ? ext : aggregate.withoutUnindexed(g, ext);
       this.isolated = v.isolated ?? 0;
-      const laid = await layout(this.graph, v, { flow: this.flow });
+      const flags = this.flags();
+      const flagsOf = (r: aggregate.Rollup) => (r.kind === "call" ? r.edges.map((i) => flags.get(`${g.edges[i].from}\0${g.edges[i].to}`)).filter((f): f is Flag => !!f) : []);
+      const laid = await layout(g, v, { flow: this.flow, keep: (r) => flagsOf(r).length > 0 });
+      // A wire, and the boxes at its ends, carry the worst finding beneath it.
+      const boxes = new Map(laid.boxes.map((b) => [b.id, b]));
+      for (const w of laid.wires)
+        for (const r of w.rollups)
+          for (const f of flagsOf(r)) {
+            w.flag = merge(w.flag, f);
+            for (const id of [w.from, w.to]) {
+              const b = boxes.get(id);
+              if (b) b.flag = merge(b.flag, f);
+            }
+          }
       this.postSidebar(laid.omitted ? `Drawing the ${MAX_WIRES} heaviest wires; ${laid.omitted} lighter ones are left out.` : undefined);
       this.panel.webview.postMessage({ type: "layout", layout: laid, hidden: [...this.hidden], ...extra });
     } catch (e) {
@@ -178,6 +272,7 @@ class Hesperus {
   private setStatus(s: Status) {
     this.status = s;
     this.postSidebar();
+    this.lintUi.busy(s.state === "installing" || s.state === "indexing" ? s.label : undefined);
     // "checking" runs on every open; leave the current drawing up meanwhile.
     if (s.state !== "checking") this.panel?.webview.postMessage({ type: "status", status: s });
   }
@@ -188,6 +283,13 @@ class Hesperus {
       status: this.status,
       hidden: [...this.hidden],
       external: this.external,
+      boundaries: this.boundaries,
+      watch: this.watching,
+      policy: { exists: !!this.folder && fs.existsSync(vscode.Uri.joinPath(this.folder.uri, POLICY_FILE).fsPath), error: this.policyError ?? null },
+      findings: (this.report?.findings ?? []).slice(0, 200).map((f, i) => ({ i, rule: f.rule, severity: f.severity, message: f.message, path: f.path ?? null, line: (f.range?.start_line ?? 0) + 1 })),
+      totalFindings: this.report?.findings.length ?? 0,
+      removed: this.report?.removed.length ?? 0,
+      crossings: BOUNDARIES.filter((b) => this.report?.counts[b]).map((b) => ({ id: b, label: BOUNDARY_INFO[b].label, doc: BOUNDARY_INFO[b].doc, ...this.report!.counts[b]! })),
       files: this.files,
       flow: this.flow,
       isolated: this.isolated,
@@ -206,14 +308,15 @@ class Hesperus {
   /** Best name match; expands its ancestors so it is drawn, then centres on it. */
   private async find(query: string) {
     const q = query.trim().toLowerCase();
-    if (!q || !this.graph) return;
+    const g = this.shown ?? this.graph;
+    if (!q || !g) return;
     const score = (n: GraphNode) => {
       const name = n.name.toLowerCase();
       const m = name === q ? 0 : name.startsWith(q) ? 1 : name.includes(q) ? 2 : n.id.toLowerCase().includes(q) ? 3 : -1;
       return m < 0 ? null : [m, FIND_RANK[n.kind] ?? 5, n.name.length, n.id] as const;
     };
     let best: GraphNode | undefined, bestKey: readonly [number, number, number, string] | undefined;
-    for (const n of this.graph.nodes) {
+    for (const n of g.nodes) {
       const k = score(n);
       if (k && (!bestKey || k < bestKey)) [best, bestKey] = [n, k];
     }
@@ -224,7 +327,8 @@ class Hesperus {
 
   /** Expands a node's ancestors (and `open` itself) so it is drawn, then centres on it. */
   private async reveal(id: string, open = false) {
-    if (!this.graph) return;
+    const g = this.shown ?? this.graph;
+    if (!g) return;
     if (open) this.expanded.add(id);
     this.automaton = false;
     const chain = new Set<string>([id]);
@@ -232,27 +336,119 @@ class Hesperus {
     // Open any layer the target or its ancestors sit in; layers can nest.
     for (let more = true; more; ) {
       more = false;
-      for (const gr of aggregate.view(this.graph, this.expanded, this.opts).groups)
+      for (const gr of aggregate.view(g, this.expanded, this.opts).groups)
         if (!gr.expanded && gr.members.some((m) => chain.has(m))) (this.expanded.add(gr.id), (more = true));
     }
     if (!this.panel) await this.open();
     await this.render({ focus: id });
   }
 
-  private async onSidebar(m: { type: string; kind?: EdgeKind; query?: string; id?: string }) {
+  /** Builds the graph and lints in the background when a folder opens, so findings show with no sidebar open. */
+  async background() {
+    const folder = this.folder;
+    if (!folder || this.graph) return;
+    if (status(folder.uri.fsPath).state === "missing") return; // First index waits for the user to open Hesperus.
+    await this.load(false);
+  }
+
+  /** Accepts findings as reviewed: they stop being new. Denied crossings stay until code or policy changes. */
+  async acceptKeys(keys?: string[]) {
+    const folder = this.folder;
+    if (!folder || !this.graph || !this.report) return;
+    const repo = folder.uri.fsPath;
+    const all = !keys;
+    keys ??= [...new Set(this.report.findings.filter((f) => f.rule !== "boundary-denied").map((f) => f.key))];
+    if (!keys.length && !this.report.removed.length) return void vscode.window.showInformationMessage("Hesperus: nothing new to accept.");
+    if (all) {
+      const ok = await vscode.window.showWarningMessage(`Accept ${keys.length} new crossings and dependencies as reviewed?`, { modal: true }, "Accept");
+      if (ok !== "Accept") return;
+    }
+    // Accepting everything takes the code as it is now, which also forgets crossings that are gone.
+    const base = all ? snapshot(this.graph, this.policy, gitHead(repo)) : readBaseline(repo) ?? snapshot(this.graph, this.policy, gitHead(repo));
+    writeBaseline(repo, accept(base, keys));
+    this.relint(true);
+    this.postSidebar();
+    await this.render();
+  }
+
+  /** Opens the call site and centres the graph on the code that crosses. */
+  async showFinding(f?: Finding) {
+    const folder = this.folder;
+    if (!folder || !f) return;
+    if (f.path && f.range) {
+      const r = new vscode.Range(f.range.start_line, f.range.start_col, f.range.end_line, f.range.end_col);
+      await vscode.window.showTextDocument(vscode.Uri.joinPath(folder.uri, f.path), { selection: r, viewColumn: vscode.ViewColumn.Beside, preserveFocus: true });
+    }
+    await this.reveal(f.local);
+  }
+
+  async openPolicy() {
+    const folder = this.folder;
+    if (!folder) return;
+    const uri = vscode.Uri.joinPath(folder.uri, POLICY_FILE);
+    if (!fs.existsSync(uri.fsPath)) await vscode.workspace.fs.writeFile(uri, Buffer.from(STARTER_POLICY));
+    await vscode.window.showTextDocument(uri);
+  }
+
+  private get watching() {
+    return vscode.workspace.getConfiguration("hesperus").get<boolean>("watch", true);
+  }
+
+  /** A file changed on disk. The policy re-lints at once; source re-indexes after a quiet spell. */
+  onChange(uri: vscode.Uri) {
+    const folder = this.folder;
+    if (!folder || !this.graph) return;
+    const rel = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, "/");
+    if (rel === POLICY_FILE) {
+      this.relint(true);
+      this.postSidebar();
+      return void this.render();
+    }
+    if (!this.watching || NOISE.test(rel) || !isSource(rel)) return;
+    this.changed.add(rel);
+    clearTimeout(this.watchTimer);
+    const delay = vscode.workspace.getConfiguration("hesperus").get<number>("watchDelay", 1500);
+    this.watchTimer = setTimeout(() => {
+      const paths = [...this.changed];
+      this.changed.clear();
+      const skip = ignored(folder.uri.fsPath, paths);
+      if (paths.every((p) => skip.has(p))) return;
+      this.log.appendLine(`changed: ${paths.slice(0, 5).join(", ")}${paths.length > 5 ? ` and ${paths.length - 5} more` : ""}`);
+      this.load(true, true);
+    }, delay);
+  }
+
+  private async onSidebar(m: { type: string; kind?: EdgeKind; query?: string; id?: string; index?: number }) {
     if (m.type === "ready") this.postSidebar();
+    else if (m.type === "accept") await this.acceptKeys();
+    else if (m.type === "finding" && m.index !== undefined) await this.showFinding(this.report?.findings[m.index]);
+    else if (m.type === "policy") await this.openPolicy();
+    else if (m.type === "watch") {
+      // User settings: writing workspace settings would put a file in the repo under review.
+      await vscode.workspace.getConfiguration("hesperus").update("watch", !this.watching, vscode.ConfigurationTarget.Global);
+      this.postSidebar();
+    } else if (m.type === "boundary" && m.id) {
+      if (!this.boundaries) (this.boundaries = true, this.reshape());
+      await this.reveal(boundaryId(m.id as (typeof BOUNDARIES)[number]), true);
+    } else if (m.type === "boundaries" && this.graph) {
+      this.boundaries = !this.boundaries;
+      this.reshape();
+      this.postSidebar();
+      await this.render();
+      this.panel?.webview.postMessage({ type: "fit" });
+    }
     else if (m.type === "open") await this.open();
     else if (m.type === "reindex") {
       if (!this.panel) this.open();
       await this.load(true);
     } else if (m.type === "collapse") {
-      this.expanded = this.graph && this.flow ? aggregate.overview(this.graph, aggregate.OVERVIEW_NODES, this.opts) : new Set();
+      this.expanded = this.shown && this.flow ? aggregate.overview(this.shown, aggregate.OVERVIEW_NODES, this.opts) : new Set();
       await this.render();
       this.panel?.webview.postMessage({ type: "fit" });
     } else if (m.type === "fit") this.panel?.webview.postMessage({ type: "fit" });
-    else if (m.type === "flow" && this.graph) {
+    else if (m.type === "flow" && this.shown) {
       this.flow = !this.flow;
-      this.expanded = aggregate.overview(this.graph, aggregate.OVERVIEW_NODES, this.opts);
+      this.expanded = aggregate.overview(this.shown, aggregate.OVERVIEW_NODES, this.opts);
       await this.render();
       this.panel?.webview.postMessage({ type: "fit" });
     } else if (m.type === "files") {
@@ -288,8 +484,8 @@ class Hesperus {
 
   /** True, with a note in the sidebar, when the open boxes would draw more than the layout can handle. */
   private tooBig() {
-    if (!this.graph) return false;
-    const n = aggregate.view(this.graph, this.expanded, this.opts).nodes.length;
+    if (!this.shown) return false;
+    const n = aggregate.view(this.shown, this.expanded, this.opts).nodes.length;
     if (n <= MAX_BOXES) return false;
     this.postSidebar(`Opening that would draw ${n.toLocaleString()} boxes; the limit is ${MAX_BOXES}. Close something first.`);
     return true;
@@ -323,7 +519,7 @@ class Hesperus {
       if (this.tooBig()) this.expanded = before;
       await this.render({ anchor: m.anchor, seq: m.seq });
     } else if (m.type === "open" && folder) {
-      const n = this.graph?.nodes.find((x) => x.id === m.id);
+      const n = (this.shown ?? this.graph)?.nodes.find((x) => x.id === m.id);
       if (!n?.path || !n.range) return;
       const uri = vscode.Uri.joinPath(folder.uri, n.path);
       const r = new vscode.Range(n.range.start_line, n.range.start_col, n.range.end_line, n.range.end_col);
@@ -338,10 +534,27 @@ export function activate(ctx: vscode.ExtensionContext) {
     vscode.window.registerWebviewViewProvider("hesperus.graph", { resolveWebviewView: (v) => h.attachSidebar(v) }),
     vscode.commands.registerCommand("hesperus.openGraph", () => h.open()),
     vscode.commands.registerCommand("hesperus.refresh", () => h.load(true)),
+    vscode.commands.registerCommand("hesperus.accept", () => h.acceptKeys()),
+    vscode.commands.registerCommand("hesperus.acceptKeys", (keys: string[]) => h.acceptKeys(keys)),
+    vscode.commands.registerCommand("hesperus.showFinding", (f?: Finding) => h.showFinding(f)),
+    vscode.commands.registerCommand("hesperus.policy", () => h.openPolicy()),
   );
+  // Agents write files without the editor saving them, so the watcher is on disk, not on documents.
+  const w = vscode.workspace.createFileSystemWatcher("**/*");
+  ctx.subscriptions.push(w, w.onDidChange((u) => h.onChange(u)), w.onDidCreate((u) => h.onChange(u)), w.onDidDelete((u) => h.onChange(u)));
+  // A repo indexed before lints as soon as it opens, sidebar or not.
+  void h.background();
 }
 
 export function deactivate() {}
+
+/** `into` with `f` folded in: the worse severity, and up to four distinct notes. */
+function merge(into: Flag | undefined, f: Flag): Flag {
+  const m = into ?? { severity: f.severity, notes: [] };
+  if (WORSE[f.severity] < WORSE[m.severity]) m.severity = f.severity;
+  for (const n of f.notes) if (m.notes.length < 4 && !m.notes.includes(n)) m.notes.push(n);
+  return m;
+}
 
 function page(webview: vscode.Webview, media: vscode.Uri, name: string, body: string): string {
   const nonce = randomBytes(16).toString("hex");
@@ -361,6 +574,9 @@ const GRAPH_BODY = `<svg id="view" xmlns="http://www.w3.org/2000/svg"><g id="sce
 const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" class="state"></div></header>
 <pre id="detail" hidden></pre>
 <div class="actions"><button id="open">Open Graph</button><button id="reindex" class="secondary" title="Read the repo again through the editor's language servers">Re-index</button></div>
+<section id="review"><h3>Review<span class="tools"><button id="policy" class="link" title="Rules for what each part of the repo may reach">Policy</button><button id="accept" class="link" title="Mark every new crossing and dependency as reviewed">Accept All</button></span></h3>
+<div id="summary" class="summary"></div><pre id="policy-error" class="err" hidden></pre><ul id="findings" class="findings"></ul></section>
+<section><h3>Boundaries</h3><ul id="crossings" class="langs"></ul></section>
 <form id="find"><input id="q" type="search" placeholder="Find a function, type, or package" spellcheck="false" aria-label="Find"></form><div id="found" class="muted"></div>
 <section><h3>Show<span class="tools"><button id="fit" class="link" title="Fit the graph to the window">Fit</button><button id="collapse" class="link" title="Collapse every container">Collapse All</button></span></h3>
 <label><input type="checkbox" data-kind="call"><span class="swatch call"></span>Calls</label>
@@ -369,13 +585,15 @@ const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" 
 <label><input type="checkbox" data-kind="transition"><span class="swatch transition"></span>State transitions</label>
 <label title="Code that runs only in a state, or only for an event"><input type="checkbox" data-kind="guard"><span class="swatch transition"></span>Guards</label>
 <label title="The program as an automaton: states are the values of its state machines, inputs are what comes in from outside (callbacks, dispatched events, entry points)"><input type="checkbox" id="automaton"><span class="swatch transition"></span>Automaton</label>
+<label title="Calls leaving the repo grouped by what they reach: databases, the network, model APIs, cloud services, queues, files, processes, the environment"><input type="checkbox" id="boundaries"><span class="swatch boundary"></span>Boundaries</label>
 <label title="Units are folders, packages and files, drawn flat with entries on the left and outside libraries on the right. Open one to see what is inside. Off: nested boxes."><input type="checkbox" id="flow"><span class="swatch files"></span>Stage flow</label>
 <div id="isolated" class="muted" hidden></div>
-<label title="Packages outside the repo, such as the standard library"><input type="checkbox" id="external"><span class="swatch external"></span>External libraries</label>
+<label title="Packages outside the repo that cross no boundary, such as the standard library"><input type="checkbox" id="external"><span class="swatch external"></span>Other libraries</label>
+<label title="Re-index when files change on disk, so edits an agent makes show up as findings"><input type="checkbox" id="watch"><span class="swatch flag"></span>Watch for changes</label>
 <label title="Files in a language the editor could not resolve, drawn with no definitions or edges"><input type="checkbox" id="unindexed"><span class="swatch unindexed"></span>Unindexed files</label>
 <label title="Off: packages and folders are boundaries around their types and functions. On: files sit between them."><input type="checkbox" id="files"><span class="swatch files"></span>Files</label>
 <div class="legend"><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l"/></svg>resolved</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l may"/></svg>may</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l unresolved"/></svg>unresolved</span></div></section>
 <section><h3>State machines</h3><ul id="machines" class="machines"></ul></section>
 <section id="missing-section" hidden><h3>Not indexed</h3><ul id="missing" class="langs"></ul></section>
 <section><h3>Languages</h3><ul id="langs" class="langs"></ul></section>
-<p class="hint">Zoom in to open boxes, or click a box to toggle it. ⌘/Ctrl-click or double-click opens its source. Hover to trace edges; click a wire or shift-click a box to pin it, Esc to clear.</p>`;
+<p class="hint">Marked wires are new since the last accept (amber) or denied by policy (red). Zoom in to open boxes, or click a box to toggle it. ⌘/Ctrl-click or double-click opens its source. Hover to trace edges; click a wire or shift-click a box to pin it, Esc to clear.</p>`;

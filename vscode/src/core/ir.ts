@@ -7,6 +7,8 @@ export const REPO_ID = "repo";
 export const NODE_KINDS = [
   "repo", "directory", "package", "file", "type", "function", "method", "field",
   "variable", "state", "event", "external_package", "external", "unresolved",
+  // View-only: the boundary view's grouping of outside calls (core/boundary.ts). Never stored.
+  "boundary",
 ] as const;
 export const EDGE_KINDS = ["contains", "call", "override", "flow", "transition", "guard"] as const;
 export const PROVENANCES = ["resolved", "may", "unresolved"] as const;

@@ -1,7 +1,7 @@
 {
   "name": "hesperus-vscode",
   "displayName": "Hesperus",
-  "description": "Zoomable graph of a repo's structure, calls, and data flow, built by static analysis. No model draws or guesses edges.",
+  "description": "A boundary linter and live map for repos agents write: what calls databases, the network, model APIs and other outside systems, what changed since you last looked, and what your policy forbids. Built by static analysis; no model draws or guesses edges.",
   "version": "0.1.0",
   "publisher": "pmghartman",
   "license": "Apache-2.0",
@@ -17,20 +17,26 @@
   },
   "keywords": [
     "architecture",
+    "linter",
+    "boundaries",
+    "ai agents",
+    "code review",
     "call graph",
     "data flow",
-    "code review",
     "language server"
   ],
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
+    "Linters",
     "Visualization",
     "Other"
   ],
   "main": "./out/extension.js",
-  "activationEvents": [],
+  "activationEvents": [
+    "workspaceContains:.hesperus/header.json"
+  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -59,6 +65,14 @@
         "command": "hesperus.refresh",
         "title": "Hesperus: Re-index",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "hesperus.accept",
+        "title": "Hesperus: Accept All Changes as Reviewed"
+      },
+      {
+        "command": "hesperus.policy",
+        "title": "Hesperus: Open Boundary Policy"
       }
     ],
     "menus": {
@@ -69,13 +83,36 @@
           "group": "navigation"
         }
       ]
-    }
+    },
+    "configuration": {
+      "title": "Hesperus",
+      "properties": {
+        "hesperus.watch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-index and lint when source files change on disk, so an agent's edits show up as findings."
+        },
+        "hesperus.watchDelay": {
+          "type": "number",
+          "default": 1500,
+          "minimum": 200,
+          "description": "Milliseconds of quiet after the last change before re-indexing."
+        }
+      }
+    },
+    "jsonValidation": [
+      {
+        "fileMatch": "hesperus.json",
+        "url": "./schema/policy.schema.json"
+      }
+    ]
   },
   "scripts": {
     "build": "node scripts/grammars.js && tsc -p .",
     "test": "npm run build && node scripts/smoke.js",
     "vscode:prepublish": "npm run build",
-    "package": "vsce package"
+    "package": "vsce package",
+    "check": "node out/cli.js check"
   },
   "dependencies": {
     "elkjs": "0.9.3",
@@ -98,5 +135,8 @@
     "tree-sitter-typescript": "0.23.2",
     "tree-sitter-wasms": "0.1.13",
     "typescript": "5.5.4"
+  },
+  "bin": {
+    "hesperus": "./out/cli.js"
   }
 }

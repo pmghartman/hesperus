@@ -171,6 +171,16 @@ export function load(repo: string, lockfiles: readonly string[] = []): Graph {
   return readCache(repo, header(repo, lockfiles, cached.indexer));
 }
 
+/** Whether a repo-relative path is code some frontend, or the generic fallback, would read. */
+export const isSource = (p: string) => owner(p) !== undefined || genericExt(p) !== undefined;
+
+/** The paths git ignores, of those given. */
+export function ignored(repo: string, paths: readonly string[]): Set<string> {
+  if (!paths.length) return new Set();
+  const r = spawnSync("git", ["-C", repo, "check-ignore", "-z", "--stdin"], { input: paths.join("\0") + "\0", maxBuffer: 1 << 26 });
+  return new Set(r.status === 0 ? r.stdout.toString("utf8").split("\0").filter((p) => p !== "") : []);
+}
+
 /** Repo-relative files the language owns, sorted. */
 export function sourceFiles(repo: string, lang: string): string[] {
   return listFiles(repo).filter((p) => owner(p)?.id === lang).sort(cmpStr);

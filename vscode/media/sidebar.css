@@ -55,3 +55,16 @@ input[type=checkbox]:checked::after { content: ""; width: 7px; height: 4px; marg
 .langs .tool.missing { color: var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground)); }
 .hint { margin: 14px 0 0; font-size: 11px; color: var(--vscode-descriptionForeground); }
 .swatch.unindexed { background: transparent; border: 1px dashed var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground)); height: 6px; width: 12px; }
+.summary { font-size: 12px; color: var(--vscode-descriptionForeground); min-height: 18px; }
+.findings { list-style: none; padding: 0; margin: 2px 0 0; max-height: 260px; overflow: auto; }
+.findings li { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; padding: 3px 0 3px 6px; border-left: 2px solid var(--sev); }
+.findings .tag { font-size: 10px; text-transform: uppercase; letter-spacing: .03em; color: var(--sev); align-self: baseline; }
+.findings .msg { text-align: left; font-size: 12px; color: var(--vscode-foreground); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.findings .at { grid-column: 2; font-size: 11px; color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sev-error { --sev: var(--vscode-editorError-foreground, var(--vscode-errorForeground)); }
+.sev-warning { --sev: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow)); }
+.sev-info { --sev: var(--vscode-editorInfo-foreground, var(--vscode-charts-blue)); }
+.langs .none { display: block; color: var(--vscode-descriptionForeground); font-size: 11px; }
+.langs .boundary { font-size: inherit; text-align: left; color: var(--vscode-foreground); }
+.swatch.boundary { background: var(--vscode-charts-red); height: 6px; width: 6px; border-radius: 50%; margin: 0 4px; }
+.swatch.flag { background: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow)); height: 3px; }

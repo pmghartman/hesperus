@@ -3,13 +3,16 @@
   const vs = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
   const LANG = { go: "Go", javascript: "JavaScript / TypeScript", rust: "Rust", csharp: "C#", cpp: "C / C++", dart: "Dart / Flutter", python: "Python", java: "Java", kotlin: "Kotlin", php: "PHP", ruby: "Ruby" };
-  for (const id of ["open", "reindex", "collapse", "fit"]) $(id).onclick = () => vs.postMessage({ type: id });
+  for (const id of ["open", "reindex", "collapse", "fit", "accept", "policy"]) $(id).onclick = () => vs.postMessage({ type: id });
   for (const c of document.querySelectorAll("input[data-kind]"))
     c.onchange = () => vs.postMessage({ type: "kind", kind: c.dataset.kind });
   $("external").onchange = () => vs.postMessage({ type: "external" });
   $("flow").onchange = () => vs.postMessage({ type: "flow" });
   $("automaton").onchange = () => vs.postMessage({ type: "automaton" });
   $("files").onchange = () => vs.postMessage({ type: "files" });
+  $("boundaries").onchange = () => vs.postMessage({ type: "boundaries" });
+  $("watch").onchange = () => vs.postMessage({ type: "watch" });
+  const RULE = { "boundary-denied": "denied", "new-crossing": "new", "new-dependency": "new dependency" };
   $("unindexed").onchange = () => vs.postMessage({ type: "unindexed" });
   $("find").onsubmit = (e) => {
     e.preventDefault();
@@ -32,6 +35,57 @@
     $("detail").textContent = detail;
     $("detail").className = s.state === "error" ? "err" : "";
     for (const id of ["reindex", "collapse"]) $(id).disabled = busy;
+    $("boundaries").checked = m.boundaries;
+    $("watch").checked = m.watch;
+
+    // Review: what changed since a person last accepted, and what the policy forbids. A click opens the
+    // call site and centres the graph on it.
+    const fs = m.findings, n = (sev) => fs.filter((f) => f.severity === sev).length;
+    const ready = s.state === "ready";
+    $("summary").textContent = !ready ? "—" : !m.totalFindings
+      ? `Nothing new since the last accept.${m.removed ? ` ${m.removed} accepted crossings are gone.` : ""}`
+      : [n("error") && `${n("error")} denied`, n("warning") && `${n("warning")} new`, n("info") && `${n("info")} to note`, m.removed && `${m.removed} gone`].filter(Boolean).join(" · ")
+        + (m.totalFindings > fs.length ? ` (first ${fs.length} of ${m.totalFindings})` : "");
+    $("policy-error").hidden = !m.policy.error;
+    $("policy-error").textContent = m.policy.error ?? "";
+    $("policy").textContent = m.policy.exists ? "Policy" : "Add Policy";
+    $("accept").disabled = !fs.some((f) => f.rule !== "boundary-denied") && !m.removed;
+    const fl = $("findings");
+    fl.replaceChildren();
+    for (const f of fs) {
+      const row = document.createElement("li"), b = document.createElement("button"), tag = document.createElement("span"), at = document.createElement("span");
+      row.className = "sev-" + f.severity;
+      tag.className = "tag";
+      tag.textContent = RULE[f.rule] ?? f.rule;
+      b.className = "link msg";
+      b.textContent = f.message;
+      b.title = f.message;
+      b.onclick = () => vs.postMessage({ type: "finding", index: f.i });
+      at.className = "at";
+      at.textContent = f.path ? `${f.path}:${f.line}` : "";
+      row.append(tag, b, at);
+      fl.append(row);
+    }
+
+    const cl = $("crossings");
+    cl.replaceChildren();
+    for (const c of m.crossings) {
+      const row = document.createElement("li"), b = document.createElement("button"), k = document.createElement("span");
+      b.className = "link name boundary b-" + c.id;
+      b.textContent = c.label;
+      b.title = `${c.doc} Click to show what reaches it.`;
+      b.onclick = () => vs.postMessage({ type: "boundary", id: c.id });
+      k.className = "count";
+      k.textContent = c.in ? `${c.out} out · ${c.in} in` : `${c.out} calls`;
+      row.append(b, k);
+      cl.append(row);
+    }
+    if (!m.crossings.length) {
+      const row = document.createElement("li");
+      row.className = "none";
+      row.textContent = ready ? "No calls into databases, the network, model APIs, cloud services, queues, files, processes or the environment were found." : "—";
+      cl.append(row);
+    }
     for (const c of document.querySelectorAll("input[data-kind]")) c.checked = !m.hidden.includes(c.dataset.kind);
     $("external").checked = m.external;
     $("files").checked = m.files;

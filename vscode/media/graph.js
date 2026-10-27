@@ -200,6 +200,15 @@
     file: "M-4.5,-6h6l3,3v9h-9zM1.5,-6v3h3",
     tier: "M-6,-4.5h12M-6,0h12M-6,4.5h12",
     state: "M0,-5L5,0L0,5L-5,0z",
+    // Boundaries: what the program reaches outside itself.
+    "boundary:database": "M-5,-3.5a5,2 0 1,0 10,0a5,2 0 1,0 -10,0v7a5,2 0 0,0 10,0v-7",
+    "boundary:network": "M-5.5,0a5.5,5.5 0 1,0 11,0a5.5,5.5 0 1,0 -11,0M-5.5,0h11M0,-5.5c-3,3 -3,8 0,11M0,-5.5c3,3 3,8 0,11",
+    "boundary:ai": "M0,-6L1.5,-1.5L6,0L1.5,1.5L0,6L-1.5,1.5L-6,0L-1.5,-1.5z",
+    "boundary:cloud": "M-4,3.5h8a3,3 0 0,0 0,-6a4,4 0 0,0 -7.6,1a2.6,2.6 0 0,0 -0.4,5z",
+    "boundary:messaging": "M-6,-4h12v8h-12zM-6,-4l6,4.5l6,-4.5",
+    "boundary:filesystem": "M-4.5,-6h6l3,3v9h-9zM1.5,-6v3h3",
+    "boundary:process": "M-6,-5h12v10h-12zM-3.5,-2l2.5,2l-2.5,2M1,2.5h3",
+    "boundary:environment": "M-5.5,0a2.5,2.5 0 1,0 5,0a2.5,2.5 0 1,0 -5,0M-0.5,0h6M3.5,0v2.5",
   };
   const LETTER = { type: "T", function: "ƒ", method: "m", field: "•", variable: "v", external: "↗", unresolved: "?", event: "⚡" };
   function glyph(g, kind, x, cy) {
@@ -228,7 +237,7 @@
     scene.replaceChildren();
     boxes = new Map(L.boxes.map((b) => [b.id, b]));
     const defs = el("defs", {}, scene);
-    for (const k of ["call", "flow", "override", "transition", "guard", "unresolved"]) {
+    for (const k of ["call", "flow", "override", "transition", "guard", "unresolved", "flag-error", "flag-warning", "flag-info"]) {
       const m = el("marker", { id: "arrow-" + k, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "7", markerHeight: "7", markerUnits: "userSpaceOnUse", orient: "auto" }, defs);
       // CSP forbids style attributes; colours come from the stylesheet.
       el("path", { d: "M0,1L9,5L0,9z", class: "arrow " + k }, m);
@@ -240,7 +249,7 @@
     const nodeLayer = el("g", {}, scene), wireLayer = el("g", { class: "wires" }, scene);
     const nodeEls = new Map();
     for (const b of order) {
-      const g = el("g", { class: `node k-${b.node.kind}` + (b.container ? " container" : "") + (b.node.unindexed ? " unindexed" : ""), "data-id": b.id }, nodeLayer);
+      const g = el("g", { class: `node k-${b.node.kind}` + (b.container ? " container" : "") + (b.node.unindexed ? " unindexed" : "") + (b.flag ? ` flag-${b.flag.severity}` : ""), "data-id": b.id }, nodeLayer);
       el("rect", { class: "body", x: b.x, y: b.y, width: b.w, height: b.h, rx: b.container ? 6 : 4 }, g);
       el("rect", { class: "bar", x: b.x, y: b.y + 1, width: 3, height: (b.container ? HEAD : b.h) - 2, rx: 1.5 }, g);
       const cy = b.y + (b.container ? HEAD : LEAF_H) / 2;
@@ -252,7 +261,7 @@
       }
       // Entry: nothing in the repo calls it, so control comes in from outside.
       if (b.role === "entry") el("path", { class: "entry-mark", d: `M${b.x - 16},${cy}h13m-4,-4l4,4l-4,4` }, g);
-      glyph(g, b.node.kind, x, cy);
+      glyph(g, b.node.kind === "boundary" ? b.id : b.node.kind, x, cy);
       x += 18;
       const kind = b.node.kind === "tier" ? "group" : b.node.kind.replace("_", " ");
       el("text", { class: "name", x, y: cy + 4 }, g).textContent = short(b.node.name, b.w - (x - b.x) + PAD - 12);
@@ -284,8 +293,8 @@
       const p = prov(w.rollups);
       const weight = w.rollups.reduce((a, r) => a + r.weight, 0);
       const d = pathOf(w.points);
-      const head = `url(#arrow-${p === "unresolved" ? "unresolved" : main})`;
-      const path = el("path", { class: `wire ${main} ${p}`, d, "marker-end": head }, wireLayer);
+      const head = `url(#arrow-${w.flag ? "flag-" + w.flag.severity : p === "unresolved" ? "unresolved" : main})`;
+      const path = el("path", { class: `wire ${main} ${p}` + (w.flag ? ` flag flag-${w.flag.severity}` : ""), d, "marker-end": head }, wireLayer);
       if (w.rollups.some((r) => r.from === w.to)) path.setAttribute("marker-start", head.replace("arrow-", "back-"));
       path.style.setProperty("--w", String(Math.min(0.9 + Math.log2(weight) * 0.5, 3)));
       const hit = el("path", { class: "hit", d }, wireLayer);
@@ -362,6 +371,7 @@
     if (n.signature) lines.push(esc(n.signature));
     if (n.doc) lines.push(esc(n.doc.length > 300 ? n.doc.slice(0, 300) + "…" : n.doc));
     if (n.path) lines.push(esc(n.path));
+    for (const note of b.flag?.notes ?? []) lines.push(`<span class="sev-${b.flag.severity}">● ${esc(note)}</span>`);
     for (const x of b.ext ?? []) {
       const rs = x.rollups.map((r) => `${r.from === b.id ? "→" : "←"} ${r.kind} ×${r.weight}`).join(", ");
       lines.push(`<span class="dim">↗ ${esc(x.name)}  ${rs}</span>`);
@@ -416,7 +426,8 @@
       return `${two ? (r.from === w.from ? "→ " : "← ") : ""}${r.kind} ×${r.weight}  <span class="dim">${certainty}</span>`;
     });
     const by = w.labels?.length ? `\n<span class="dim">by ${w.labels.map(esc).join(", ")}</span>` : "";
-    showTip(e, `<b>${name(w.from)}</b> ${two ? "↔" : "→"} <b>${name(w.to)}</b>\n${rows.join("\n")}${by}`);
+    const notes = (w.flag?.notes ?? []).map((n) => `\n<span class="sev-${w.flag.severity}">● ${esc(n)}</span>`).join("");
+    showTip(e, `<b>${name(w.from)}</b> ${two ? "↔" : "→"} <b>${name(w.to)}</b>\n${rows.join("\n")}${by}${notes}`);
   }
   function unfocus() {
     scene.classList.remove("focus");

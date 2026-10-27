@@ -35,7 +35,12 @@ export interface View {
 
 /** `v` without nodes outside the repo, their group, and the rollups that reach them. */
 export function withoutExternal(g: Graph, v: View): View {
-  const out = new Set(g.nodes.filter((n) => n.kind === "external_package" || n.kind === "external").map((n) => n.id));
+  return withoutNodes(v, new Set(g.nodes.filter((n) => n.kind === "external_package" || n.kind === "external").map((n) => n.id)));
+}
+
+/** `v` without the `out` nodes, groups made only of them, and the rollups that reach them. */
+export function withoutNodes(v: View, out: Set<string>): View {
+  out = new Set(out);
   const groups = v.groups.filter((gr) => !gr.members.every((m) => out.has(m)));
   for (const gr of v.groups) if (!groups.includes(gr)) out.add(gr.id);
   return { ...v, nodes: v.nodes.filter((id) => !out.has(id)), rollups: v.rollups.filter((r) => !out.has(r.from) && !out.has(r.to)), groups };
@@ -222,7 +227,8 @@ export const OVERVIEW_NODES = 60;
  *  shown to the same depth, while the view stays within `budget` nodes. Outside packages stay shut. */
 export function overview(g: Graph, budget = OVERVIEW_NODES, opts: ViewOptions = {}): Set<string> {
   const hasKids = new Set(g.edges.filter((e) => e.kind === "contains").map((e) => e.from));
-  const outside = new Set(g.nodes.filter((n) => n.kind === "external_package" || n.kind === "external").map((n) => n.id));
+  // Boundaries stay shut too: the first view shows that the repo reaches a database, not every query.
+  const outside = new Set(g.nodes.filter((n) => n.kind === "external_package" || n.kind === "external" || n.kind === "boundary").map((n) => n.id));
   // Levels open by every box, drawn or not: in the flow view a folder with no calls across it still
   // holds the logic, and judging by the drawn boxes alone would never open it.
   let open = new Set<string>(), v = build(g, open, opts);
@@ -259,8 +265,9 @@ function tiers(g: Graph, par: Map<string, string>, rep: (id: string) => string, 
     if (c !== REPO_ID && (!expanded.has(c) || rep(c) !== c)) continue;
     // A location's children are its states; transitions, not calls, connect them.
     if (kindOf.get(c) === "field" || kindOf.get(c) === "variable") continue;
-    const ext = ch.filter((id) => kindOf.get(id) === "external_package");
-    const own = ch.filter((id) => kindOf.get(id) !== "external_package");
+    const away = (id: string) => kindOf.get(id) === "external_package" || kindOf.get(id) === "boundary";
+    const ext = ch.filter(away);
+    const own = ch.filter((id) => !away(id));
     const mk = (key: string, name: string, members: string[]) => {
       const id = `tier:${c}#${key}`;
       out.push({ id, parent: c, name, members, expanded: expanded.has(id) });

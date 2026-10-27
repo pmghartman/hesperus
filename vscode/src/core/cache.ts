@@ -93,11 +93,15 @@ function write(p: string, s: string) {
   io(p, () => fs.writeFileSync(p, s));
 }
 
-/** Writes only under `<repo>/.hesperus`. Removes the old cache first. */
+/** What a person accepted outlives re-indexing; everything else in the cache is rebuilt. */
+const KEEP = new Set(["baseline.json"]);
+
+/** Writes only under `<repo>/.hesperus`. Removes the old cache first, except what a person accepted. */
 export function writeCache(repo: string, header: Header, g: Graph) {
   const dir = path.join(repo, CACHE_DIR);
   // Does not follow symlinks.
-  io(dir, () => fs.rmSync(dir, { recursive: true, force: true }));
+  const old = io(dir, () => (fs.existsSync(dir) ? fs.readdirSync(dir) : []));
+  for (const f of old) if (!KEEP.has(f)) io(path.join(dir, f), () => fs.rmSync(path.join(dir, f), { recursive: true, force: true }));
   const key = shardOf(g);
   const shards = new Map<string, Shard>();
   const shard = (k: string) => {
