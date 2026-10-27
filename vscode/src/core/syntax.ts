@@ -89,8 +89,25 @@ export interface Imports {
   qualified?(path: string[]): { module: string; names: string[] } | undefined;
 }
 
+/** A definition the file's syntax outlines, as an editor's document symbols would: what the headless
+ *  indexer uses in place of a language server. Flat; the indexer nests them by range. */
+export interface SymbolDecl {
+  name: string;
+  /** `namespace` and `type` hold other definitions; `method` is any callable; `term` a value. */
+  shape: "namespace" | "type" | "method" | "term";
+  /** SCIP symbol kind: Class 7, Constant 8, Constructor 9, Enum 11, EnumMember 12, Field 15, Function 17,
+   *  Interface 21, Method 26, Namespace 29, Struct 49, Variable 61. */
+  kind: number;
+  /** The whole declaration. */
+  range: Range;
+  /** The name token. */
+  selection: Range;
+}
+
 export interface Facts {
   calls: CallSite[];
+  /** Definitions by syntax alone, for indexing without a language server. */
+  symbols: SymbolDecl[];
   /** Bindings this file imports, in source order. */
   imports: ImportDecl[];
   params: ParamDecl[];
@@ -105,7 +122,7 @@ export interface Facts {
   lambdas: Range[];
 }
 
-export const noFacts = (): Facts => ({ calls: [], imports: [], params: [], decls: [], assigns: [], guards: [], consts: [], lambdas: [] });
+export const noFacts = (): Facts => ({ calls: [], symbols: [], imports: [], params: [], decls: [], assigns: [], guards: [], consts: [], lambdas: [] });
 
 export interface Syntax {
   facts(source: string): Facts;

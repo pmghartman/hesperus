@@ -59,7 +59,7 @@ Hesperus is a linter for boundary crossings, meant to run beside an agent:
 }
 ```
 
-- **For the agent.** Every lint writes `.hesperus/report.json`, and `hesperus check` lints the last graph from a terminal, a hook, or CI-like scripts (exit 1 on errors; `--json`, `--accept`, `--max-warnings N`). It reads the graph the extension built and does not index; it says when that graph is older than `HEAD`.
+- **For the agent.** Every lint writes `.hesperus/report.json`, and `hesperus check` lints from a terminal, a hook, or CI-like scripts (exit 1 on errors; `--json`, `--accept`, `--max-warnings N`, `--svg`). It reads the graph the extension built and says when that is older than `HEAD`; with `--index`, or when there is no graph yet, it indexes from syntax alone (JavaScript/TypeScript, Python, Go, Rust, Java, Kotlin; coarser than the language servers). `hesperus mcp` serves the same facts to an agent over MCP, and the repository doubles as a Claude Code plugin; see the [project README](https://github.com/pmghartman/hesperus#without-an-editor-cli-mcp-claude-code).
 
 ```
 node ~/.vscode/extensions/pmghartman.hesperus-vscode-*/out/cli.js check .

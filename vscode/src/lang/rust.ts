@@ -2,7 +2,7 @@ import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
 import { cmpStr } from "../core/ir";
 import { Imports, Operand } from "../core/syntax";
-import { equalities, guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
+import { equalities, guardIf, Grammar, namedChildren, other, Source, symbol } from "./treesitter";
 
 export const LANGUAGE_ID = "rust";
 
@@ -129,6 +129,7 @@ export const RUST = new Grammar("tree-sitter-rust.wasm", (n, src, f) => {
     case "const_item": case "static_item": {
       const name = n.childForFieldName("name"), v = n.childForFieldName("value");
       if (name && v && n.type === "const_item" && op(v).form === "literal") f.consts.push(src.range(name));
+      symbol(f, src, n, name, "term", n.type === "const_item" ? 8 : 61);
       break;
     }
     case "field_initializer": {
@@ -162,6 +163,7 @@ export const RUST = new Grammar("tree-sitter-rust.wasm", (n, src, f) => {
     case "function_item": case "function_signature_item": {
       const decl = src.range(n);
       f.decls.push(decl);
+      symbol(f, src, n, n.childForFieldName("name"), "method", /^(impl|trait)_item$/.test(n.parent?.parent?.type ?? "") ? 26 : 17);
       const params = n.childForFieldName("parameters");
       if (!params) break;
       let idx = 0;
@@ -173,6 +175,29 @@ export const RUST = new Grammar("tree-sitter-rust.wasm", (n, src, f) => {
       }
       break;
     }
+    case "struct_item":
+    case "enum_item":
+    case "trait_item":
+    case "union_item":
+    case "type_item":
+      symbol(f, src, n, n.childForFieldName("name"), "type", n.type === "enum_item" ? 11 : n.type === "trait_item" ? 21 : n.type === "struct_item" ? 49 : 7);
+      break;
+    case "impl_item": {
+      // `impl Trait for Foo` and `impl Foo` both outline under `Foo`; the indexer merges it with the struct.
+      const t = n.childForFieldName("type");
+      const name = t?.type === "generic_type" ? t.childForFieldName("type") : t;
+      symbol(f, src, n, name, "type", 7);
+      break;
+    }
+    case "mod_item":
+      symbol(f, src, n, n.childForFieldName("name"), "namespace", 29);
+      break;
+    case "enum_variant":
+      symbol(f, src, n, n.childForFieldName("name"), "term", 12);
+      break;
+    case "field_declaration":
+      symbol(f, src, n, n.childForFieldName("name"), "term", 15);
+      break;
     case "use_declaration": {
       const arg = n.childForFieldName("argument");
       const bound: { local: string; path: string[] }[] = [];
@@ -201,6 +226,7 @@ export const RUST = new Grammar("tree-sitter-rust.wasm", (n, src, f) => {
 /** Rust Analyzer: symbols and references come from the editor's language server. */
 export const Rust: Frontend = {
   id: LANGUAGE_ID,
+  headless: true,
   imports: RS_IMPORTS,
   extensions: ["rs"],
   editor: { id: "rust-lang.rust-analyzer", name: "Rust Analyzer" },

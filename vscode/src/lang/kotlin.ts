@@ -1,7 +1,7 @@
 import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
 import { Imports, Operand } from "../core/syntax";
-import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
+import { guardIf, Grammar, namedChildren, other, Source, symbol } from "./treesitter";
 
 export const LANGUAGE_ID = "kotlin";
 
@@ -54,9 +54,14 @@ export const KOTLIN = new Grammar("tree-sitter-kotlin.wasm", (n, src, f) => {
     const parts = namedChildren(n);
     const plain = n.children.some((c) => c !== null && !c.isNamed && c.type === "=");
     if (parts.length >= 2) f.assigns.push({ target: op(parts[0]), value: plain ? op(parts[parts.length - 1]) : other(n, src), init: false });
+  } else if (n.type === "class_declaration" || n.type === "object_declaration") {
+    symbol(f, src, n, first(n, "type_identifier"), "type", /\binterface\b/.test(n.text.slice(0, 40)) ? 21 : 7);
+  } else if (n.type === "companion_object") {
+    symbol(f, src, n, first(n, "type_identifier"), "type", 7);
   } else if (n.type === "property_declaration") {
     const v = first(n, "variable_declaration");
     const name = v && first(v, "simple_identifier");
+    symbol(f, src, n, name, "term", n.parent?.type === "class_body" ? 15 : 61);
     const parts = namedChildren(n);
     const init = parts.length > 2 ? parts[parts.length - 1] : undefined;
     if (name && init && init.type !== "variable_declaration" && init.type !== "binding_pattern_kind") f.assigns.push({ target: op(name), value: op(init), init: true });
@@ -64,6 +69,7 @@ export const KOTLIN = new Grammar("tree-sitter-kotlin.wasm", (n, src, f) => {
   } else if (n.type === "enum_entry") {
     const name = first(n, "simple_identifier");
     if (name) f.consts.push(src.range(name));
+    symbol(f, src, n, name, "term", 12);
   } else if (n.type === "if_expression") {
     const c = namedChildren(n)[0], body = first(n, "control_structure_body");
     if (c && body && c !== body) guardIf(n, c, body, EQ, op, f.guards, src);
@@ -82,6 +88,7 @@ export const KOTLIN = new Grammar("tree-sitter-kotlin.wasm", (n, src, f) => {
   } else if (n.type === "function_declaration") {
     const decl = src.range(n);
     f.decls.push(decl);
+    symbol(f, src, n, first(n, "simple_identifier"), "method", n.parent?.type === "class_body" ? 26 : 17);
     const params = first(n, "function_value_parameters");
     let idx = 0;
     for (const p of params ? namedChildren(params) : []) {
@@ -110,6 +117,7 @@ export const KOTLIN = new Grammar("tree-sitter-kotlin.wasm", (n, src, f) => {
 /** Kotlin, resolved through the editor's Kotlin language server. */
 export const Kotlin: Frontend = {
   id: LANGUAGE_ID,
+  headless: true,
   imports: KT_IMPORTS,
   extensions: ["kt", "kts"],
   editor: { id: "fwcd.kotlin", name: "Kotlin" },

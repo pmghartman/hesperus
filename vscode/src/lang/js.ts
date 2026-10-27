@@ -2,7 +2,7 @@ import { Node } from "web-tree-sitter";
 import { Frontend, extension } from "../core/frontend";
 import { cmpStr } from "../core/ir";
 import { Facts, Imports, Operand } from "../core/syntax";
-import { branches, children, guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
+import { branches, children, guardIf, Grammar, namedChildren, other, Source, symbol } from "./treesitter";
 
 export const LANGUAGE_ID = "javascript";
 
@@ -176,9 +176,36 @@ function imports(n: Node, f: Facts) {
   }
 }
 
+const TYPES = new Set(["class_declaration", "class", "abstract_class_declaration", "interface_declaration", "type_alias_declaration", "enum_declaration"]);
+
+/** The outline: functions by their naming declaration, classes and types, variables and fields. */
+function outline(n: Node, src: Source, f: Facts) {
+  if (TYPES.has(n.type)) {
+    const name = n.childForFieldName("name");
+    if (name) symbol(f, src, n.parent?.type === "export_statement" ? n.parent : n, name, "type", n.type === "interface_declaration" ? 21 : n.type === "enum_declaration" ? 11 : 7);
+  } else if (n.type === "enum_assignment" || (n.type === "property_identifier" && n.parent?.type === "enum_body")) {
+    symbol(f, src, n, n.type === "enum_assignment" ? n.childForFieldName("name") : n, "term", 12);
+  } else if (FUNCTIONS.has(n.type)) {
+    const d = namingDecl(n);
+    if (!d) return;
+    const name = d.type === "pair" ? d.childForFieldName("key") : d.type === "assignment_expression" ? d.childForFieldName("left") : d.childForFieldName("name") ?? d.childForFieldName("property");
+    const leaf = name?.type === "member_expression" ? name.childForFieldName("property") : name;
+    const inType = d.type === "method_definition" || d.type === "public_field_definition" || d.type === "field_definition";
+    const whole = d.parent?.type === "export_statement" ? d.parent : d.type === "variable_declarator" && d.parent?.parent?.type === "export_statement" ? d.parent.parent : d;
+    symbol(f, src, whole, leaf, "method", d.type === "method_definition" && leaf?.text === "constructor" ? 9 : inType ? 26 : 17);
+  } else if (n.type === "variable_declarator" || n.type === "public_field_definition" || n.type === "field_definition") {
+    const name = n.childForFieldName("name") ?? n.childForFieldName("property"), value = n.childForFieldName("value");
+    if (name?.type !== "identifier" && name?.type !== "property_identifier" && name?.type !== "private_property_identifier") return;
+    if (value && FUNCTIONS.has(value.type)) return; // outlined as a function above
+    const isConst = n.parent?.type === "lexical_declaration" && n.parent.childForFieldName("kind")?.type === "const";
+    symbol(f, src, n, name, "term", n.type === "variable_declarator" ? (isConst ? 8 : 61) : 15);
+  }
+}
+
 function visit(n: Node, src: Source, f: Facts) {
   state(n, src, f);
   imports(n, f);
+  outline(n, src, f);
   if (FUNCTIONS.has(n.type)) {
     const d = namingDecl(n);
     if (d) {
@@ -235,6 +262,19 @@ function join(from: string, m: string): string | undefined {
   return segs.join("/");
 }
 
+/** Names the platform defines without an import, as the TypeScript server files them: the language's
+ *  own under `builtins`, Node's under `node`. */
+const GLOBALS = new Map<string, string>([
+  ...["Math", "JSON", "Object", "Array", "Map", "Set", "WeakMap", "WeakSet", "Promise", "Error", "TypeError", "RangeError", "Date", "Number", "String",
+    "Boolean", "Symbol", "BigInt", "RegExp", "Reflect", "Proxy", "Intl", "parseInt", "parseFloat", "isNaN", "isFinite", "encodeURIComponent",
+    "decodeURIComponent", "encodeURI", "decodeURI", "structuredClone", "queueMicrotask", "setTimeout", "setInterval", "clearTimeout", "clearInterval",
+    "fetch", "XMLHttpRequest", "WebSocket", "EventSource", "URL", "URLSearchParams", "TextEncoder", "TextDecoder", "AbortController", "Blob", "FormData",
+    "Headers", "Request", "Response", "crypto", "performance", "navigator", "document", "window", "globalThis", "localStorage", "sessionStorage",
+    "indexedDB", "Int8Array", "Uint8Array", "Uint8ClampedArray", "Int16Array", "Uint16Array", "Int32Array", "Uint32Array", "Float32Array", "Float64Array",
+    "ArrayBuffer", "DataView", "Atomics", "SharedArrayBuffer", "alert", "console"].map((n): [string, string] => [n, "builtins"]),
+  ...["process", "Buffer", "require", "module", "__dirname", "__filename", "setImmediate", "clearImmediate"].map((n): [string, string] => [n, "node"]),
+]);
+
 /** Relative specifiers are repo files, with any of the source extensions, or a folder's index file; a
  *  compiled `.js` name may stand for a `.ts` source. Bare specifiers are packages: a Node built-in is
  *  named by its module in quotes under `node`, as the TypeScript server reports it; a subpath import
@@ -252,7 +292,9 @@ const JS_IMPORTS: Imports = {
     for (const e of EXTS) files.push(`${p}/index.${e}`);
     return [{ files, names }];
   },
+  qualified: (path) => (GLOBALS.has(path[0]) ? { module: `<${GLOBALS.get(path[0])}>`, names: path } : undefined),
   external(module, names) {
+    if (module === "<builtins>" || module === "<node>") return { package: module.slice(1, -1), names };
     if (relative(module) || module.startsWith("/") || module.startsWith("#")) return undefined;
     const m = module.replace(/^node:/, "");
     const segs = m.split("/");
@@ -265,6 +307,7 @@ const JS_IMPORTS: Imports = {
 /** JavaScript and TypeScript: the editor's built-in TypeScript server answers. */
 export const Js: Frontend = {
   id: LANGUAGE_ID,
+  headless: true,
   extensions: ["js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx"],
   editor: { id: "vscode.typescript-language-features", name: "TypeScript and JavaScript" },
   imports: JS_IMPORTS,

@@ -2,7 +2,7 @@ import { Frontend } from "../core/frontend";
 import { cmpStr } from "../core/ir";
 import { Node } from "web-tree-sitter";
 import { Imports, Operand } from "../core/syntax";
-import { equalities, guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
+import { equalities, guardIf, Grammar, namedChildren, other, Source, symbol } from "./treesitter";
 
 export const LANGUAGE_ID = "go";
 
@@ -64,13 +64,19 @@ export const GO = new Grammar("tree-sitter-go.wasm", (n, src, f) => {
     const l = namedChildren(n.childForFieldName("left")!), r = namedChildren(n.childForFieldName("right")!);
     if (l.length === r.length) l.forEach((t, i) => f.assigns.push({ target: op(t), value: op(r[i]), init: true }));
   } else if (n.type === "const_spec") {
-    for (const x of n.childrenForFieldName("name")) if (x) f.consts.push(src.range(x));
+    for (const x of n.childrenForFieldName("name")) if (x) (f.consts.push(src.range(x)), symbol(f, src, n, x, "term", 8));
+  } else if (n.type === "type_spec") {
+    const t = n.childForFieldName("type")?.type;
+    symbol(f, src, n, n.childForFieldName("name"), "type", t === "interface_type" ? 21 : t === "struct_type" ? 49 : 7);
+  } else if (n.type === "field_declaration") {
+    for (const x of n.childrenForFieldName("name")) if (x) symbol(f, src, n, x, "term", 15);
   } else if (n.type === "inc_statement" || n.type === "dec_statement") {
     const t = n.namedChild(0);
     if (t) f.assigns.push({ target: op(t), value: other(n, src), init: false });
   } else if (n.type === "var_spec") {
     const vals = n.childForFieldName("value");
     const names = n.childrenForFieldName("name").filter((x): x is Node => x !== null);
+    for (const x of names) symbol(f, src, n, x, "term", 61);
     const r = vals ? namedChildren(vals) : [];
     if (r.length === names.length) names.forEach((t, i) => f.assigns.push({ target: op(t), value: op(r[i]), init: true }));
   } else if (n.type === "keyed_element" && n.parent?.parent?.type === "composite_literal"
@@ -98,6 +104,7 @@ export const GO = new Grammar("tree-sitter-go.wasm", (n, src, f) => {
   } else if (n.type === "function_declaration" || n.type === "method_declaration") {
     const decl = src.range(n);
     f.decls.push(decl);
+    symbol(f, src, n, n.childForFieldName("name"), "method", n.type === "method_declaration" ? 26 : 17);
     const params = n.childForFieldName("parameters");
     if (params) {
       let idx = 0;
@@ -130,6 +137,7 @@ export const GO = new Grammar("tree-sitter-go.wasm", (n, src, f) => {
 /** Go: symbols and references come from the editor's language server. */
 export const Go: Frontend = {
   id: LANGUAGE_ID,
+  headless: true,
   extensions: ["go"],
   editor: { id: "golang.go", name: "Go" },
   imports: GO_IMPORTS,

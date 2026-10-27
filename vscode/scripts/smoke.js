@@ -111,6 +111,62 @@ function a() { fs.readFileSync(p); get(u); helper(); cp.spawn(c); mystery(); }
   assert.deepEqual(crossings(g).map((c) => `${c.boundary}:${c.package}`), ["network:axios", "process:child_process", "filesystem:fs"], "classified through imports");
 }
 
+// Headless: with no language server at all, a same-file call, a call through a relative import and a
+// call into a Node built-in all resolve; the CLI lints and draws; the MCP server answers over stdio.
+async function headless(repo) {
+  const { spawn } = require("node:child_process");
+  const { indexHeadless } = require("../out/engine");
+  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "src/a.ts"), 'import * as fs from "node:fs";\nimport { helper } from "./util";\nexport class C { m() { this.n(); } n() {} }\nfunction local() {}\nexport function a() { local(); helper(); fs.readFileSync("x"); new C().m(); }\n');
+  fs.writeFileSync(path.join(repo, "src/util.ts"), "export function helper() {}\n");
+  fs.writeFileSync(path.join(repo, "m.py"), "import subprocess\ndef run():\n    subprocess.run(['ls'])\n    go()\ndef go():\n    pass\n");
+  const { graph: g, languages } = await indexHeadless(repo);
+  assert.deepEqual(languages.map((l) => `${l.id}:${l.files}:${l.indexed}`).sort(), ["javascript:2:true", "python:1:true"], "languages");
+  const name = new Map(g.nodes.map((n) => [n.id, n.name]));
+  const from = (tail) => g.edges.filter((e) => e.kind === "call" && e.from.endsWith(tail)).map((e) => `${e.provenance}:${name.get(e.to)}`).sort();
+  // `new C()` is a constructor (dropped, as the editor path drops conversions); `.m()` on the instance has no type to go by.
+  assert.deepEqual(from("/a(0)."), ['resolved:"fs".readFileSync', "resolved:helper", "resolved:local", "unresolved:new C().m"], `a: ${from("/a(0).")}`);
+  assert.deepEqual(from("C#m(0)."), ["resolved:n"], `this.n: ${from("C#m(0).")}`);
+  assert.deepEqual(from("/run(0)."), ["resolved:go", "resolved:run"], `python: ${from("/run(0).")}`);
+  const cli = path.join(__dirname, "..", "out", "cli.js");
+  const run = (args) => require("node:child_process").spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
+  const first = run(["check", repo, "--json", "--svg"]);
+  assert.equal(first.status, 0, first.stderr);
+  const report = JSON.parse(first.stdout);
+  assert.deepEqual(report.summary, { errors: 0, warnings: 0, info: 0, removed: 0 }, "first lint records the baseline");
+  assert.ok(fs.readFileSync(path.join(repo, ".hesperus", "view.svg"), "utf8").includes("Filesystem"), "svg names the boundary");
+  fs.appendFileSync(path.join(repo, "src/a.ts"), 'import axios from "axios";\nexport function b() { return axios.get("/"); }\n');
+  const second = run(["check", repo, "--index", "--json"]);
+  assert.equal(second.status, 0, `warnings alone pass: ${second.stderr}`);
+  assert.equal(run(["check", repo, "--max-warnings", "0"]).status, 1, "over the warning limit, exit 1");
+  assert.deepEqual(JSON.parse(second.stdout).findings.map((f) => `${f.rule}:${f.boundary}`).sort(), ["new-crossing:network", "new-dependency:network"], "new network crossing");
+  // MCP over stdio: initialize, list, call.
+  const mcp = spawn(process.execPath, [cli, "mcp", repo], { stdio: ["pipe", "pipe", "inherit"] });
+  const replies = new Map();
+  let buf = "";
+  const done = new Promise((resolve) => mcp.stdout.on("data", (d) => {
+    buf += d;
+    let i;
+    while ((i = buf.indexOf("\n")) >= 0) {
+      const m = JSON.parse(buf.slice(0, i));
+      buf = buf.slice(i + 1);
+      replies.set(m.id, m);
+      if (m.id === 3) resolve();
+    }
+  }));
+  const send = (o) => mcp.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...o }) + "\n");
+  send({ id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "0" } } });
+  send({ method: "notifications/initialized" });
+  send({ id: 2, method: "tools/list" });
+  send({ id: 3, method: "tools/call", params: { name: "hesperus_diff", arguments: {} } });
+  await done;
+  mcp.stdin.end();
+  assert.equal(replies.get(1).result.serverInfo.name, "hesperus");
+  assert.ok(replies.get(2).result.tools.some((t) => t.name === "hesperus_check"), "tools listed");
+  const diff = JSON.parse(replies.get(3).result.content[0].text);
+  assert.deepEqual(diff.added.map((f) => f.rule).sort(), ["new-crossing", "new-dependency"], `diff: ${JSON.stringify(diff)}`);
+}
+
 // Boundary lint: calls into axios and child_process cross the network and process boundaries; a policy
 // denies one, a baseline taken before the second call makes it new, and the boundary view draws both
 // boundaries as sinks.
@@ -181,7 +237,7 @@ async function boundaries(repo) {
     assert.deepEqual(moves, ["#initial>false", "false>true", "true>false"], "flag machine");
     assert.equal(await make(), out);
     await player(repo);
-    for (const [name, test] of [["boundary", boundaries], ["imports", imports]]) {
+    for (const [name, test] of [["boundary", boundaries], ["imports", imports], ["headless", headless]]) {
       const other = fs.mkdtempSync(path.join(os.tmpdir(), `hesperus-${name}-`));
       try {
         await test(other);

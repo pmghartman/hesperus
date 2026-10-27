@@ -1,0 +1,14 @@
+{
+  "name": "hesperus",
+  "owner": {
+    "name": "pmghartman"
+  },
+  "description": "Hesperus: a live map of what a repo reaches outside itself, for Claude Code.",
+  "plugins": [
+    {
+      "name": "hesperus",
+      "source": "./",
+      "description": "A live map of what the repo reaches outside itself, beside the chat and over MCP. Needs `npm --prefix vscode ci && npm --prefix vscode run build` once."
+    }
+  ]
+}

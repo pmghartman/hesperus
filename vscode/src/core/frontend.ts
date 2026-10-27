@@ -16,6 +16,8 @@ export interface Frontend {
   syntax(path: string): Syntax | undefined;
   /** How this language's imports name what they reach; without it, unresolved calls stay unresolved. */
   imports?: Imports;
+  /** Its syntax outlines definitions, so the headless indexer can index it without a language server. */
+  headless?: boolean;
 }
 
 export function extension(path: string): string | undefined {

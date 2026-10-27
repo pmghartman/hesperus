@@ -2,6 +2,7 @@
 // Language knowledge stays in src/lang; core stays language-free.
 import { spawnSync } from "node:child_process";
 import { BRIDGE_TOOL } from "./core/bridge";
+import { headlessIndex, HEADLESS_TOOL } from "./headless";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { build } from "./core/build";
@@ -196,15 +197,38 @@ export type LangResult = { lang: string; index: scip.Index } | { lang: string; e
 
 /** Builds the graph from each language's own result and writes the cache. A language that failed
  *  contributes its files as unindexed nodes; the rest of the repo is unaffected. */
-export async function index(repo: string, results: readonly LangResult[], lockfiles: readonly string[] = []): Promise<Graph> {
+export async function index(repo: string, results: readonly LangResult[], lockfiles: readonly string[] = [], indexer = `${BRIDGE_TOOL.name} ${BRIDGE_TOOL.version}`): Promise<Graph> {
   await init();
   const indexes = results.flatMap((r) => ("index" in r ? [r.index] : []));
   const unindexed = results
     .filter((r): r is { lang: string; error: string } => "error" in r)
     .flatMap((r) => sourceFiles(repo, r.lang).map((path) => ({ path, reason: r.error })));
   const g = makeGraph(repo, scip.merge(indexes), unindexed);
-  writeCache(repo, header(repo, lockfiles, `${BRIDGE_TOOL.name} ${BRIDGE_TOOL.version}`), g);
+  writeCache(repo, header(repo, lockfiles, indexer), g);
   return g;
+}
+
+export interface HeadlessOutcome { graph: Graph; languages: { id: string; files: number; indexed: boolean }[] }
+
+/** Indexes every language in the repo from syntax alone and writes the cache. Languages whose
+ *  syntax has no outline become unindexed nodes, as a language with no server does in the editor. */
+export async function indexHeadless(repo: string, lockfiles: readonly string[] = [], report: (s: string) => void = () => {}): Promise<HeadlessOutcome> {
+  await init();
+  const s = scan(repo);
+  const results: LangResult[] = [];
+  const languages: HeadlessOutcome["languages"] = [];
+  for (const l of s.languages) {
+    const fe = FRONTENDS.find((f) => f.id === l.id)!;
+    languages.push({ id: l.id, files: l.files, indexed: !!fe.headless });
+    if (!fe.headless) {
+      results.push({ lang: l.id, error: `No headless indexer for ${l.editor.name}; open the repo in VS Code with the Hesperus extension to index it.` });
+      continue;
+    }
+    report(`Indexing ${l.files.toLocaleString()} ${l.editor.name} files…`);
+    results.push({ lang: l.id, index: await headlessIndex(repo, fe, sourceFiles(repo, l.id)) });
+  }
+  const graph = await index(repo, results, lockfiles, `${HEADLESS_TOOL.name} ${HEADLESS_TOOL.version}`);
+  return { graph, languages };
 }
 
 /** Only documents in git's view of the tree: indexers also report generated, ignored,

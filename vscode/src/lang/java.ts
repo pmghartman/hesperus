@@ -1,7 +1,7 @@
 import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
 import { Imports, Operand } from "../core/syntax";
-import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
+import { guardIf, Grammar, namedChildren, other, Source, symbol } from "./treesitter";
 
 export const LANGUAGE_ID = "java";
 
@@ -58,9 +58,13 @@ export const JAVA = new Grammar("tree-sitter-java.wasm", (n, src, f) => {
     if (name && v && v.type !== "array_initializer") f.assigns.push({ target: op(name), value: op(v), init: true });
     const decl = n.parent;
     if (name && decl?.type === "field_declaration" && namedChildren(decl).some((c) => c.type === "modifiers" && /\bfinal\b/.test(c.text))) f.consts.push(src.range(name));
+    if (decl?.type === "field_declaration") symbol(f, src, n, name, "term", 15);
   } else if (n.type === "enum_constant") {
     const name = n.childForFieldName("name");
     if (name) f.consts.push(src.range(name));
+    symbol(f, src, n, name, "term", 12);
+  } else if (n.type === "class_declaration" || n.type === "interface_declaration" || n.type === "enum_declaration" || n.type === "record_declaration" || n.type === "annotation_type_declaration") {
+    symbol(f, src, n, n.childForFieldName("name"), "type", n.type === "interface_declaration" ? 21 : n.type === "enum_declaration" ? 11 : 7);
   } else if (n.type === "if_statement") {
     const c = n.childForFieldName("condition"), body = n.childForFieldName("consequence");
     if (c && body) guardIf(n, c, body, EQ, op, f.guards, src);
@@ -83,6 +87,7 @@ export const JAVA = new Grammar("tree-sitter-java.wasm", (n, src, f) => {
   } else if (n.type === "method_declaration" || n.type === "constructor_declaration") {
     const decl = src.range(n);
     f.decls.push(decl);
+    symbol(f, src, n, n.childForFieldName("name"), "method", n.type === "constructor_declaration" ? 9 : 26);
     const params = n.childForFieldName("parameters");
     let idx = 0;
     for (const p of params ? namedChildren(params) : []) {
@@ -110,6 +115,7 @@ export const JAVA = new Grammar("tree-sitter-java.wasm", (n, src, f) => {
 /** Java, resolved through the editor's Java language server. */
 export const Java: Frontend = {
   id: LANGUAGE_ID,
+  headless: true,
   imports: JAVA_IMPORTS,
   extensions: ["java"],
   editor: { id: "redhat.java", name: "Language Support for Java" },

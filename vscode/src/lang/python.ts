@@ -1,7 +1,7 @@
 import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
 import { Imports, Operand } from "../core/syntax";
-import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
+import { guardIf, Grammar, namedChildren, other, Source, symbol } from "./treesitter";
 
 export const LANGUAGE_ID = "python";
 
@@ -50,15 +50,25 @@ export const PYTHON = new Grammar("tree-sitter-python.wasm", (n, src, f) => {
   } else if (n.type === "assignment") {
     const l = n.childForFieldName("left"), r = n.childForFieldName("right");
     if (l && r && l.type !== "pattern_list" && l.type !== "tuple_pattern") f.assigns.push({ target: op(l), value: r.type === "assignment" ? other(r, src) : op(r), init: false });
+    // Module- and class-level names; the indexer nests them and drops the ones inside functions.
+    if (l?.type === "identifier" && n.parent?.type === "expression_statement") symbol(f, src, n, l, "term", n.parent.parent?.parent?.type === "class_definition" ? 15 : 61);
   } else if (n.type === "augmented_assignment") {
     const l = n.childForFieldName("left");
     if (l) f.assigns.push({ target: op(l), value: other(n, src), init: false });
   } else if (n.type === "if_statement" || n.type === "elif_clause") {
     const c = n.childForFieldName("condition"), body = n.childForFieldName("consequence");
     if (c && body) guardIf(n, c, body, EQ, op, f.guards, src);
+  } else if (n.type === "class_definition") {
+    symbol(f, src, n.parent?.type === "decorated_definition" ? n.parent : n, n.childForFieldName("name"), "type", 7);
   } else if (n.type === "function_definition") {
     const decl = src.range(n);
     f.decls.push(decl);
+    {
+      let up = n.parent;
+      if (up?.type === "decorated_definition") up = up.parent;
+      const inClass = up?.type === "block" && up.parent?.type === "class_definition";
+      symbol(f, src, n.parent?.type === "decorated_definition" ? n.parent : n, n.childForFieldName("name"), "method", inClass ? 26 : 17);
+    }
     const params = n.childForFieldName("parameters");
     if (!params) return;
     // A method's first parameter is its receiver.
@@ -122,6 +132,7 @@ const PY_IMPORTS: Imports = {
 /** Python, resolved through the editor's Python language server. */
 export const Python: Frontend = {
   id: LANGUAGE_ID,
+  headless: true,
   extensions: ["py", "pyw"],
   editor: { id: "ms-python.python", name: "Python" },
   imports: PY_IMPORTS,

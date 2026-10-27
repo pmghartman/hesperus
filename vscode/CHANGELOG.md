@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `hesperus index`: the graph from syntax alone, no editor: tree-sitter outlines, same-file and same-package name lookup, imports for the rest (JavaScript/TypeScript, Python, Go, Rust, Java, Kotlin). `hesperus check --index` and `--svg`; `hesperus svg` draws the boundary overview.
+- `hesperus mcp`: an MCP server over stdio with the lint, the diff since the last review, the crossings by boundary, callers and callees, accept, and the overview as a resource.
+- The repository is a Claude Code plugin: the boundary map and findings in a pane that re-draws after each edit, a status line count, `/hesperus`, and the MCP server through `.mcp.json`.
 - Calls the language server leaves unresolved resolve through the import that binds them (`fs.readFileSync` after `import * as fs from "node:fs"`, `requests.get`, `http.Get`, `fs::read_to_string`, `DriverManager.getConnection`): to the repo definition a relative import names, or to the package outside it. JavaScript/TypeScript, Python, Go, Rust, Java and Kotlin.
 - Automaton view: states are the values of the program's state machines; inputs are callbacks handed to code outside the repo, values a handler dispatches on, and entry points. Independent locations are separate regions.
 - Calls into libraries are external nodes under their package instead of unresolved.

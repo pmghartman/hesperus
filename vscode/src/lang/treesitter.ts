@@ -2,7 +2,7 @@
 import * as path from "node:path";
 import { Language, Node, Parser } from "web-tree-sitter";
 import { Range } from "../core/ir";
-import { Facts, Guard, noFacts, Operand, Syntax } from "../core/syntax";
+import { Facts, Guard, noFacts, Operand, SymbolDecl, Syntax } from "../core/syntax";
 import { PKG_ROOT } from "../root";
 
 let runtime: Promise<void> | undefined;
@@ -154,6 +154,11 @@ export function branches(cond: Node, yes: Range, no: Range | undefined, ops: Ops
 export function guardIf(n: Node, cond: Node, body: Node, ops: Ops, operand: (n: Node) => Operand, out: Guard[], src: Source) {
   const alt = n.childForFieldName("alternative");
   branches(cond, src.range(body), alt ? src.range(alt) : rest(n, body, src), ops, operand, out);
+}
+
+/** Records a definition for the headless outline: `decl` is the whole declaration, `name` its name token. */
+export function symbol(f: Facts, src: Source, decl: Node, name: Node | null | undefined, shape: SymbolDecl["shape"], kind: number) {
+  if (name) f.symbols.push({ name: name.text, shape, kind, range: src.range(decl), selection: src.range(name) });
 }
 
 /** Function literals across grammars: code that runs when whoever receives it calls it. */
