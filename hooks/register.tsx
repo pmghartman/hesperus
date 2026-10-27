@@ -24,7 +24,7 @@ let timer: { cancel: () => void } | undefined
 let running = false
 let again = false
 
-const cli = ($: EngineInterface) => `${$.plugin.root}/vscode/out/cli.js`
+const cli = ($: EngineInterface) => `${$.plugin.root}/dist/hesperus.js`
 
 /** Re-index and lint the session's repo, then redraw. One run at a time; a run asked for meanwhile follows. */
 async function refresh($: EngineInterface): Promise<void> {

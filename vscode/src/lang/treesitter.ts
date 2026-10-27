@@ -1,4 +1,5 @@
 // tree-sitter through WebAssembly: one runtime, pinned grammars copied into grammars/ at build.
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { Language, Node, Parser } from "web-tree-sitter";
 import { Range } from "../core/ir";
@@ -14,7 +15,8 @@ let chain: Promise<unknown> = Promise.resolve();
 export function loadGrammar(file: string): Promise<Language> {
   let l = loaded.get(file);
   if (!l) {
-    runtime ??= Parser.init();
+    // The bundle carries the runtime's wasm beside the grammars; the package finds it in node_modules.
+    runtime ??= Parser.init({ locateFile: (f: string, dir: string) => (fs.existsSync(path.join(PKG_ROOT, f)) ? path.join(PKG_ROOT, f) : path.join(dir, f)) });
     const load = chain.then(() => runtime).then(() => Language.load(path.join(PKG_ROOT, "grammars", file)));
     chain = load.catch(() => {});
     l = load;

@@ -2,7 +2,7 @@
   "mcpServers": {
     "hesperus": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT:-.}/vscode/out/cli.js", "mcp"]
+      "args": ["${CLAUDE_PLUGIN_ROOT:-.}/dist/hesperus.js", "mcp"]
     }
   }
 }

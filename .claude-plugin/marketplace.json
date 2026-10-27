@@ -8,7 +8,7 @@
     {
       "name": "hesperus",
       "source": "./",
-      "description": "A live map of what the repo reaches outside itself, beside the chat and over MCP. Needs `npm --prefix vscode ci && npm --prefix vscode run build` once."
+      "description": "A live map of what the repo reaches outside itself, beside the chat and over MCP."
     }
   ]
 }

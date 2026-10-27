@@ -53,7 +53,7 @@ Hesperus is a linter for boundary crossings, meant to run beside an agent:
 - **For the agent.** Every lint writes `.hesperus/report.json`, and `hesperus check` lints from a terminal, a hook, or CI-like scripts (exit 1 on errors; `--json`, `--accept`, `--max-warnings N`, `--svg`). With `--index`, or when there is no graph yet, it indexes first without an editor (below); otherwise it reads the graph the editor built and says when that is older than `HEAD`.
 
 ```
-node vscode/out/cli.js check . --index
+node dist/hesperus.js check . --index
 ```
 
 ## Without an editor: CLI, MCP, Claude Code
@@ -61,25 +61,25 @@ node vscode/out/cli.js check . --index
 `hesperus index` builds the graph from syntax alone: tree-sitter outlines each file, a call's definition is looked up by name in its file and package, and the rest resolves through imports. Coarser than the editor's language servers (no types, so a call on an instance stays unresolved) and a few seconds for a mid-sized repo. JavaScript/TypeScript, Python, Go, Rust, Java and Kotlin; other languages show as unindexed until the editor indexes them.
 
 ```
-node vscode/out/cli.js index .       # build .hesperus/ from source
-node vscode/out/cli.js svg .         # draw .hesperus/view.svg: the repo with each boundary as a box
-node vscode/out/cli.js mcp .         # serve the repo to an agent over MCP (stdio)
+node dist/hesperus.js index .       # build .hesperus/ from source
+node dist/hesperus.js svg .         # draw .hesperus/view.svg: the repo with each boundary as a box
+node dist/hesperus.js mcp .         # serve the repo to an agent over MCP (stdio)
 ```
 
 **MCP.** `hesperus mcp` is an MCP server any agent can connect to. Tools: `hesperus_index`, `hesperus_check` (the lint), `hesperus_diff` (crossings and dependencies added or removed since the last accepted review, and anything the policy denies), `hesperus_boundaries` (every call that leaves the repo, by boundary and package, with file:line), `hesperus_calls` (callers and callees by name), `hesperus_accept`, `hesperus_svg`. Resources: `hesperus://report`, `hesperus://view.svg`. For Claude Code without the plugin:
 
 ```
-claude mcp add hesperus -- node /path/to/hesperus/vscode/out/cli.js mcp
+claude mcp add hesperus -- node /path/to/hesperus/dist/hesperus.js mcp
 ```
 
-**Claude Code plugin.** This repository is also a Claude Code plugin: a pane beside the chat with the boundary map and the findings, re-drawn after every edit the agent makes, a status line count, `/hesperus` and `/hesperus accept`, and the MCP server above wired in through `.mcp.json`. Build once (`cd vscode && npm ci && npm run build`), then:
+**Claude Code plugin.** This repository is also a Claude Code plugin: a pane beside the chat with the boundary map and the findings, re-drawn after every edit the agent makes, a status line count, `/hesperus` and `/hesperus accept`, and the MCP server above wired in through `.mcp.json`. Nothing to build: `dist/` holds the CLI bundled with its grammars, so Node is the only requirement.
 
 ```
 /plugin marketplace add pmghartman/hesperus
 /plugin install hesperus@hesperus
 ```
 
-or `claude --plugin-dir /path/to/hesperus` for one session. Desktop, VS Code and mobile draw the map; the terminal lists the boundaries and findings as text.
+or `claude --plugin-dir /path/to/hesperus` for one session. Desktop, VS Code and mobile draw the map; the terminal lists the boundaries and findings as text. `dist/hesperus.js` is the same CLI as `vscode/out/cli.js` (`node dist/hesperus.js check .`).
 
 
 ## Languages
@@ -122,6 +122,7 @@ A stale cache (new commit, lockfile, or tool version) fails loudly, then re-inde
 | `vscode/src/headless.ts`, `service.ts`, `cli.ts`, `mcp.ts` | indexing without an editor; what the CLI, MCP server and plugin share; `hesperus index/check/svg/mcp`; the MCP server |
 | `vscode/src/picture.ts`, `svg.ts` | the boundary overview laid out and drawn as SVG |
 | `.claude-plugin/`, `hooks/`, `types/`, `.mcp.json` | the Claude Code plugin: pane, status line, `/hesperus`, MCP wiring |
+| `dist/` | the CLI bundled with its grammars (`vscode/scripts/bundle.js`), committed so the plugin needs no build |
 | `vscode/schema/policy.schema.json` | `hesperus.json` schema |
 | `vscode/src/lang` | tree-sitter syntax facts and editor extension per language |
 | `vscode/src/editor.ts` | reads symbols and references from the editor's language servers |
@@ -133,8 +134,8 @@ TypeScript on Node, one npm package, no native code (tree-sitter runs as WebAsse
 ## Development
 
 ```
-cd vscode && npm ci && npm run build
-npm test                 # build plus a short smoke test
+cd vscode && npm ci && npm run build   # also rebuilds ../dist, which is committed: the plugin runs from it
+npm test                               # build plus a short smoke test
 ```
 
 ## License

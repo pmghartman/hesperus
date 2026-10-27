@@ -140,6 +140,10 @@ async function headless(repo) {
   assert.equal(second.status, 0, `warnings alone pass: ${second.stderr}`);
   assert.equal(run(["check", repo, "--max-warnings", "0"]).status, 1, "over the warning limit, exit 1");
   assert.deepEqual(JSON.parse(second.stdout).findings.map((f) => `${f.rule}:${f.boundary}`).sort(), ["new-crossing:network", "new-dependency:network"], "new network crossing");
+  // The committed bundle is the same CLI, with nothing from node_modules.
+  const bundled = require("node:child_process").spawnSync(process.execPath, [path.join(__dirname, "..", "..", "dist", "hesperus.js"), "check", repo, "--index", "--json"], { encoding: "utf8" });
+  assert.equal(bundled.status, 0, `dist: ${bundled.stderr}`);
+  assert.equal(JSON.parse(bundled.stdout).findings.length, 2, "dist lints the same");
   // MCP over stdio: initialize, list, call.
   const mcp = spawn(process.execPath, [cli, "mcp", repo], { stdio: ["pipe", "pipe", "inherit"] });
   const replies = new Map();
