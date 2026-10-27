@@ -1,9 +1,9 @@
 // Builds a SCIP index from what an editor's language servers report: document symbols for
 // definitions, find-references for uses. Pure: the editor side feeds it, so it runs anywhere.
 import { cmpStr } from "./ir";
-import { Index, Occurrence, ROLE_DEFINITION, SymbolInformation } from "./scip";
+import { esc, externalSymbol, Index, Occurrence, ROLE_DEFINITION, SymbolInformation } from "./scip";
 
-export const BRIDGE_TOOL = { name: "editor-lsp", version: "2" };
+export const BRIDGE_TOOL = { name: "editor-lsp", version: "3" };
 
 /** Line and UTF-16 character, as language servers report them. */
 export interface Pos { line: number; character: number }
@@ -23,9 +23,6 @@ export interface BridgeDef { id: string; path: string; selection: Span; shape: B
 export interface BridgeRef { path: string; span: Span }
 /** A definition outside the repo: its package, and its name with the types that own it, outermost first. */
 export interface BridgeExternal { package: string; names: string[] }
-
-const PLAIN = /^[A-Za-z0-9_+\-$]+$/;
-const esc = (s: string) => (PLAIN.test(s) ? s : "`" + s.replace(/`/g, "``") + "`");
 
 /** UTF-16 column to UTF-8 byte column, as SCIP's default encoding counts. */
 function byteCol(lines: string[], p: Pos): number {
@@ -166,12 +163,6 @@ function unify(w: Walk) {
   }
 }
 
-/** Callable symbol for an outside definition; the graph files it under its package. */
-function externalSymbol(language: string, e: BridgeExternal): string {
-  const names = e.names.length ? e.names : ["?"];
-  return `lsp ${language} ${e.package.replace(/ /g, "  ") || "?"} . ${names.slice(0, -1).map((n) => esc(n) + "#").join("")}${esc(names[names.length - 1])}(0).`;
-}
-
 const within = (p: Pos, s: Span) => posKey(s.start, p) <= 0 && posKey(p, s.end) <= 0;
 
 /** One SCIP index for `files`; `refsOf` asks the language server where a definition is used. */
@@ -212,7 +203,7 @@ export async function bridge(files: BridgeFile[], refsOf: (d: BridgeDef, done: n
       const hit = inside.map((l) => (byPath.get(l.path) ?? []).find((d) => within(l.span.start, d.selection))).find((d) => d !== undefined);
       // Only when every answer lies outside: an in-repo answer that is no definition (a local) stays unresolved.
       const ext = inside.length ? undefined : found[i].find((l): l is BridgeExternal => "package" in l);
-      const symbol = hit?.id ?? (ext && externalSymbol(lang.get(t.path)!, ext));
+      const symbol = hit?.id ?? (ext && externalSymbol(lang.get(t.path)!, ext.package, ext.names));
       if (symbol) w.byFile.get(t.path)!.push({ symbol, symbol_roles: 0, ...span(texts.get(t.path)!, t.site) });
     });
   }

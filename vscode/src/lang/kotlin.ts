@@ -1,6 +1,6 @@
 import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
-import { Operand } from "../core/syntax";
+import { Imports, Operand } from "../core/syntax";
 import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "kotlin";
@@ -31,6 +31,22 @@ function operand(n: Node, src: Source): Operand {
 }
 
 const EQ = { eq: ["==", "==="], ne: ["!=", "!=="] };
+
+/** Like Java's, except a Kotlin file need not be named after what it declares, so every file in the
+ *  package folder is tried after the one that is. */
+const KT_IMPORTS: Imports = {
+  path: (callee) => (/^\w+(\.\w+)*$/.test(callee) ? callee.split(".") : []),
+  local(module, from, names) {
+    const here = from.split("/").slice(0, -1);
+    const out: { files: string[]; names: string[] }[] = [];
+    for (let i = here.length; i >= 0; i--) {
+      const dir = [...here.slice(0, i), ...module.split(".")].join("/");
+      out.push({ files: [`${dir}/${names[0]}.kt`, `${dir}/`], names });
+    }
+    return out;
+  },
+  external: (module, names) => ({ package: module, names }),
+};
 
 export const KOTLIN = new Grammar("tree-sitter-kotlin.wasm", (n, src, f) => {
   const op = (x: Node) => operand(x, src);
@@ -74,6 +90,12 @@ export const KOTLIN = new Grammar("tree-sitter-kotlin.wasm", (n, src, f) => {
       if (name) f.params.push({ name: name.text, range: src.range(name), index: idx, decl });
       idx++;
     }
+  } else if (n.type === "import_header") {
+    const id = first(n, "identifier"), alias = first(n, "import_alias");
+    const segs = id ? namedChildren(id).map((c) => c.text) : [];
+    if (segs.length < 2 || first(n, "wildcard_import")) return;
+    const aliasName = alias ? namedChildren(alias)[0]?.text : undefined;
+    f.imports.push({ local: aliasName ?? segs[segs.length - 1], module: segs.slice(0, -1).join("."), member: segs[segs.length - 1] });
   } else if (n.type === "call_expression") {
     const func = namedChildren(n)[0];
     const suffix = first(n, "call_suffix");
@@ -88,6 +110,7 @@ export const KOTLIN = new Grammar("tree-sitter-kotlin.wasm", (n, src, f) => {
 /** Kotlin, resolved through the editor's Kotlin language server. */
 export const Kotlin: Frontend = {
   id: LANGUAGE_ID,
+  imports: KT_IMPORTS,
   extensions: ["kt", "kts"],
   editor: { id: "fwcd.kotlin", name: "Kotlin" },
   init: () => KOTLIN.init(),

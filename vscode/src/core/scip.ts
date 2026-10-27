@@ -37,6 +37,18 @@ export interface SymbolInformation {
 export interface Relationship { symbol: string; is_reference: boolean; is_implementation: boolean; is_type_definition: boolean; is_definition: boolean }
 
 export const ROLE_DEFINITION = 0x1;
+
+const PLAIN = /^[A-Za-z0-9_+\-$]+$/;
+/** A descriptor name, backquoted when it holds characters the symbol grammar reserves. */
+export const esc = (s: string) => (PLAIN.test(s) ? s : "`" + s.replace(/`/g, "``") + "`");
+
+/** Callable symbol for a definition outside the repo, by package and its name under the types that own
+ *  it, outermost first. The editor bridge and import resolution both name outside code this way, so one
+ *  definition is one node however it was found. */
+export function externalSymbol(language: string, pkg: string, names: readonly string[]): string {
+  const ns = names.length ? names : ["?"];
+  return `lsp ${language} ${pkg.replace(/ /g, "  ") || "?"} . ${ns.slice(0, -1).map((n) => esc(n) + "#").join("")}${esc(ns[ns.length - 1])}(0).`;
+}
 export const KIND_FIELD = 15;
 export const KIND_VARIABLE = 61;
 /** Constant and EnumMember: values a field may hold, never locations. */

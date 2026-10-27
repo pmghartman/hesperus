@@ -1,6 +1,6 @@
 import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
-import { Operand } from "../core/syntax";
+import { Imports, Operand } from "../core/syntax";
 import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "python";
@@ -30,7 +30,24 @@ function paramName(p: Node): Node | undefined {
 
 export const PYTHON = new Grammar("tree-sitter-python.wasm", (n, src, f) => {
   const op = (x: Node) => operand(x, src);
-  if (n.type === "assignment") {
+  if (n.type === "import_statement") {
+    // `import a.b.c` binds `a`; `import a.b as x` binds `x` to the whole path.
+    for (const c of namedChildren(n)) {
+      if (c.type === "dotted_name") f.imports.push({ local: c.text.split(".")[0], module: c.text.split(".")[0] });
+      else if (c.type === "aliased_import") {
+        const name = c.childForFieldName("name"), alias = c.childForFieldName("alias");
+        if (name && alias) f.imports.push({ local: alias.text, module: name.text });
+      }
+    }
+  } else if (n.type === "import_from_statement") {
+    const module = n.childForFieldName("module_name")?.text;
+    if (module === undefined) return;
+    for (const c of n.childrenForFieldName("name")) {
+      if (!c) continue;
+      const name = c.type === "aliased_import" ? c.childForFieldName("name") : c, alias = c.type === "aliased_import" ? c.childForFieldName("alias") : null;
+      if (name) f.imports.push({ local: (alias ?? name).text, module, member: name.text });
+    }
+  } else if (n.type === "assignment") {
     const l = n.childForFieldName("left"), r = n.childForFieldName("right");
     if (l && r && l.type !== "pattern_list" && l.type !== "tuple_pattern") f.assigns.push({ target: op(l), value: r.type === "assignment" ? other(r, src) : op(r), init: false });
   } else if (n.type === "augmented_assignment") {
@@ -67,11 +84,47 @@ export const PYTHON = new Grammar("tree-sitter-python.wasm", (n, src, f) => {
   }
 });
 
+/** Files a module path may be, under `dir`: the module file or its package's `__init__`. */
+const moduleFiles = (dir: string, segs: string[]) => {
+  const p = [dir, ...segs].filter((x) => x !== "").join("/");
+  return [`${p}.py`, `${p}/__init__.py`];
+};
+
+/** A relative import is resolved from the importing file's package; an absolute one is tried from the
+ *  repo root and each folder above the file, since the source root is not known. The first names of
+ *  the callee may be submodules (`from . import db; db.query()`), so each split is tried. Outside the
+ *  repo, the package is the top-level module, as the editor names it from `site-packages`. */
+const PY_IMPORTS: Imports = {
+  path: (callee) => (/^\w+(\.\w+)*$/.test(callee) ? callee.split(".") : []),
+  local(module, from, names) {
+    const out: { files: string[]; names: string[] }[] = [];
+    const dots = /^\.*/.exec(module)![0].length;
+    const segs = module.slice(dots).split(".").filter((x) => x !== "");
+    const dirs: string[] = [];
+    const here = from.split("/").slice(0, -1);
+    if (dots) {
+      if (dots - 1 > here.length) return [];
+      dirs.push(here.slice(0, here.length - (dots - 1)).join("/"));
+    } else {
+      for (let i = here.length; i >= 0; i--) dirs.push(here.slice(0, i).join("/"));
+    }
+    for (let k = 0; k <= Math.min(2, names.length - 1); k++)
+      for (const d of dirs) if (segs.length + k > 0) out.push({ files: moduleFiles(d, [...segs, ...names.slice(0, k)]), names: names.slice(k) });
+    return out;
+  },
+  external(module, names) {
+    if (module.startsWith(".")) return undefined;
+    const [pkg, ...rest] = module.split(".");
+    return { package: pkg, names: [...rest, ...names] };
+  },
+};
+
 /** Python, resolved through the editor's Python language server. */
 export const Python: Frontend = {
   id: LANGUAGE_ID,
   extensions: ["py", "pyw"],
   editor: { id: "ms-python.python", name: "Python" },
+  imports: PY_IMPORTS,
   init: () => PYTHON.init(),
   syntax: () => PYTHON,
 };

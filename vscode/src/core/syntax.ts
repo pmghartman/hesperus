@@ -58,8 +58,41 @@ export interface Guard {
   truth?: boolean;
 }
 
+/** A name this file binds to something imported: `fs` in `import * as fs from "node:fs"`, `rfs` in
+ *  `import { readFileSync as rfs } from "fs"`, `http` in `import "net/http"`. */
+export interface ImportDecl {
+  /** The binding as this file uses it. */
+  local: string;
+  /** The module as the import writes it, quotes stripped. */
+  module: string;
+  /** The exported name bound (`readFileSync`); unset when `local` stands for the whole module. */
+  member?: string;
+}
+
+/** Files that may hold an imported module, and the names left to look up inside them. A file ending in
+ *  `/` is a directory: every indexed file directly in it. */
+export interface LocalModule { files: string[]; names: string[] }
+
+/** How a language names what an import reaches. `build` resolves a call the index left unresolved
+ *  through the import that binds the head of its callee path. */
+export interface Imports {
+  /** The dotted or scoped path of a callee, head first: `fs.promises.readFile` is [fs, promises, readFile].
+   *  Empty when the callee is no plain path. */
+  path(callee: string): string[];
+  /** Where `module`, imported by `from`, may live in the repo, with `names` to look up there. Empty when
+   *  the module cannot be repo code. */
+  local(module: string, from: string, names: string[]): LocalModule[];
+  /** Package and names of a definition outside the repo reached through `module`; undefined when the
+   *  module can only be repo code. */
+  external(module: string, names: string[]): { package: string; names: string[] } | undefined;
+  /** A callee path that names its own module (`std::env::var`), when no import binds its head. */
+  qualified?(path: string[]): { module: string; names: string[] } | undefined;
+}
+
 export interface Facts {
   calls: CallSite[];
+  /** Bindings this file imports, in source order. */
+  imports: ImportDecl[];
   params: ParamDecl[];
   /** Full ranges of named function/method declarations. */
   decls: Range[];
@@ -72,7 +105,7 @@ export interface Facts {
   lambdas: Range[];
 }
 
-export const noFacts = (): Facts => ({ calls: [], params: [], decls: [], assigns: [], guards: [], consts: [], lambdas: [] });
+export const noFacts = (): Facts => ({ calls: [], imports: [], params: [], decls: [], assigns: [], guards: [], consts: [], lambdas: [] });
 
 export interface Syntax {
   facts(source: string): Facts;

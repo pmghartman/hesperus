@@ -87,5 +87,5 @@ Each language is indexed on its own. If its extension is missing or never answer
 ## Guarantees
 
 - **Read-only.** Hesperus writes only its `.hesperus/` cache (graph, accepted baseline, latest report) in the analyzed repo. `hesperus.json` is yours; Hesperus creates it only when you ask.
-- **Resolved by your language servers.** Output depends on the installed language-server extensions and their versions, so it can differ between machines.
+- **Resolved by your language servers.** Output depends on the installed language-server extensions and their versions, so it can differ between machines. A call a server leaves unresolved is resolved through the file's imports (`fs.readFileSync` after `import * as fs from "node:fs"` reaches `"fs".readFileSync` under `node`; a relative import reaches the repo definition it names) for JavaScript/TypeScript, Python, Go, Rust, Java and Kotlin.
 - **Stale caches fail loudly.** A new commit, lockfile, or Hesperus version re-indexes, and the sidebar says why.

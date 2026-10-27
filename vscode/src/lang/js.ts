@@ -1,8 +1,8 @@
 import { Node } from "web-tree-sitter";
 import { Frontend, extension } from "../core/frontend";
 import { cmpStr } from "../core/ir";
-import { Facts, Operand } from "../core/syntax";
-import { branches, guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
+import { Facts, Imports, Operand } from "../core/syntax";
+import { branches, children, guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "javascript";
 
@@ -128,8 +128,57 @@ function state(n: Node, src: Source, f: Facts) {
   }
 }
 
+const unquote = (s: Node) => (s.type === "string" || s.type === "template_string" ? s.text.slice(1, -1) : s.text);
+
+/** `import` forms and `require` bindings. Type-only imports bind nothing at run time. */
+function imports(n: Node, f: Facts) {
+  const push = (local: string, module: string, member?: string) => f.imports.push(member === undefined ? { local, module } : { local, module, member });
+  if (n.type === "import_statement") {
+    const source = n.childForFieldName("source");
+    if (!source || children(n).some((c) => c.type === "type")) return;
+    const module = unquote(source);
+    for (const c of namedChildren(n)) {
+      if (c.type === "import_require_clause") {
+        const id = namedChildren(c).find((x) => x.type === "identifier");
+        if (id) push(id.text, module);
+      } else if (c.type === "import_clause") {
+        for (const x of namedChildren(c)) {
+          if (x.type === "identifier") push(x.text, module);
+          else if (x.type === "namespace_import") {
+            const id = namedChildren(x).find((y) => y.type === "identifier");
+            if (id) push(id.text, module);
+          } else if (x.type === "named_imports") {
+            for (const spec of namedChildren(x)) {
+              const name = spec.childForFieldName("name"), alias = spec.childForFieldName("alias");
+              if (spec.type === "import_specifier" && name && !children(spec).some((y) => y.type === "type")) push((alias ?? name).text, module, name.text);
+            }
+          }
+        }
+      }
+    }
+  } else if (n.type === "variable_declarator") {
+    // `const fs = require("fs")`, `const { spawn: sp } = require("child_process")`.
+    const name = n.childForFieldName("name"), value = n.childForFieldName("value");
+    if (!name || value?.type !== "call_expression" || value.childForFieldName("function")?.text !== "require") return;
+    const arg = namedChildren(value.childForFieldName("arguments") ?? value)[0];
+    if (!arg || (arg.type !== "string" && arg.type !== "template_string")) return;
+    const module = unquote(arg);
+    if (name.type === "identifier") push(name.text, module);
+    else if (name.type === "object_pattern") {
+      for (const x of namedChildren(name)) {
+        if (x.type === "shorthand_property_identifier_pattern") push(x.text, module, x.text);
+        else if (x.type === "pair_pattern") {
+          const k = x.childForFieldName("key"), v = x.childForFieldName("value");
+          if (k && v?.type === "identifier") push(v.text, module, k.text);
+        }
+      }
+    }
+  }
+}
+
 function visit(n: Node, src: Source, f: Facts) {
   state(n, src, f);
+  imports(n, f);
   if (FUNCTIONS.has(n.type)) {
     const d = namingDecl(n);
     if (d) {
@@ -164,11 +213,61 @@ export const JS = new Grammar("tree-sitter-javascript.wasm", visit);
 export const TS = new Grammar("tree-sitter-typescript.wasm", visit);
 export const TSX = new Grammar("tree-sitter-tsx.wasm", visit);
 
+/** Modules Node ships; `node:` is optional before them. */
+const NODE_BUILTINS = new Set((
+  "assert async_hooks buffer child_process cluster console constants crypto dgram diagnostics_channel dns domain events fs http http2 https " +
+  "inspector module net os path perf_hooks process punycode querystring readline repl sea sqlite stream string_decoder sys test timers tls " +
+  "trace_events tty url util v8 vm wasi worker_threads zlib"
+).split(" "));
+const EXTS = ["ts", "tsx", "js", "jsx", "mts", "cts", "mjs", "cjs"];
+const relative = (m: string) => m.startsWith("./") || m.startsWith("../") || m === "." || m === "..";
+
+/** Joins a relative module specifier onto the importing file's directory. */
+function join(from: string, m: string): string | undefined {
+  const segs = from.split("/").slice(0, -1);
+  for (const s of m.split("/")) {
+    if (s === "" || s === ".") continue;
+    if (s === "..") {
+      if (!segs.length) return undefined;
+      segs.pop();
+    } else segs.push(s);
+  }
+  return segs.join("/");
+}
+
+/** Relative specifiers are repo files, with any of the source extensions, or a folder's index file; a
+ *  compiled `.js` name may stand for a `.ts` source. Bare specifiers are packages: a Node built-in is
+ *  named by its module in quotes under `node`, as the TypeScript server reports it; a subpath import
+ *  (`firebase/app`) keeps its module the same way under its package. */
+const JS_IMPORTS: Imports = {
+  path: (callee) => (/^[\w$]+(\.[\w$]+)*$/.test(callee) ? callee.split(".") : []),
+  local(module, from, names) {
+    if (!relative(module)) return [];
+    const p = join(from, module);
+    if (p === undefined) return [];
+    const files = [p];
+    const m = /^(.*)\.([cm]?js)x?$/.exec(p);
+    if (m) files.push(`${m[1]}.${m[2].replace("js", "ts")}`, `${m[1]}.tsx`);
+    for (const e of EXTS) files.push(`${p}.${e}`);
+    for (const e of EXTS) files.push(`${p}/index.${e}`);
+    return [{ files, names }];
+  },
+  external(module, names) {
+    if (relative(module) || module.startsWith("/") || module.startsWith("#")) return undefined;
+    const m = module.replace(/^node:/, "");
+    const segs = m.split("/");
+    if (NODE_BUILTINS.has(segs[0])) return { package: "node", names: [`"${m}"`, ...names] };
+    const pkg = segs[0].startsWith("@") && segs.length > 1 ? `${segs[0]}/${segs[1]}` : segs[0];
+    return { package: pkg, names: pkg === module ? names : [`"${module}"`, ...names] };
+  },
+};
+
 /** JavaScript and TypeScript: the editor's built-in TypeScript server answers. */
 export const Js: Frontend = {
   id: LANGUAGE_ID,
   extensions: ["js", "mjs", "cjs", "jsx", "ts", "mts", "cts", "tsx"],
   editor: { id: "vscode.typescript-language-features", name: "TypeScript and JavaScript" },
+  imports: JS_IMPORTS,
   init: async () => {
     await Promise.all([JS.init(), TS.init(), TSX.init()]);
   },

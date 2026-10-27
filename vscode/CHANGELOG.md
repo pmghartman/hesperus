@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Calls the language server leaves unresolved resolve through the import that binds them (`fs.readFileSync` after `import * as fs from "node:fs"`, `requests.get`, `http.Get`, `fs::read_to_string`, `DriverManager.getConnection`): to the repo definition a relative import names, or to the package outside it. JavaScript/TypeScript, Python, Go, Rust, Java and Kotlin.
 - Automaton view: states are the values of the program's state machines; inputs are callbacks handed to code outside the repo, values a handler dispatches on, and entry points. Independent locations are separate regions.
 - Calls into libraries are external nodes under their package instead of unresolved.
 - State machines include boolean flags (`if (busy)`, `x = !x`), count initializers, and read guards from `else` branches, early returns and ternaries.

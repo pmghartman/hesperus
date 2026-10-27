@@ -216,6 +216,7 @@ export function makeGraph(repo: string, index: scip.Index, unindexed: { path: st
     index: { ...index, documents },
     readSource: (p) => (safeRel(p) ? readUtf8(path.join(repo, p)) : undefined),
     syntaxFor: (_lang, p) => owner(p)?.syntax(p),
+    importsFor: (_lang, p) => owner(p)?.imports,
     unindexed,
   });
 }

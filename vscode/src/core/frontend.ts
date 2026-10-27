@@ -1,6 +1,6 @@
 // What a language frontend supplies: which files it owns, the editor extension whose language server
 // resolves them, and syntax facts. Core stays language-free; implementations live in src/lang.
-import { Syntax } from "./syntax";
+import { Imports, Syntax } from "./syntax";
 
 export interface Frontend {
   id: string;
@@ -14,6 +14,8 @@ export interface Frontend {
   init(): Promise<void>;
   /** Syntax provider for a repo-relative path this frontend owns. */
   syntax(path: string): Syntax | undefined;
+  /** How this language's imports name what they reach; without it, unresolved calls stay unresolved. */
+  imports?: Imports;
 }
 
 export function extension(path: string): string | undefined {

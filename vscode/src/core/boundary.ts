@@ -53,6 +53,7 @@ const RULES: readonly Rule[] = [
   // JavaScript / TypeScript: npm packages, node built-ins (module in quotes), and the platform's globals.
   { b: "network", lang: JS, mod: /^(node:)?(http|https|http2|net|dgram|dns|tls)(\/.*)?$/ },
   { b: "filesystem", lang: JS, mod: /^(node:)?fs(\/promises)?$/ },
+  { b: "database", lang: JS, mod: /^(node:)?sqlite$/ },
   { b: "process", lang: JS, mod: /^(node:)?(child_process|cluster|worker_threads)$/ },
   { b: "network", lang: JS, pkg: /^builtins$/, name: /^(fetch|XMLHttpRequest|WebSocket|EventSource|Navigator\.sendBeacon)\b/ },
   { b: "database", lang: JS, pkg: /^builtins$/, name: /^(IDBFactory|IDBDatabase|IDBObjectStore|IDBIndex|Storage)\b/ },
@@ -157,9 +158,11 @@ const matchers = (extra: Extra = {}) => BOUNDARIES.flatMap((b) => (extra[b] ?? [
 /** The boundary a call into `s` crosses, if any, and why. */
 export function classify(s: Subject, extra: Extra = {}, compiled = matchers(extra)): { boundary: Boundary; basis: Basis } | undefined {
   for (const [b, m] of compiled) if (m(s.pkg) || m(s.module)) return { boundary: b, basis: "policy" };
+  // A Rust path writes a crate's `-` as `_`; the registry folder (and so the editor) keeps the `-`.
+  const alt = RS.test(s.lang) ? s.pkg.replace(/_/g, "-") : s.pkg;
   for (const r of RULES) {
     if (r.lang && !r.lang.test(s.lang)) continue;
-    if (r.pkg && !r.pkg.test(s.pkg)) continue;
+    if (r.pkg && !r.pkg.test(s.pkg) && !r.pkg.test(alt)) continue;
     if (r.mod && !r.mod.test(s.module)) continue;
     if (r.name && !r.name.test(s.name)) continue;
     return { boundary: r.b, basis: "table" };

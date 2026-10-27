@@ -9,11 +9,11 @@ import {
   newGraph, node, NodeKind, Provenance, Range, rangeKey, REPO_ID, Site,
 } from "./ir";
 import {
-  CALLABLE_KINDS, CONSTANT_KINDS, Document, Index, KIND_FIELD, occEnclosing, occRange, parseSymbol, prefix, ROLE_DEFINITION,
-  Symbol, SymbolInformation,
+  CALLABLE_KINDS, CONSTANT_KINDS, Document, externalSymbol, Index, KIND_FIELD, occEnclosing, occRange, parseSymbol, prefix,
+  ROLE_DEFINITION, Symbol, SymbolInformation,
 } from "./scip";
 import { ArgIn, states } from "./states";
-import { CallSite, Facts, noFacts, Syntax } from "./syntax";
+import { CallSite, Facts, Imports, noFacts, Syntax } from "./syntax";
 
 export interface Inputs {
   index: Index;
@@ -21,6 +21,8 @@ export interface Inputs {
   readSource: (path: string) => string | undefined;
   /** (document language, repo-relative path) to a syntax provider. */
   syntaxFor: (language: string, path: string) => Syntax | undefined;
+  /** How the language of a file names what its imports reach, when it says. */
+  importsFor?: (language: string, path: string) => Imports | undefined;
   /** Files of languages that could not be indexed; each becomes a bare file node. */
   unindexed?: { path: string; reason: string }[];
 }
@@ -39,6 +41,9 @@ interface Doc {
   callables: Callable[];
   /** No syntax for this file: only the index says anything about it. */
   generic: boolean;
+  imports?: Imports;
+  /** Import bindings by local name; the first declaration of a name wins. */
+  bound: Map<string, Facts["imports"][number]>;
 }
 
 const fileId = (path: string) => `file:${path}`;
@@ -137,7 +142,9 @@ export function build(inp: Inputs): Graph {
       if (isCallable(kind) && body) callables.push({ symbol: sym, ident: r, body });
     }
     texts.set(path, text);
-    ctxs.push({ doc: d, facts, refs, refsByEnd, defsAt, callables, generic: !syn });
+    const bound = new Map<string, Facts["imports"][number]>();
+    for (const i of facts.imports) if (!bound.has(i.local)) bound.set(i.local, i);
+    ctxs.push({ doc: d, facts, refs, refsByEnd, defsAt, callables, generic: !syn, imports: inp.importsFor?.(d.language, path), bound });
   }
 
   const hashes = new Map<string, string | undefined>();
@@ -206,6 +213,57 @@ export function build(inp: Inputs): Graph {
   }
 
   directories(nodes, parent, filePkgs);
+
+  // Definitions by (container, name): a file's top-level ones under the file id, members under their type.
+  const named = new Map<string, Map<string, string[]>>();
+  for (const sym of sortedKeys(defs)) {
+    const p = parent.get(sym), name = nodes.get(sym)?.name;
+    if (p === undefined || name === undefined) continue;
+    const m = named.get(p) ?? named.set(p, new Map()).get(p)!;
+    (m.get(name) ?? m.set(name, []).get(name)!).push(sym);
+  }
+  const inDir = new Map<string, string[]>();
+  for (const ctx of ctxs) {
+    const p = ctx.doc.relative_path, d = dirOf(p);
+    (inDir.get(d) ?? inDir.set(d, []).get(d)!).push(p);
+  }
+  /** The definition an import reaches: the names walked from the top level of one of the files. */
+  const lookup = (files: string[], names: string[]): string | undefined => {
+    if (!names.length) return undefined;
+    for (const f of files.flatMap((f) => (f.endsWith("/") ? inDir.get(f.slice(0, -1)) ?? [] : texts.has(f) ? [f] : []))) {
+      let holders = [fileId(f)];
+      for (const n of names) holders = holders.flatMap((h) => named.get(h)?.get(n) ?? []);
+      if (holders.length) return holders[0];
+    }
+    return undefined;
+  };
+  /** A call the index left unresolved, resolved through the import that binds its callee's head: a
+   *  definition in the repo, a symbol outside it, "type" for a constructor or conversion, or nothing. */
+  const viaImport = (ctx: Doc, call: CallSite): string | undefined => {
+    const imp = ctx.imports;
+    if (!imp) return undefined;
+    const segs = imp.path(call.callee_text);
+    if (!segs.length) return undefined;
+    const decl = ctx.bound.get(segs[0]);
+    let module: string, names: string[];
+    if (decl) {
+      module = decl.module;
+      names = decl.member !== undefined ? [decl.member, ...segs.slice(1)] : segs.slice(1);
+      if (!names.length) names = [decl.local];
+    } else {
+      const q = imp.qualified?.(segs);
+      if (!q) return undefined;
+      ({ module, names } = q);
+    }
+    for (const l of imp.local(module, ctx.doc.relative_path, names)) {
+      const sym = lookup(l.files, l.names);
+      if (sym === undefined) continue;
+      const kind = nodes.get(sym)?.kind;
+      return kind === "type" ? "type" : kind !== undefined && isCallable(kind) ? sym : undefined;
+    }
+    const ext = imp.external(module, names);
+    return ext && externalSymbol(ctx.doc.language, ext.package, ext.names);
+  };
 
   /** Symbols with no in-repo definition resolve outside the repo, labeled by package. */
   const ensureExternal = (sym: string) => {
@@ -316,6 +374,20 @@ export function build(inp: Inputs): Graph {
         const pc = paramSym.get(pathSym(path, s));
         if (pc) paramCalls.push({ func: pc[0], idx: pc[1], caller, site, name: call.callee_text });
         stub = true;
+      }
+      if (stub) {
+        const via = viaImport(ctx, call);
+        if (via === "type") return; // constructor or conversion
+        if (via !== undefined) {
+          ensureExternal(via);
+          edges.push(callEdge(caller, via, "resolved", undefined, site));
+          targets.push([via, "resolved"]);
+          for (const imp of [...(impls.get(via) ?? [])].sort(cmpStr)) {
+            edges.push(callEdge(caller, imp, "may", "dispatch", site));
+            targets.push([imp, "may"]);
+          }
+          stub = false;
+        }
       }
       if (stub) {
         // A callee written as an expression (an inline function) is named by its first line, not its body.

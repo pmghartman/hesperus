@@ -82,6 +82,35 @@ async function player(repo) {
   assert.equal(a.regions.find((r) => r.dims.length === 1)?.states.length, 2, "muted");
 }
 
+// Imports: a call the language server leaves unresolved resolves through the import that binds its
+// callee. A namespace import of a Node built-in becomes the quoted module under `node`, a named import
+// of a package its package, a relative import the repo definition it names; a name no import binds
+// stays unresolved.
+async function imports(repo) {
+  const { crossings } = require("../out/core/boundary");
+  const A = `import * as fs from "node:fs";
+import { get } from "axios";
+import { helper } from "./util";
+const cp = require("child_process");
+function a() { fs.readFileSync(p); get(u); helper(); cp.spawn(c); mystery(); }
+`;
+  const U = "export function helper() {}\n";
+  fs.mkdirSync(path.join(repo, "src"), { recursive: true });
+  fs.writeFileSync(path.join(repo, "src/a.ts"), A);
+  fs.writeFileSync(path.join(repo, "src/util.ts"), U);
+  const def = (name, l, c, end) => ({ name, shape: "method", kind: 17, range: sp(l, 0, l, end), selection: sp(l, c, l, c + name.length), children: [] });
+  const files = [
+    { path: "src/a.ts", language: "javascript", text: A, symbols: [def("a", 4, 9, A.split("\n")[4].length)] },
+    { path: "src/util.ts", language: "javascript", text: U, symbols: [def("helper", 0, 16, U.length - 1)] },
+  ];
+  const g = makeGraph(repo, await bridge(files, async () => []), []);
+  const name = new Map(g.nodes.map((n) => [n.id, n.name]));
+  const calls = g.edges.filter((e) => e.kind === "call" && e.from.endsWith("/a(0).")).map((e) => `${e.provenance}:${name.get(e.to)}`).sort();
+  assert.deepEqual(calls, ['resolved:"child_process".spawn', 'resolved:"fs".readFileSync', "resolved:get", "resolved:helper", "unresolved:mystery"], `calls: ${calls}`);
+  assert.ok(g.edges.some((e) => e.kind === "call" && e.from.endsWith("/a(0).") && e.to.endsWith("/helper(0).") && e.to.includes("`util.ts`")), "relative import reaches the repo definition");
+  assert.deepEqual(crossings(g).map((c) => `${c.boundary}:${c.package}`), ["network:axios", "process:child_process", "filesystem:fs"], "classified through imports");
+}
+
 // Boundary lint: calls into axios and child_process cross the network and process boundaries; a policy
 // denies one, a baseline taken before the second call makes it new, and the boundary view draws both
 // boundaries as sinks.
@@ -152,11 +181,13 @@ async function boundaries(repo) {
     assert.deepEqual(moves, ["#initial>false", "false>true", "true>false"], "flag machine");
     assert.equal(await make(), out);
     await player(repo);
-    const other = fs.mkdtempSync(path.join(os.tmpdir(), "hesperus-boundary-"));
-    try {
-      await boundaries(other);
-    } finally {
-      fs.rmSync(other, { recursive: true, force: true });
+    for (const [name, test] of [["boundary", boundaries], ["imports", imports]]) {
+      const other = fs.mkdtempSync(path.join(os.tmpdir(), `hesperus-${name}-`));
+      try {
+        await test(other);
+      } finally {
+        fs.rmSync(other, { recursive: true, force: true });
+      }
     }
     console.log("smoke ok");
   } finally {

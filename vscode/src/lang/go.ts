@@ -1,7 +1,7 @@
 import { Frontend } from "../core/frontend";
 import { cmpStr } from "../core/ir";
 import { Node } from "web-tree-sitter";
-import { Operand } from "../core/syntax";
+import { Imports, Operand } from "../core/syntax";
 import { equalities, guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "go";
@@ -31,6 +31,29 @@ function caseBody(c: Node, src: Source) {
   return stmts.length ? src.span(stmts[0], stmts[stmts.length - 1]) : undefined;
 }
 
+/** The name an import path binds: its last segment, past a major-version suffix (`pgx/v5`, `yaml.v3`). */
+function packageName(module: string): string {
+  const segs = module.split("/");
+  let last = segs.pop() ?? module;
+  if (/^v\d+$/.test(last) && segs.length) last = segs.pop()!;
+  return last.replace(/\.v\d+$/, "").replace(/^go-/, "").replace(/-/g, "_");
+}
+
+/** An import path is repo code when a folder in the repo ends with it: the module path's leading
+ *  segments (host, owner, module name) are not folders. Standard library packages have no dot in
+ *  their first segment and are named by their last one; module paths keep the whole path. */
+const GO_IMPORTS: Imports = {
+  path: (callee) => (/^\w+(\.\w+)*$/.test(callee) ? callee.split(".") : []),
+  local(module, _from, names) {
+    const segs = module.split("/");
+    const start = segs[0].includes(".") ? 1 : 0;
+    const out: { files: string[]; names: string[] }[] = [];
+    for (let i = start; i < segs.length; i++) out.push({ files: [segs.slice(i).join("/") + "/"], names });
+    return out;
+  },
+  external: (module, names) => ({ package: module.split("/")[0].includes(".") ? module : module.split("/").pop()!, names }),
+};
+
 export const GO = new Grammar("tree-sitter-go.wasm", (n, src, f) => {
   const op = (x: Node) => operand(x, src);
   if (n.type === "assignment_statement") {
@@ -54,6 +77,11 @@ export const GO = new Grammar("tree-sitter-go.wasm", (n, src, f) => {
     && n.parent.parent.childForFieldName("type")?.type !== "map_type") {
     const k = n.childForFieldName("key"), v = n.childForFieldName("value");
     if (k && v) f.assigns.push({ target: op(k), value: op(v), init: true });
+  } else if (n.type === "import_spec") {
+    // The package name is the path's last segment unless aliased; `_` and `.` imports bind no name.
+    const name = n.childForFieldName("name"), module = n.childForFieldName("path")?.text.slice(1, -1);
+    if (module === undefined || name?.type === "blank_identifier" || name?.type === "dot") return;
+    f.imports.push({ local: name?.text ?? packageName(module), module });
   } else if (n.type === "if_statement") {
     const c = n.childForFieldName("condition"), body = n.childForFieldName("consequence");
     if (c && body) guardIf(n, c, body, EQ, op, f.guards, src);
@@ -104,6 +132,7 @@ export const Go: Frontend = {
   id: LANGUAGE_ID,
   extensions: ["go"],
   editor: { id: "golang.go", name: "Go" },
+  imports: GO_IMPORTS,
   init: () => GO.init(),
   syntax: () => GO,
 };

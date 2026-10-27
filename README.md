@@ -8,7 +8,7 @@
 
 Hesperus compiles source "up" into a graph an engineer can question: packages, files, types, and functions, with the calls and data flow between them. It is made for the person overseeing an agent who no longer reads every diff: what reaches databases, the internet, model APIs and other outside systems, what changed since they last looked, and what their policy forbids, without trusting an agent-drawn diagram.
 
-- **Analysis only.** Nodes and edges come from the editor's language servers and tree-sitter. No model creates, removes, or reweights anything.
+- **Analysis only.** Nodes and edges come from the editor's language servers and tree-sitter; a call the servers leave unresolved is resolved through the file's imports. No model creates, removes, or reweights anything.
 - **Honest about unknowns.** Every edge is `resolved`, `may` (dynamic dispatch, function values), or `unresolved` (reflection, injection). Unknowns are drawn, never dropped.
 - **Zoomable.** Start from the whole repo. Expanding a box splits its edges in place; every rollup traces to the edges beneath it.
 - **Per-language.** Each language is indexed separately through its editor extension; a missing one leaves that language's files as unindexed nodes and the rest still builds.

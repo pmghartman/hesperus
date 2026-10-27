@@ -1,6 +1,6 @@
 import { Node } from "web-tree-sitter";
 import { Frontend } from "../core/frontend";
-import { Operand } from "../core/syntax";
+import { Imports, Operand } from "../core/syntax";
 import { guardIf, Grammar, namedChildren, other, Source } from "./treesitter";
 
 export const LANGUAGE_ID = "java";
@@ -31,6 +31,19 @@ function typeName(t: Node): Node {
   if (t.type === "generic_type") return typeName(t.namedChild(0) ?? t);
   return t;
 }
+
+/** A class lives in the file named after it under its package folder, below some source root above
+ *  the importing file. Outside the repo, the package is the import's package. */
+const JAVA_IMPORTS: Imports = {
+  path: (callee) => (/^\w+(\.\w+)*$/.test(callee) ? callee.split(".") : []),
+  local(module, from, names) {
+    const here = from.split("/").slice(0, -1);
+    const out: { files: string[]; names: string[] }[] = [];
+    for (let i = here.length; i >= 0; i--) out.push({ files: [[...here.slice(0, i), ...module.split("."), `${names[0]}.java`].join("/")], names });
+    return out;
+  },
+  external: (module, names) => ({ package: module, names }),
+};
 
 export const JAVA = new Grammar("tree-sitter-java.wasm", (n, src, f) => {
   const op = (x: Node) => operand(x, src);
@@ -77,6 +90,11 @@ export const JAVA = new Grammar("tree-sitter-java.wasm", (n, src, f) => {
       if (name) f.params.push({ name: name.text, range: src.range(name), index: idx, decl });
       if (p.type === "formal_parameter" || p.type === "spread_parameter") idx++;
     }
+  } else if (n.type === "import_declaration") {
+    // `import a.b.C` and `import static a.b.C.m` bind their last name; `import a.b.*` binds none.
+    const id = namedChildren(n).find((c) => c.type === "scoped_identifier");
+    const scope = id?.childForFieldName("scope"), name = id?.childForFieldName("name");
+    if (scope && name && !namedChildren(n).some((c) => c.type === "asterisk")) f.imports.push({ local: name.text, module: scope.text, member: name.text });
   } else if (n.type === "method_invocation" || n.type === "object_creation_expression") {
     const isNew = n.type === "object_creation_expression";
     const t = isNew ? n.childForFieldName("type") : n.childForFieldName("name");
@@ -92,6 +110,7 @@ export const JAVA = new Grammar("tree-sitter-java.wasm", (n, src, f) => {
 /** Java, resolved through the editor's Java language server. */
 export const Java: Frontend = {
   id: LANGUAGE_ID,
+  imports: JAVA_IMPORTS,
   extensions: ["java"],
   editor: { id: "redhat.java", name: "Language Support for Java" },
   init: () => JAVA.init(),
