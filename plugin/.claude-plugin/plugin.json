@@ -1,7 +1,7 @@
 {
   "name": "hesperus",
   "displayName": "Hesperus",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "A live map of what the repo reaches outside itself (databases, network, models, files, processes) in a pane beside the chat, re-drawn as the agent edits, with the same facts served to the agent over MCP.",
   "author": { "name": "pmghartman" },
   "homepage": "https://github.com/pmghartman/hesperus#readme",
