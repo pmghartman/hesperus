@@ -12,8 +12,14 @@ import { Facts, SymbolDecl } from "./core/syntax";
 
 export const HEADLESS_TOOL = { name: "headless", version: "1" };
 
-/** Syntax columns are UTF-8 bytes; the bridge takes UTF-16 units, as an editor reports them. */
-const utf16 = (lines: string[], line: number, col: number) => Buffer.from(lines[line] ?? "", "utf8").subarray(0, col).toString("utf8").length;
+const ASCII = /^[\x00-\x7f]*$/;
+
+/** Syntax columns are UTF-8 bytes; the bridge takes UTF-16 units, as an editor reports them.
+ *  An ASCII line's are the same; any other is encoded once per call, so keep calls per line few. */
+const utf16 = (lines: string[], line: number, col: number) => {
+  const s = lines[line] ?? "";
+  return ASCII.test(s) ? Math.min(col, s.length) : Buffer.from(s, "utf8").subarray(0, col).toString("utf8").length;
+};
 
 function spanOf(lines: string[], r: Range): Span {
   return { start: { line: r.start_line, character: utf16(lines, r.start_line, r.start_col) }, end: { line: r.end_line, character: utf16(lines, r.end_line, r.end_col) } };
@@ -53,7 +59,9 @@ export function outline(lines: string[], symbols: SymbolDecl[]): BridgeSymbol[] 
   return merge(root);
 }
 
-interface Doc { file: BridgeFile; facts: Facts; lines: string[]; tree: BridgeSymbol[] }
+interface Doc { file: BridgeFile; facts: Facts; lines: string[]; tree: BridgeSymbol[];
+  /** Each call by where its callee starts (`line:character`), the first of any that share it. */
+  calls: Map<string, Facts["calls"][number]>; sites: Span[] }
 
 const posKey = (a: Pos, b: Pos) => a.line - b.line || a.character - b.character;
 const holds = (p: Pos, s: Span) => posKey(s.start, p) <= 0 && posKey(p, s.end) <= 0;
@@ -74,7 +82,14 @@ export async function headlessIndex(repo: string, fe: Frontend, files: readonly 
     const facts = syn.facts(text);
     const lines = text.split("\n");
     const tree = outline(lines, facts.symbols);
-    docs.set(p, { file: { path: p, language: fe.id, text, symbols: tree }, facts, lines, tree });
+    const calls = new Map<string, Facts["calls"][number]>();
+    const sites = facts.calls.map((c) => {
+      const s = spanOf(lines, c.callee);
+      const k = `${s.start.line}:${s.start.character}`;
+      if (!calls.has(k)) calls.set(k, c);
+      return s;
+    });
+    docs.set(p, { file: { path: p, language: fe.id, text, symbols: tree }, facts, lines, tree, calls, sites });
   }
   const byDir = new Map<string, Doc[]>();
   for (const d of docs.values()) {
@@ -103,10 +118,7 @@ export async function headlessIndex(repo: string, fe: Frontend, files: readonly 
   const definitionsOf = async (p: string, at: Pos): Promise<BridgeRef[]> => {
     const d = docs.get(p);
     if (!d) return [];
-    const call = d.facts.calls.find((c) => {
-      const s = spanOf(d.lines, c.callee);
-      return s.start.line === at.line && s.start.character === at.character;
-    });
+    const call = d.calls.get(`${at.line}:${at.character}`);
     if (!call) return [];
     const segs = callees(call.callee_text);
     if (!segs.length) return [];
@@ -130,7 +142,7 @@ export async function headlessIndex(repo: string, fe: Frontend, files: readonly 
   };
   const sites = (f: BridgeFile): Span[] => {
     const d = docs.get(f.path);
-    return d ? d.facts.calls.map((c) => spanOf(d.lines, c.callee)) : [];
+    return d ? d.sites : [];
   };
   return bridge([...docs.values()].map((d) => d.file), async () => [], { unify: fe.declarationsAcrossFiles, sites, definitionsOf, concurrency: 64 });
 }

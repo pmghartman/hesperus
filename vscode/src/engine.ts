@@ -112,9 +112,26 @@ function fileCounts(repo: string, files = listFiles(repo)): [Map<string, number>
   return [counts, other];
 }
 
+/** Of the paths given, those `.gitattributes` marks `linguist-generated` or `linguist-vendored`:
+ *  a committed bundle or vendored copy is someone else's code, and indexing it can cost more than the repo. */
+function generated(repo: string, paths: readonly string[]): Set<string> {
+  if (!paths.length) return new Set();
+  const r = spawnSync("git", ["-C", repo, "check-attr", "-z", "--stdin", "linguist-generated", "linguist-vendored"], { input: paths.join("\0") + "\0", maxBuffer: 1 << 28 });
+  const out = new Set<string>();
+  if (r.status !== 0) return out;
+  // NUL-separated triples: path, attribute, value.
+  const f = r.stdout.toString("utf8").split("\0");
+  for (let i = 0; i + 2 < f.length; i += 3) if (f[i + 2] === "set" || f[i + 2] === "true") out.add(f[i]);
+  return out;
+}
+
 function listFiles(repo: string): string[] {
   const git = spawnSync("git", ["-C", repo, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { maxBuffer: 1 << 30 });
-  if (git.status === 0) return git.stdout.toString("utf8").split("\0").filter((p) => p !== "");
+  if (git.status === 0) {
+    const all = git.stdout.toString("utf8").split("\0").filter((p) => p !== "");
+    const skip = generated(repo, all);
+    return skip.size ? all.filter((p) => !skip.has(p)) : all;
+  }
   const out: string[] = [];
   const walk = (d: string) => {
     let entries: fs.Dirent[];

@@ -97441,7 +97441,11 @@ function dedupe(occs) {
 var fs3 = __toESM2(require("node:fs"));
 var path2 = __toESM2(require("node:path"));
 var HEADLESS_TOOL = { name: "headless", version: "1" };
-var utf16 = (lines, line, col) => Buffer.from(lines[line] ?? "", "utf8").subarray(0, col).toString("utf8").length;
+var ASCII = /^[\x00-\x7f]*$/;
+var utf16 = (lines, line, col) => {
+  const s = lines[line] ?? "";
+  return ASCII.test(s) ? Math.min(col, s.length) : Buffer.from(s, "utf8").subarray(0, col).toString("utf8").length;
+};
 function spanOf(lines, r) {
   return { start: { line: r.start_line, character: utf16(lines, r.start_line, r.start_col) }, end: { line: r.end_line, character: utf16(lines, r.end_line, r.end_col) } };
 }
@@ -97491,7 +97495,14 @@ async function headlessIndex(repo, fe, files) {
     const facts = syn.facts(text);
     const lines = text.split("\n");
     const tree = outline(lines, facts.symbols);
-    docs.set(p, { file: { path: p, language: fe.id, text, symbols: tree }, facts, lines, tree });
+    const calls2 = /* @__PURE__ */ new Map();
+    const sites2 = facts.calls.map((c) => {
+      const s = spanOf(lines, c.callee);
+      const k = `${s.start.line}:${s.start.character}`;
+      if (!calls2.has(k)) calls2.set(k, c);
+      return s;
+    });
+    docs.set(p, { file: { path: p, language: fe.id, text, symbols: tree }, facts, lines, tree, calls: calls2, sites: sites2 });
   }
   const byDir = /* @__PURE__ */ new Map();
   for (const d of docs.values()) {
@@ -97517,10 +97528,7 @@ async function headlessIndex(repo, fe, files) {
   const definitionsOf = async (p, at) => {
     const d = docs.get(p);
     if (!d) return [];
-    const call = d.facts.calls.find((c) => {
-      const s = spanOf(d.lines, c.callee);
-      return s.start.line === at.line && s.start.character === at.character;
-    });
+    const call = d.calls.get(`${at.line}:${at.character}`);
     if (!call) return [];
     const segs = callees(call.callee_text);
     if (!segs.length) return [];
@@ -97542,7 +97550,7 @@ async function headlessIndex(repo, fe, files) {
   };
   const sites = (f) => {
     const d = docs.get(f.path);
-    return d ? d.facts.calls.map((c) => spanOf(d.lines, c.callee)) : [];
+    return d ? d.sites : [];
   };
   return bridge([...docs.values()].map((d) => d.file), async () => [], { unify: fe.declarationsAcrossFiles, sites, definitionsOf, concurrency: 64 });
 }
@@ -100123,9 +100131,22 @@ function fileCounts(repo, files = listFiles(repo)) {
   }
   return [counts, other2];
 }
+function generated(repo, paths) {
+  if (!paths.length) return /* @__PURE__ */ new Set();
+  const r = (0, import_node_child_process.spawnSync)("git", ["-C", repo, "check-attr", "-z", "--stdin", "linguist-generated", "linguist-vendored"], { input: paths.join("\0") + "\0", maxBuffer: 1 << 28 });
+  const out2 = /* @__PURE__ */ new Set();
+  if (r.status !== 0) return out2;
+  const f = r.stdout.toString("utf8").split("\0");
+  for (let i2 = 0; i2 + 2 < f.length; i2 += 3) if (f[i2 + 2] === "set" || f[i2 + 2] === "true") out2.add(f[i2]);
+  return out2;
+}
 function listFiles(repo) {
   const git = (0, import_node_child_process.spawnSync)("git", ["-C", repo, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { maxBuffer: 1 << 30 });
-  if (git.status === 0) return git.stdout.toString("utf8").split("\0").filter((p) => p !== "");
+  if (git.status === 0) {
+    const all = git.stdout.toString("utf8").split("\0").filter((p) => p !== "");
+    const skip = generated(repo, all);
+    return skip.size ? all.filter((p) => !skip.has(p)) : all;
+  }
   const out2 = [];
   const walk3 = (d) => {
     let entries;
@@ -100211,6 +100232,17 @@ var MAX_W = 260;
 var LEAF_H = 26;
 var EXT_H = 14;
 var MAX_CHARS = Math.floor((MAX_W - PAD) / CHAR);
+function elk() {
+  const g = globalThis;
+  const self2 = g.self;
+  if (self2 === void 0) return new import_elk_bundled.default();
+  delete g.self;
+  try {
+    return new import_elk_bundled.default();
+  } finally {
+    g.self = self2;
+  }
+}
 var width = (n) => Math.min(MAX_W, Math.max(MIN_W, Math.ceil(n.name.length * CHAR) + PAD + 14));
 async function layout(graph, view2, opts = {}) {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
@@ -100355,7 +100387,7 @@ ${gr.members.length} children.`;
     }
   };
   attach(root);
-  const out2 = await new import_elk_bundled.default().layout(root);
+  const out2 = await elk().layout(root);
   const boxes = [];
   const origin = /* @__PURE__ */ new Map([["root", { x: 0, y: 0 }]]);
   const routed = /* @__PURE__ */ new Map();

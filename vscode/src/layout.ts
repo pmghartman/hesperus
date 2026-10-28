@@ -49,6 +49,20 @@ interface ElkEdge {
   labels?: { text: string; width: number; height: number; x?: number; y?: number }[];
 }
 
+/** ELK's in-process worker exports itself only where `self` is undefined, else it takes itself for a
+ *  web worker and waits for messages; Bun defines `self`, so it is hidden while ELK loads that worker. */
+function elk(): InstanceType<typeof ELK> {
+  const g = globalThis as { self?: unknown };
+  const self = g.self;
+  if (self === undefined) return new ELK();
+  delete g.self;
+  try {
+    return new ELK();
+  } finally {
+    g.self = self;
+  }
+}
+
 const width = (n: GraphNode) => Math.min(MAX_W, Math.max(MIN_W, Math.ceil(n.name.length * CHAR) + PAD + 14));
 
 // Positions come from ELK only; inputs are sorted and the seed is fixed so equal input
@@ -203,7 +217,7 @@ export async function layout(graph: Graph, view: View, opts: { flow?: boolean; /
     },
   };
   attach(root);
-  const out = (await new ELK().layout(root as never)) as ElkNode & { width: number; height: number };
+  const out = (await elk().layout(root as never)) as ElkNode & { width: number; height: number };
   const boxes: Box[] = [];
   const origin = new Map<string, { x: number; y: number }>([["root", { x: 0, y: 0 }]]);
   const routed = new Map<string, ElkEdge>();
@@ -260,7 +274,7 @@ const names = (ids: string[], byId: Map<string, Input>) => {
 export async function automatonLayout(a: Automaton): Promise<AutomatonLayout> {
   const inputs = new Map(a.inputs.map((i) => [i.id, i]));
   const dims = new Map(a.dims.map((d) => [d.id, d]));
-  const elk = new ELK();
+  const engine = elk();
   const laid = await Promise.all(a.regions.map(async (r) => {
     const multi = r.dims.length > 1;
     const lines = (s: AState) => r.dims.map((d) => {
@@ -293,7 +307,7 @@ export async function automatonLayout(a: Automaton): Promise<AutomatonLayout> {
         return { id: `e${i}`, sources: [e.from], targets: [e.to], labels: [{ text, width: Math.ceil(text.length * 6) + 6, height: 14 }] };
       }),
     };
-    const out = (await elk.layout(root as never)) as typeof root & { width: number; height: number };
+    const out = (await engine.layout(root as never)) as typeof root & { width: number; height: number };
     return { r, out, lines, loopText };
   }));
   // Shelf packing: rows no wider than a square's side of the total area, at least the widest region.
