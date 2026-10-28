@@ -1,4 +1,4 @@
-// Bumps the Claude Code plugin's version in .claude-plugin/plugin.json: installed copies update only when
+// Bumps the Claude Code plugin's version in plugin/.claude-plugin/plugin.json: installed copies update only when
 // the version changes, so every change to the plugin's files on main gets a new one. Run by the
 // plugin-version workflow after each push to main; by hand, `node .github/scripts/plugin-version.js`.
 // Prints the new version; with `--check <commit>`, prints nothing and exits 0 when that commit already
@@ -7,14 +7,14 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
-const file = path.join(__dirname, "..", "..", ".claude-plugin", "plugin.json");
+const file = path.join(__dirname, "..", "..", "plugin", ".claude-plugin", "plugin.json");
 const read = () => JSON.parse(fs.readFileSync(file, "utf8"));
 
 if (process.argv[2] === "--check") {
   const commit = process.argv[3] ?? "HEAD";
   let before = "";
   try {
-    before = JSON.parse(execFileSync("git", ["show", `${commit}~1:.claude-plugin/plugin.json`], { encoding: "utf8" })).version;
+    before = JSON.parse(execFileSync("git", ["show", `${commit}~1:plugin/.claude-plugin/plugin.json`], { encoding: "utf8" })).version;
   } catch {}
   process.exit(before !== read().version ? 0 : 1);
 }

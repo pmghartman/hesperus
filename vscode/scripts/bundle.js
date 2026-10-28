@@ -1,12 +1,12 @@
-// Bundles the CLI (and so the MCP server and the indexer) into dist/ at the repository root, with the
-// grammars and the tree-sitter runtime beside it: one folder that runs with Node alone, committed so a
-// clone of the repository is a working Claude Code plugin with nothing to build.
+// Bundles the CLI (and so the MCP server and the indexer) into the Claude Code plugin's dist/ (plugin/dist),
+// with the grammars and the tree-sitter runtime beside it: one folder that runs with Node and the plugin's
+// one package, committed so the plugin has nothing to build.
 const fs = require("node:fs");
 const path = require("node:path");
 const esbuild = require("esbuild");
 
 const root = path.join(__dirname, "..");
-const dist = path.join(root, "..", "dist");
+const dist = path.join(root, "..", "plugin", "dist");
 fs.mkdirSync(path.join(dist, "grammars"), { recursive: true });
 esbuild.buildSync({
   entryPoints: [path.join(root, "src", "cli.ts")],
@@ -17,7 +17,7 @@ esbuild.buildSync({
   // The package's CommonJS build: its ESM build locates the runtime wasm through import.meta, which a bundle has no value for.
   alias: { "web-tree-sitter": path.join(root, "node_modules", "web-tree-sitter", "tree-sitter.cjs") },
   // ELK alone is 3 MB, over the plugin directory's 1 MB a file: it stays a package, a dependency in the
-  // repository root's package.json that Claude Code installs beside the plugin.
+  // plugin's package.json that Claude Code installs beside it.
   external: ["elkjs", "elkjs/*"],
   outfile: path.join(dist, "hesperus.js"),
   legalComments: "none",

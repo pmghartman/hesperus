@@ -8757,11 +8757,22 @@ async function serve(repo) {
       name: "hesperus_svg",
       title: "Draw the boundary overview",
       annotations: WRITES,
-      description: "Draw the boundary overview to .hesperus/view.svg (the repo with each boundary as a box on the right, findings in red and amber) and return its path.",
-      inputSchema: { type: "object", properties: { ...DIR, ...INDEX } },
+      description: "Draw the boundary overview to .hesperus/view.svg (the repo with each boundary as a box on the right, findings in red and amber) and return its path. With `columns`, laid out top to bottom for a tall pane that many cells wide, its boxes and wires in cells written to .hesperus/view.json beside it.",
+      inputSchema: { type: "object", properties: {
+        ...DIR,
+        ...INDEX,
+        columns: { type: "number", description: "Lay the picture out for a tall pane this many cells wide." },
+        open: { type: "array", items: { type: "string" }, description: "Box ids to open in place of the overview's." },
+        focus: { type: "string", description: "A box id to outline." }
+      } },
       run: async (a) => {
         const [d, l] = await get(a);
-        await drawSvg(d, l, check(d, l));
+        const ask = {
+          ...Array.isArray(a.open) ? { open: a.open.map(String) } : {},
+          ...typeof a.focus === "string" ? { focus: a.focus } : {},
+          ...typeof a.columns === "number" ? { portrait: true, columns: a.columns } : {}
+        };
+        await drawSvg(d, l, check(d, l), ask);
         return path9.join(d, ".hesperus", "view.svg");
       }
     },

@@ -1,19 +1,14 @@
 # The Claude Code plugin's version, bumped by itself: a push to main that changes what the plugin ships
-# (its hooks, types, bundled CLI, manifests) gets the patch version in .claude-plugin/plugin.json raised
-# and committed back, so installed copies pick the change up on their next update. A push that already
-# raised the version by hand is left as it is. The VS Code extension's version lives in tags (release.yml).
+# (anything in plugin/: its hooks, types, bundled CLI, manifest) gets the patch version in
+# plugin/.claude-plugin/plugin.json raised and committed back, so installed copies pick the change up on
+# their next update. A push that already raised the version by hand is left as it is. The VS Code extension's version lives in tags (release.yml).
 name: plugin-version
 
 on:
   push:
     branches: [main]
     paths:
-      - ".claude-plugin/**"
-      - ".mcp.json"
-      - "dist/**"
-      - "hooks/**"
-      - "types/**"
-      - "README.md"
+      - "plugin/**"
 
 permissions:
   contents: write
@@ -50,6 +45,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .claude-plugin/plugin.json
+          git add plugin/.claude-plugin/plugin.json
           git commit -m "Version $VER so installed copies pick up the plugin's changes"
           git push origin HEAD:main

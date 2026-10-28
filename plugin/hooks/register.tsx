@@ -2,7 +2,8 @@
 // re-drawn after every edit the agent makes, and a status line count. The map is drawn in cells where
 // the surface runs a Client (the terminal, the desktop app): its boxes drag, open and close, and go to
 // source; elsewhere (the editor, the phone) it is a picture. The flow runs top to bottom, so it fits a
-// tall narrow pane. The agent reads the same facts over MCP (.mcp.json).
+// tall narrow pane. The facts come from the plugin's own MCP server, the one the agent asks: it keeps the
+// graph loaded between calls, and the pane starts no program of its own.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
@@ -28,14 +29,24 @@ const COLOR = { error: 'red', warning: 'yellow', info: 'blue' } as const
 const PEEK_BEFORE = 2, PEEK_AFTER = 12
 
 const empty = (error: string): HesperusReport => ({ at: Date.now(), summary: { errors: 0, warnings: 0, info: 0, removed: 0 }, boundaries: {}, findings: [], removed: [], error })
-const lastLine = (s: string) => s.trim().split('\n').pop()?.replace(/^hesperus: /, '') ?? ''
 
 let timer: { cancel: () => void } | undefined
 let running = false
 /** A run asked for while one ran: `index` wins over `draw`, since indexing draws too. */
 let again: 'index' | 'draw' | undefined
 
-const cli = ($: EngineInterface) => `${$.plugin.root}/dist/hesperus.js`
+/** The MCP server's key in plugin.json. */
+const SERVER = 'hesperus'
+
+/** Calls one of the MCP server's tools on the session's repo: its text, or an error saying why not. */
+async function call($: EngineInterface, tool: string, args: Record<string, unknown> = {}): Promise<string> {
+  const c = await $.mcp.connect(SERVER)
+  if (!c.isConnected) throw new Error(c.message)
+  const r = await $.mcp.call(c.server, tool, { dir: await $.session.cwd(), ...args })
+  const text = r.content.map(b => (b.type === 'text' ? b.text : '')).join('')
+  if (r.isError) throw new Error(text.replace(/^hesperus: /, '') || `${tool} failed`)
+  return text
+}
 
 /** The pane's width in cells as last drawn, for the layout; and the width the picture was laid out at. */
 let paneColumns = 60, drawnColumns = 0
@@ -43,18 +54,17 @@ let paneColumns = 60, drawnColumns = 0
  *  itself, so only then does selecting draw again. The map Client outlines it from its props. */
 let pictured = false
 
-/** The CLI arguments and input that draw the view the person asked for, laid out for a tall pane this
- *  wide; no `--view` for the overview. */
-const viewArgs = (a: HesperusAsk) => {
+/** What draws the view the person asked for, laid out for a tall pane this wide; no boxes named for the
+ *  overview. */
+const drawArgs = (a: HesperusAsk) => {
   drawnColumns = paneColumns
-  const portrait = ['--portrait', String(paneColumns)]
-  return a.open || a.focus ? { argv: [...portrait, '--view', '-'], stdin: JSON.stringify(a) } : { argv: portrait, stdin: undefined }
+  return { columns: paneColumns, ...(a.open ? { open: a.open } : {}), ...(a.focus ? { focus: a.focus } : {}) }
 }
 
 /** The store key of the boxes the person dragged, per repo. */
 const movesKey = (cwd: string) => `moves:${cwd}`
 
-/** Reads the picture and its boxes the CLI just drew. */
+/** Reads the picture and its boxes the server just drew. */
 async function loadPicture($: EngineInterface): Promise<void> {
   const cwd = await $.session.cwd()
   const svg = await $.fs.read(`${cwd}/.hesperus/view.svg`).catch(() => '')
@@ -86,35 +96,27 @@ async function refresh($: EngineInterface, mode: 'index' | 'draw' = 'index'): Pr
   }
   running = true
   try {
-    const cwd = await $.session.cwd()
-    const v = viewArgs(await read($, ask))
     if (mode === 'index') {
       await update($, busy, () => 'indexing')
       $.ui.status('hesperus: indexing…')
-      const r = await $.process.run(['node', cli($), 'check', '.', '--index', '--json', '--svg', ...v.argv], { cwd, stdin: v.stdin, timeoutMs: 600000 })
-      let next: HesperusReport
-      if (r.exitCode === 2 || !r.stdout.trim()) next = empty(lastLine(r.stderr) || 'hesperus check failed')
-      else next = { at: Date.now(), ...(JSON.parse(r.stdout) as Omit<HesperusReport, 'at'>) }
+      const next: HesperusReport = { at: Date.now(), ...(JSON.parse(await call($, 'hesperus_check', { index: true })) as Omit<HesperusReport, 'at'>) }
       await update($, report, () => next)
-      await loadPicture($)
       const { errors, warnings } = next.summary
-      $.ui.status(next.error ? 'hesperus: not built' : errors || warnings ? `hesperus: ${errors} errors, ${warnings} new` : 'hesperus: clean')
-    } else {
-      await update($, busy, () => 'drawing')
-      const r = await $.process.run(['node', cli($), 'svg', '.', ...v.argv], { cwd, stdin: v.stdin, timeoutMs: 120000 })
-      if (r.exitCode === 0) await loadPicture($)
-      else {
-        // Too many boxes, most likely: say so and go back to what is drawn.
-        $.ui.toast(`hesperus: ${lastLine(r.stderr) || 'could not draw that view'}`)
-        const drawn = await read($, boxes)
-        if (drawn) await update($, ask, a => ({ ...a, open: drawn.open.map(o => o.id) }))
-      }
+      $.ui.status(errors || warnings ? `hesperus: ${errors} errors, ${warnings} new` : 'hesperus: clean')
+    }
+    await update($, busy, () => 'drawing')
+    try {
+      await call($, 'hesperus_svg', drawArgs(await read($, ask)))
+      await loadPicture($)
+    } catch (e) {
+      // Too many boxes, most likely: say so and go back to what is drawn.
+      $.ui.toast(`hesperus: ${e instanceof Error ? e.message : String(e)}`)
+      const drawn = await read($, boxes)
+      if (mode === 'draw' && drawn) await update($, ask, a => ({ ...a, open: drawn.open.map(o => o.id) }))
     }
   } catch (e) {
-    if (mode === 'index') {
-      await update($, report, () => empty(e instanceof Error ? e.message : String(e)))
-      $.ui.status('hesperus: failed')
-    } else $.ui.toast(`hesperus: ${e instanceof Error ? e.message : String(e)}`)
+    await update($, report, () => empty(e instanceof Error ? e.message : String(e)))
+    $.ui.status('hesperus: failed')
   } finally {
     running = false
     await update($, busy, () => '')
@@ -192,20 +194,12 @@ async function select($: EngineInterface, id: string): Promise<void> {
   if (pictured) void refresh($, 'draw')
 }
 
-/** Opens a box's source in the editor: VS Code at the line when its `code` command is installed, else
- *  whatever the system opens the file with. */
+/** Opens a box's source in the editor, through the server's `hesperus_open`: VS Code at the line when
+ *  its `code` command is installed, else whatever the system opens the file with. */
 async function reveal($: EngineInterface, id: string): Promise<void> {
   const b = (await read($, boxes))?.boxes.find(x => x.id === id)
   if (!b?.path) return
-  const cwd = await $.session.cwd()
-  for (const argv of [['code', '-g', `${b.path}:${b.line ?? 1}`], ['open', b.path], ['xdg-open', b.path]]) {
-    const r = await $.process.run(argv, { cwd, timeoutMs: 15000 }).catch(() => undefined)
-    if (r?.exitCode === 0) {
-      $.ui.toast(`Opened ${b.path}:${b.line ?? 1}`)
-      return
-    }
-  }
-  $.ui.toast(`hesperus: nothing here opens ${b.path}`)
+  $.ui.toast(await call($, 'hesperus_open', { id }).catch(e => `hesperus: ${e instanceof Error ? e.message : String(e)}`))
 }
 
 /** Back to the overview, every box where the layout puts it. */
@@ -233,10 +227,9 @@ export const register: Register = on => {
 
   on('command.run', { command: 'hesperus' }, async ($, e) => {
     if (e.args.trim() === 'accept') {
-      const cwd = await $.session.cwd()
-      const r = await $.process.run(['node', cli($), 'check', '.', '--accept'], { cwd, timeoutMs: 600000 })
+      const text = await call($, 'hesperus_accept').catch(e => `hesperus: ${e instanceof Error ? e.message : String(e)}`)
       schedule($, 100)
-      return { text: r.exitCode === 0 ? r.stdout.trim() : `hesperus: ${r.stderr.trim()}` }
+      return { text }
     }
     await $.ui.open({ id: PANE, title: 'Hesperus' })
     schedule($, 100)
