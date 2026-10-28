@@ -93572,10 +93572,10 @@ var require_tree_sitter2 = __commonJS2({
               }
             }
             __name(_tree_sitter_log_callback, "_tree_sitter_log_callback");
-            function _tree_sitter_parse_callback(inputBufferAddress, index2, row, column, lengthAddress) {
+            function _tree_sitter_parse_callback(inputBufferAddress, index2, row2, column, lengthAddress) {
               const INPUT_BUFFER_SIZE = 10 * 1024;
               const string = Module.currentParseCallback(index2, {
-                row,
+                row: row2,
                 column
               });
               if (typeof string === "string") {
@@ -95076,7 +95076,7 @@ var require_tree_sitter2 = __commonJS2({
       if (id === 0) return null;
       const index2 = C.getValue(address, "i32");
       address += SIZE_OF_INT;
-      const row = C.getValue(address, "i32");
+      const row2 = C.getValue(address, "i32");
       address += SIZE_OF_INT;
       const column = C.getValue(address, "i32");
       address += SIZE_OF_INT;
@@ -95085,7 +95085,7 @@ var require_tree_sitter2 = __commonJS2({
         id,
         tree,
         startIndex: index2,
-        startPosition: { row, column },
+        startPosition: { row: row2, column },
         other: other2
       });
       return result;
@@ -97748,9 +97748,9 @@ var fs4 = __toESM2(require("node:fs"));
 var path3 = __toESM2(require("node:path"));
 var HEADLESS_TOOL = { name: "headless", version: "1" };
 var ASCII = /^[\x00-\x7f]*$/;
-var utf16 = (lines, line, col) => {
+var utf16 = (lines, line, col2) => {
   const s = lines[line] ?? "";
-  return ASCII.test(s) ? Math.min(col, s.length) : Buffer.from(s, "utf8").subarray(0, col).toString("utf8").length;
+  return ASCII.test(s) ? Math.min(col2, s.length) : Buffer.from(s, "utf8").subarray(0, col2).toString("utf8").length;
 };
 function spanOf(lines, r) {
   return { start: { line: r.start_line, character: utf16(lines, r.start_line, r.start_col) }, end: { line: r.end_line, character: utf16(lines, r.end_line, r.end_col) } };
@@ -98575,13 +98575,13 @@ var Source = class {
   }
   starts = [0];
   ascii = [];
-  col(row, units) {
-    if (this.ascii[row] === void 0) {
-      const end = row + 1 < this.starts.length ? this.starts[row + 1] : this.text.length;
-      this.ascii[row] = !/[^\x00-\x7f]/.test(this.text.slice(this.starts[row], end));
+  col(row2, units) {
+    if (this.ascii[row2] === void 0) {
+      const end = row2 + 1 < this.starts.length ? this.starts[row2 + 1] : this.text.length;
+      this.ascii[row2] = !/[^\x00-\x7f]/.test(this.text.slice(this.starts[row2], end));
     }
-    if (this.ascii[row]) return units;
-    const s = this.starts[row];
+    if (this.ascii[row2]) return units;
+    const s = this.starts[row2];
     return Buffer.byteLength(this.text.slice(s, s + units), "utf8");
   }
   range(n) {
@@ -100528,6 +100528,117 @@ function makeGraph(repo, index2, unindexed = []) {
   });
 }
 
+// src/shelf.ts
+var SINK = /* @__PURE__ */ new Set(["boundary", "external", "external_package"]);
+var GAP_X = 2;
+var GAP_ROW = 1;
+var GAP_LAYER = 2;
+var INSET_X = 2;
+var INSET_TOP = 2;
+var INSET_BOTTOM = 1;
+var MIN_W2 = 6;
+function leafSize(b, max) {
+  const w = 1 + (b.expandable ? 2 : 0) + (b.flag ? 2 : 0) + b.node.name.length + 1;
+  return { w: Math.max(MIN_W2, Math.min(max, w)), h: b.flag ? 2 : 1 };
+}
+function shelf(laid, columns) {
+  const byId = new Map(laid.boxes.map((b) => [b.id, b]));
+  const kids = /* @__PURE__ */ new Map();
+  for (const b of laid.boxes) (kids.get(b.parent) ?? kids.set(b.parent, []).get(b.parent)).push(b);
+  const lift = (id, p) => {
+    for (let x = id; x !== void 0; x = byId.get(x)?.parent) if (byId.get(x)?.parent === p) return x;
+    return void 0;
+  };
+  const rects = /* @__PURE__ */ new Map();
+  const lay = (p, width2) => {
+    const children2 = [...kids.get(p) ?? []].sort((a, b) => cmpStr(a.id, b.id));
+    if (!children2.length) return { w: 0, h: 0 };
+    const inner = Math.max(MIN_W2, width2);
+    const size2 = /* @__PURE__ */ new Map();
+    for (const c of children2) {
+      if (c.container) {
+        const s = lay(c.id, inner - 2 * INSET_X);
+        const title = 2 + (c.flag ? 2 : 0) + c.node.name.length + 2;
+        size2.set(c.id, { w: Math.min(inner, Math.max(MIN_W2, s.w + 2 * INSET_X, title)), h: s.h + INSET_TOP + INSET_BOTTOM });
+      } else size2.set(c.id, leafSize(c, inner));
+    }
+    const ids = children2.map((c) => c.id);
+    const out2 = new Map(ids.map((id) => [id, /* @__PURE__ */ new Set()]));
+    const touched = /* @__PURE__ */ new Set();
+    for (const w2 of laid.wires) {
+      const a = lift(w2.from, p), b = lift(w2.to, p);
+      if (a === void 0 || b === void 0 || a === b) continue;
+      out2.get(a).add(b);
+      touched.add(a);
+      touched.add(b);
+    }
+    const sink = (id) => SINK.has(byId.get(id).node.kind);
+    const layer = /* @__PURE__ */ new Map();
+    const onStack = /* @__PURE__ */ new Set();
+    const visit2 = (id) => {
+      if (layer.has(id)) return layer.get(id);
+      onStack.add(id);
+      let depth = 0;
+      for (const to of [...out2.get(id)].sort(cmpStr)) if (!onStack.has(to) && !sink(to)) depth = Math.max(depth, visit2(to) + 1);
+      onStack.delete(id);
+      layer.set(id, depth);
+      return depth;
+    };
+    for (const id of ids) if (!sink(id)) visit2(id);
+    const deepest = Math.max(0, ...[...layer.values()]);
+    const row2 = (id) => {
+      if (sink(id)) return deepest + 2;
+      if (!touched.has(id)) return deepest + 1;
+      return deepest - layer.get(id);
+    };
+    const layers2 = /* @__PURE__ */ new Map();
+    for (const id of ids) (layers2.get(row2(id)) ?? layers2.set(row2(id), []).get(row2(id))).push(id);
+    const local = /* @__PURE__ */ new Map();
+    const into = new Map(ids.map((id) => [id, /* @__PURE__ */ new Set()]));
+    for (const [a, bs] of out2) for (const b of bs) into.get(b).add(a);
+    let y = 0, w = 0;
+    for (const key of [...layers2.keys()].sort((a, b) => a - b)) {
+      const order = layers2.get(key);
+      const mid = (id) => {
+        const xs = [...into.get(id)].map((a) => local.get(a)).filter((r) => !!r).map((r) => r.x + r.w / 2);
+        return xs.length ? xs.reduce((s, x2) => s + x2, 0) / xs.length : Infinity;
+      };
+      const keyed = order.map((id) => ({ id, mid: mid(id) })).sort((a, b) => a.mid - b.mid || cmpStr(a.id, b.id));
+      if (y > 0) y += GAP_LAYER;
+      let x = 0, rowH = 0;
+      for (const { id } of keyed) {
+        const s = size2.get(id);
+        if (x > 0 && x + s.w > inner) {
+          x = 0;
+          y += rowH + GAP_ROW;
+          rowH = 0;
+        }
+        local.set(id, { x, y, w: s.w, h: s.h });
+        x += s.w + GAP_X;
+        rowH = Math.max(rowH, s.h);
+        w = Math.max(w, x - GAP_X);
+      }
+      y += rowH;
+    }
+    for (const [id, r] of local) rects.set(id, r);
+    return { w, h: y };
+  };
+  const top = lay(void 0, columns);
+  const done = /* @__PURE__ */ new Set();
+  const place = (id) => {
+    if (done.has(id)) return;
+    const b = byId.get(id);
+    if (b.parent !== void 0) place(b.parent);
+    if (b.parent !== void 0) {
+      const r = rects.get(id), pr = rects.get(b.parent);
+      rects.set(id, { x: pr.x + INSET_X + r.x, y: pr.y + INSET_TOP + r.y, w: r.w, h: r.h });
+    }
+    done.add(id);
+  };
+  for (const b of laid.boxes) place(b.id);
+  return { rects, width: top.w, height: top.h };
+}
+
 // src/review.ts
 var import_node_child_process2 = require("node:child_process");
 var fs8 = __toESM2(require("node:fs"));
@@ -100615,6 +100726,12 @@ function toSvg(laid, focus) {
 // src/service.ts
 var VIEW_FILE = "view.svg";
 var BOXES_FILE = "view.json";
+var CELL_W = 6.6;
+var CELL_H = 13;
+var col = (x) => Math.round(x / CELL_W);
+var row = (y) => Math.round(y / CELL_H);
+var PANE_COLUMNS = 60;
+var PANE_NODES = 40;
 function hasCache(repo) {
   try {
     readHeader(repo);
@@ -100698,7 +100815,7 @@ function callsJson(l, query) {
   })));
 }
 async function drawSvg(repo, l, r, ask) {
-  const laid = await boundaryPicture(l.graph, l.policy, r, void 0, ask?.open);
+  const laid = await boundaryPicture(l.graph, l.policy, r, ask?.portrait ? PANE_NODES : void 0, ask?.open);
   const ids = new Set(laid.boxes.map((b) => b.id));
   const focus = ask?.focus !== void 0 && ids.has(ask.focus) ? ask.focus : void 0;
   const svg = toSvg(laid, focus);
@@ -100714,7 +100831,9 @@ async function drawSvg(repo, l, r, ask) {
     const n = byId.get(id);
     return { id, name: n?.name ?? id.slice(id.lastIndexOf("#") + 1), kind: n?.kind ?? "group", ...under(id) };
   });
-  const boxes = [...laid.boxes].sort((a, b) => a.y - b.y || a.x - b.x).map((b) => ({
+  const tall = ask?.portrait ? shelf(laid, Math.max(20, ask.columns ?? PANE_COLUMNS)) : void 0;
+  const cell = (b) => tall?.rects.get(b.id) ?? { x: col(b.x), y: row(b.y), w: Math.max(1, col(b.x + b.w) - col(b.x)), h: Math.max(1, row(b.y + b.h) - row(b.y)) };
+  const boxes = [...laid.boxes].map((b) => ({ b, c: cell(b) })).sort((a, b) => a.c.y - b.c.y || a.c.x - b.c.x).map(({ b, c }) => ({
     id: b.id,
     name: b.node.name,
     kind: b.node.kind,
@@ -100723,11 +100842,20 @@ async function drawSvg(repo, l, r, ask) {
     container: b.container,
     expandable: b.expandable,
     open: open.has(b.id),
+    ...c,
     ...b.node.path ? { path: b.node.path } : {},
     ...b.node.range ? { line: b.node.range.start_line + 1 } : {},
     ...b.flag ? { severity: b.flag.severity, notes: b.flag.notes } : {}
   }));
-  const json = { open: opened, ...focus ? { focus } : {}, boxes, omitted: laid.omitted };
+  const wires = laid.wires.map((w) => ({
+    from: w.from,
+    to: w.to,
+    points: tall ? [] : w.points.map((p) => ({ x: col(p.x), y: row(p.y) })),
+    may: w.rollups.every((r2) => r2.resolved === 0),
+    ...w.flag ? { severity: w.flag.severity } : {}
+  }));
+  const extent = tall ? { width: tall.width, height: tall.height } : { width: col(laid.width) + 1, height: row(laid.height) + 1 };
+  const json = { open: opened, ...focus ? { focus } : {}, boxes, wires, ...extent, omitted: laid.omitted };
   fs9.mkdirSync(path8.join(repo, CACHE_DIR), { recursive: true });
   fs9.writeFileSync(path8.join(repo, CACHE_DIR, VIEW_FILE), svg);
   fs9.writeFileSync(path8.join(repo, CACHE_DIR, BOXES_FILE), JSON.stringify(json));
@@ -100944,17 +101072,21 @@ var USAGE = `usage: hesperus <command> [dir] [options]
     --max-warnings N     exit 1 when there are more than N warnings (default: no limit)
   svg [dir]              draw the boundary overview to <dir>/${CACHE_DIR}/${VIEW_FILE}, its boxes to ${BOXES_FILE}
     --view FILE          draw the boxes FILE (- for stdin) opens instead, {"open": [ids], "focus": id}; also check --svg
+    --portrait [N]       lay the boxes of ${BOXES_FILE} out for a tall pane N columns wide (default 60); also check --svg
   mcp [dir]              serve the repo to an agent over MCP on stdin/stdout
 
 Boundaries: database, network, AI, cloud, queues, filesystem, processes, environment.
 Exit status: 0 clean, 1 findings over the limit or any error, 2 no graph or bad input.`;
 async function main(argv) {
   const flags2 = /* @__PURE__ */ new Set(), args2 = [];
-  let maxWarnings = Infinity, viewFile;
+  let maxWarnings = Infinity, viewFile, columns;
   for (let i2 = 0; i2 < argv.length; i2++) {
     if (argv[i2] === "--max-warnings") maxWarnings = Number(argv[++i2]);
     else if (argv[i2] === "--view") viewFile = argv[++i2];
-    else if (argv[i2].startsWith("--")) flags2.add(argv[i2]);
+    else if (argv[i2] === "--portrait") {
+      flags2.add("--portrait");
+      if (/^\d+$/.test(argv[i2 + 1] ?? "")) columns = Number(argv[++i2]);
+    } else if (argv[i2].startsWith("--")) flags2.add(argv[i2]);
     else args2.push(argv[i2]);
   }
   const flag = (f) => flags2.has(f);
@@ -100981,7 +101113,11 @@ async function main(argv) {
     }
     const r = check(repo, l);
     if (cmd === "svg" || flag("--svg")) {
-      const ask = viewFile === void 0 ? void 0 : JSON.parse(fs10.readFileSync(viewFile === "-" ? 0 : path10.resolve(viewFile), "utf8"));
+      const ask = viewFile === void 0 ? {} : JSON.parse(fs10.readFileSync(viewFile === "-" ? 0 : path10.resolve(viewFile), "utf8"));
+      if (flag("--portrait")) {
+        ask.portrait = true;
+        if (columns !== void 0) ask.columns = columns;
+      }
       await drawSvg(repo, l, r, ask);
       console.error(`hesperus: drew ${path10.join(CACHE_DIR, VIEW_FILE)}`);
       if (cmd === "svg") return 0;

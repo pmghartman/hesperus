@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Claude Code plugin: the pane's map is drawn in character cells, laid out top to bottom and wrapped to the pane's width (`hesperus svg --portrait N`), with boxes that drag, select, open and close; where the pane cannot run it (the editor, the phone) the picture stays. `.hesperus/view.json` carries each box's cells and the wires. The plugin's version raises itself on `main`.
 - `hesperus index`: the graph from syntax alone, no editor: tree-sitter outlines, same-file and same-package name lookup, imports for the rest (JavaScript/TypeScript, Python, Go, Rust, Java, Kotlin). `hesperus check --index` and `--svg`; `hesperus svg` draws the boundary overview.
 - `hesperus mcp`: an MCP server over stdio with the lint, the diff since the last review, the crossings by boundary, callers and callees, accept, and the overview as a resource.
 - The repository is a Claude Code plugin: the boundary map and findings in a pane that re-draws after each edit, a status line count, `/hesperus`, and the MCP server through `.mcp.json`.

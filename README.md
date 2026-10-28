@@ -72,14 +72,16 @@ node dist/hesperus.js mcp .         # serve the repo to an agent over MCP (stdio
 claude mcp add hesperus -- node /path/to/hesperus/dist/hesperus.js mcp
 ```
 
-**Claude Code plugin.** This repository is also a Claude Code plugin: a pane beside the chat with the boundary map, an explorer of its boxes and the findings, re-drawn after every edit the agent makes. In the explorer, arrow keys or a click select a box (outlined on the map, its source shown below), → and ← open and close it (the map is drawn again), and Enter goes to its source in VS Code (`code -g`) or whatever opens the file; the explorer needs the terminal or the desktop app, elsewhere its rows are buttons. Also a status line count, `/hesperus` and `/hesperus accept`, and the MCP server above wired in through `.mcp.json`. Nothing to build: `dist/` holds the CLI bundled with its grammars, so Node is the only requirement.
+**Claude Code plugin.** This repository is also a Claude Code plugin: a pane beside the chat with the boundary map, an explorer of its boxes and the findings, re-drawn after every edit the agent makes. The map is laid out for the pane's tall narrow shape (entries at the top, boundaries at the bottom, each layer wrapped to the pane's width) and drawn in character cells, so it is live: drag a box to move it (its wires follow, and it stays put across edits and sessions until **Overview**), drag the space or press the arrows to pan, click a box to select it (its source shown below) and click it again to open or close it, or to go to its source. The explorer below lists the same boxes as a tree: ↑↓ select, → ← open and close, Enter goes to the source in VS Code (`code -g`) or whatever opens the file. Both need the terminal or the desktop app; in the editor's pane and on the phone the map is a picture and the explorer's rows are buttons. Also a status line count, `/hesperus` and `/hesperus accept`, and the MCP server above wired in through `.mcp.json`. Nothing to build: `dist/` holds the CLI bundled with its grammars, so Node is the only requirement.
 
 ```
 /plugin marketplace add pmghartman/hesperus
 /plugin install hesperus@hesperus
 ```
 
-or `claude --plugin-dir /path/to/hesperus` for one session. Desktop, VS Code and mobile draw the map; the terminal lists the boundaries and findings as text. `dist/hesperus.js` is the same CLI as `vscode/out/cli.js` (`node dist/hesperus.js check .`).
+or `claude --plugin-dir /path/to/hesperus` for one session. `dist/hesperus.js` is the same CLI as `vscode/out/cli.js` (`node dist/hesperus.js check .`); `hesperus svg --portrait 60` writes the pane's layout to `.hesperus/view.json` (boxes and wires in cells) beside the SVG.
+
+The plugin's version (`.claude-plugin/plugin.json`) raises itself: a push to `main` that changes what the plugin ships gets a patch bump committed back by the `plugin-version` workflow, unless that push already raised it; installed copies pick the change up on their next update. The VS Code extension is versioned by its release tags instead.
 
 
 ## Languages
@@ -120,8 +122,8 @@ A stale cache (new commit, lockfile, or tool version) fails loudly, then re-inde
 | `vscode/src/core` | IR, graph building, aggregation, cache, canonical serialization; `boundary.ts` (classification, boundary view) and `lint.ts` (policy, baseline, findings) |
 | `vscode/src/linter.ts`, `review.ts` | Problems entries and quick fixes; policy, baseline and report files |
 | `vscode/src/headless.ts`, `service.ts`, `cli.ts`, `mcp.ts` | indexing without an editor; what the CLI, MCP server and plugin share; `hesperus index/check/svg/mcp`; the MCP server |
-| `vscode/src/picture.ts`, `svg.ts` | the boundary overview laid out and drawn as SVG |
-| `.claude-plugin/`, `hooks/`, `types/`, `.mcp.json` | the Claude Code plugin: pane and its explorer (`hooks/explorer.tsx`), status line, `/hesperus`, MCP wiring |
+| `vscode/src/picture.ts`, `svg.ts`, `shelf.ts` | the boundary overview laid out and drawn as SVG; its layout in cells for a tall pane |
+| `.claude-plugin/`, `hooks/`, `types/`, `.mcp.json` | the Claude Code plugin: pane with its map (`hooks/map.tsx`) and explorer (`hooks/explorer.tsx`), status line, `/hesperus`, MCP wiring; `.github/workflows/plugin-version.yml` raises its version |
 | `dist/` | the CLI bundled with its grammars (`vscode/scripts/bundle.js`), committed so the plugin needs no build |
 | `vscode/schema/policy.schema.json` | `hesperus.json` schema |
 | `vscode/src/lang` | tree-sitter syntax facts and editor extension per language |
