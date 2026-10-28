@@ -1,0 +1,9 @@
+{
+  "name": "hesperus-plugin",
+  "private": true,
+  "description": "The Claude Code plugin's one package: elkjs, the layout the CLI draws the boundary map with. Claude Code installs it from package-lock.json with the plugin; in a clone, run npm ci.",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "elkjs": "0.9.3"
+  }
+}

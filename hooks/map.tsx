@@ -10,7 +10,7 @@ type Drag = { x: number; y: number; id?: string; from: [number, number]; moved: 
 type State = { pan: [number, number]; moves: HesperusMoves; drag?: Drag; followed?: string; /** The hooks' moves our own were laid over. */ seen?: string }
 
 type Cell = { ch: string; color?: string; dim?: boolean; bold?: boolean; inverse?: boolean }
-type Rect = { x: number; y: number; w: number; h: number }
+type Rect = { x: number; y: number; w: number; ht: number }
 
 const KIND: Record<string, string> = {
   directory: 'yellow', package: 'magenta', file: 'blue', type: 'red', function: 'magenta', method: 'magenta',
@@ -31,7 +31,7 @@ const GLYPH: Record<number, string> = { [L | R]: '─', [U | D]: '│', [D | R]:
 /** A box where the layout put it plus where the person dragged it. */
 const place = (b: HesperusBox, moves: HesperusMoves): Rect => {
   const [dx, dy] = moves[b.id] ?? [0, 0]
-  return { x: b.x + dx, y: b.y + dy, w: b.w, h: b.h }
+  return { x: b.x + dx, y: b.y + dy, w: b.w, ht: b.h }
 }
 
 /** An orthogonal path from box `a` to box `b`, each end on its own column of the box (`ai` of `an` wires
@@ -41,17 +41,17 @@ function route(a: Rect, b: Rect, ai: number, an: number, bi: number, bn: number)
   const slot = (r: Rect, i: number, n: number) => r.x + Math.min(r.w - 1, 1 + Math.floor(((i + 1) * (r.w - 1)) / (n + 1)))
   const ax = slot(a, ai, an), bx = slot(b, bi, bn)
   const pts: { x: number; y: number }[] = []
-  if (b.y >= a.y + a.h + 2) pts.push({ x: ax, y: a.y + a.h }, { x: ax, y: b.y - 2 }, { x: bx, y: b.y - 2 }, { x: bx, y: b.y - 1 })
-  else if (a.y >= b.y + b.h + 2) pts.push({ x: ax, y: a.y - 1 }, { x: ax, y: b.y + b.h + 1 }, { x: bx, y: b.y + b.h + 1 }, { x: bx, y: b.y + b.h })
+  if (b.y >= a.y + a.ht + 2) pts.push({ x: ax, y: a.y + a.ht }, { x: ax, y: b.y - 2 }, { x: bx, y: b.y - 2 }, { x: bx, y: b.y - 1 })
+  else if (a.y >= b.y + b.ht + 2) pts.push({ x: ax, y: a.y - 1 }, { x: ax, y: b.y + b.ht + 1 }, { x: bx, y: b.y + b.ht + 1 }, { x: bx, y: b.y + b.ht })
   else {
-    const ay = a.y + Math.floor(a.h / 2), by = b.y + Math.floor(b.h / 2)
+    const ay = a.y + Math.floor(a.ht / 2), by = b.y + Math.floor(b.ht / 2)
     if (b.x >= a.x + a.w) {
       const mid = Math.floor((a.x + a.w + b.x) / 2)
       pts.push({ x: a.x + a.w, y: ay }, { x: mid, y: ay }, { x: mid, y: by }, { x: b.x - 1, y: by })
     } else if (a.x >= b.x + b.w) {
       const mid = Math.floor((b.x + b.w + a.x) / 2)
       pts.push({ x: a.x - 1, y: ay }, { x: mid, y: ay }, { x: mid, y: by }, { x: b.x + b.w, y: by })
-    } else pts.push({ x: ax, y: a.y + a.h }, { x: ax, y: b.y - 1 })
+    } else pts.push({ x: ax, y: a.y + a.ht }, { x: ax, y: b.y - 1 })
   }
   // A bend on the point before it is no bend.
   return pts.filter((p, i) => i === 0 || p.x !== pts[i - 1]!.x || p.y !== pts[i - 1]!.y)
@@ -85,10 +85,10 @@ function raster(props: HesperusMapProps, moves: HesperusMoves, pan: [number, num
     const color = b.id === selected ? FOCUS : b.severity ? SEV[b.severity] : KIND[b.kind] ?? 'gray'
     const dim = b.id !== selected && !b.severity
     const side = OUTSIDE.has(b.kind) ? '┆' : '│', top = OUTSIDE.has(b.kind) ? '┄' : '─'
-    for (let x = r.x + 1; x < r.x + r.w - 1; x++) { put(x, r.y, { ch: top, color, dim }); put(x, r.y + r.h - 1, { ch: top, color, dim }) }
-    for (let y = r.y + 1; y < r.y + r.h - 1; y++) { put(r.x, y, { ch: side, color, dim }); put(r.x + r.w - 1, y, { ch: side, color, dim }) }
+    for (let x = r.x + 1; x < r.x + r.w - 1; x++) { put(x, r.y, { ch: top, color, dim }); put(x, r.y + r.ht - 1, { ch: top, color, dim }) }
+    for (let y = r.y + 1; y < r.y + r.ht - 1; y++) { put(r.x, y, { ch: side, color, dim }); put(r.x + r.w - 1, y, { ch: side, color, dim }) }
     put(r.x, r.y, { ch: '╭', color, dim }); put(r.x + r.w - 1, r.y, { ch: '╮', color, dim })
-    put(r.x, r.y + r.h - 1, { ch: '╰', color, dim }); put(r.x + r.w - 1, r.y + r.h - 1, { ch: '╯', color, dim })
+    put(r.x, r.y + r.ht - 1, { ch: '╰', color, dim }); put(r.x + r.w - 1, r.y + r.ht - 1, { ch: '╯', color, dim })
     const mark = b.severity ? '● ' : ''
     text(r.x + 2, r.y + 1, `${b.open ? '▾ ' : ''}${mark}${b.name}`, { color, bold: true, inverse: b.id === selected }, r.w - 4)
   }
@@ -144,12 +144,12 @@ function raster(props: HesperusMapProps, moves: HesperusMoves, pan: [number, num
     if (!r) continue
     const color = b.id === selected ? FOCUS : b.severity ? SEV[b.severity] : KIND[b.kind] ?? 'gray'
     const bar = OUTSIDE.has(b.kind) ? '┊' : '▍'
-    for (let y = r.y; y < r.y + r.h; y++) for (let x = r.x; x < r.x + r.w; x++) put(x, y, { ch: ' ' })
-    for (let y = r.y; y < r.y + r.h; y++) put(r.x, y, { ch: bar, color })
+    for (let y = r.y; y < r.y + r.ht; y++) for (let x = r.x; x < r.x + r.w; x++) put(x, y, { ch: ' ' })
+    for (let y = r.y; y < r.y + r.ht; y++) put(r.x, y, { ch: bar, color })
     const mark = b.severity ? '● ' : ''
     text(r.x + 1, r.y, `${b.expandable ? '▸ ' : ''}${mark}${b.name}`, { color, bold: b.id === selected, inverse: b.id === selected }, r.w - 1)
     const note = b.notes?.[0]
-    if (r.h > 1 && note !== undefined) text(r.x + 1, r.y + 1, note, { color, dim: true }, r.w - 1)
+    if (r.ht > 1 && note !== undefined) text(r.x + 1, r.y + 1, note, { color, dim: true }, r.w - 1)
   }
   return grid
 }
@@ -171,7 +171,7 @@ const MapView: ClientModule<HesperusMapProps, State> = (props, s) => {
     if (b) {
       const r = place(b, moves)
       if (r.x < pan[0] || r.x + Math.min(r.w, columns) > pan[0] + columns) pan = [Math.max(0, r.x - 2), pan[1]]
-      if (r.y < pan[1] || r.y + Math.min(r.h, rows) > pan[1] + rows) pan = [pan[0], Math.max(0, r.y - 1)]
+      if (r.y < pan[1] || r.y + Math.min(r.ht, rows) > pan[1] + rows) pan = [pan[0], Math.max(0, r.y - 1)]
     }
   }
   const post = (m: HesperusMapPost) => s.post(m)
@@ -185,7 +185,7 @@ const MapView: ClientModule<HesperusMapProps, State> = (props, s) => {
     let best: HesperusBox | undefined, area = Infinity
     for (const b of props.boxes) {
       const r = place(b, moves)
-      if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h && r.w * r.h < area) { best = b; area = r.w * r.h }
+      if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.ht && r.w * r.ht < area) { best = b; area = r.w * r.ht }
     }
     return best
   }

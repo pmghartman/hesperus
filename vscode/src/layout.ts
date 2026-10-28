@@ -1,4 +1,4 @@
-import ELK from "elkjs/lib/elk.bundled.js";
+import type ELK from "elkjs/lib/elk.bundled.js";
 import { Rollup, View } from "./core/aggregate";
 import { AState, Automaton, Dim, Input } from "./core/automaton";
 import { cmpStr, Graph, GraphNode } from "./core/ir";
@@ -49,15 +49,28 @@ interface ElkEdge {
   labels?: { text: string; width: number; height: number; x?: number; y?: number }[];
 }
 
+/** ELK, loaded on the first layout rather than with the module: indexing and linting never need it, and
+ *  the CLI finds it in the plugin's node_modules, where Claude Code installs it, not in its own bundle. */
+let elkLoaded: typeof ELK | undefined;
+function elkClass(): typeof ELK {
+  try {
+    elkLoaded ??= require("elkjs/lib/elk.bundled.js") as typeof ELK;
+  } catch {
+    throw new Error("the layout library elkjs is not installed; run `npm ci` in Hesperus's folder");
+  }
+  return elkLoaded;
+}
+
 /** ELK's in-process worker exports itself only where `self` is undefined, else it takes itself for a
  *  web worker and waits for messages; Bun defines `self`, so it is hidden while ELK loads that worker. */
 function elk(): InstanceType<typeof ELK> {
+  const Elk = elkClass();
   const g = globalThis as { self?: unknown };
   const self = g.self;
-  if (self === undefined) return new ELK();
+  if (self === undefined) return new Elk();
   delete g.self;
   try {
-    return new ELK();
+    return new Elk();
   } finally {
     g.self = self;
   }

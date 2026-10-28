@@ -92,10 +92,7 @@ export type HesperusRow = {
 export type HesperusExplorerProps = { rows: HesperusRow[]; selected?: string }
 
 /** What the explorer posts to the hooks module. */
-export type HesperusExplorerPost =
-  | { type: 'select'; id: string }
-  | { type: 'toggle'; id: string }
-  | { type: 'open'; id: string }
+export type HesperusExplorerPost = { type: 'select'; id: string } | { type: 'toggle'; id: string } | { type: 'open'; id: string };
 
 declare module 'claude-code' {
   interface PluginState {

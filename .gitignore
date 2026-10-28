@@ -1,3 +1,4 @@
 target/
 .hesperus/
 .vscode/
+node_modules/

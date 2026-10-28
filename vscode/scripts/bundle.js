@@ -16,6 +16,9 @@ esbuild.buildSync({
   format: "cjs",
   // The package's CommonJS build: its ESM build locates the runtime wasm through import.meta, which a bundle has no value for.
   alias: { "web-tree-sitter": path.join(root, "node_modules", "web-tree-sitter", "tree-sitter.cjs") },
+  // ELK alone is 3 MB, over the plugin directory's 1 MB a file: it stays a package, a dependency in the
+  // repository root's package.json that Claude Code installs beside the plugin.
+  external: ["elkjs", "elkjs/*"],
   outfile: path.join(dist, "hesperus.js"),
   legalComments: "none",
   logLevel: "warning",

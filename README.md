@@ -67,10 +67,11 @@ node dist/hesperus.js mcp .         # serve the repo to an agent over MCP (stdio
 **MCP.** `hesperus mcp` is an MCP server any agent can connect to. Tools: `hesperus_index`, `hesperus_check` (the lint), `hesperus_diff` (crossings and dependencies added or removed since the last accepted review, and anything the policy denies), `hesperus_boundaries` (every call that leaves the repo, by boundary and package, with file:line), `hesperus_calls` (callers and callees by name), `hesperus_accept`, `hesperus_svg`. Resources: `hesperus://report`, `hesperus://view.svg`. For Claude Code without the plugin:
 
 ```
+npm ci --prefix /path/to/hesperus      # once: elkjs, which draws the map
 claude mcp add hesperus -- node /path/to/hesperus/dist/hesperus.js mcp
 ```
 
-**Claude Code plugin.** This repository is also a Claude Code plugin: a pane beside the chat with the boundary map, an explorer of its boxes and the findings, re-drawn after every edit the agent makes. The map is laid out for the pane's tall narrow shape (entries at the top, boundaries at the bottom, each layer wrapped to the pane's width) and drawn in character cells, so it is live: drag a box to move it (its wires follow, and it stays put across edits and sessions until **Overview**), drag the space or press the arrows to pan, click a box to select it (its source shown below) and click it again to open or close it, or to go to its source. The explorer below lists the same boxes as a tree: ↑↓ select, → ← open and close, Enter goes to the source in VS Code (`code -g`) or whatever opens the file. Both need the terminal or the desktop app; in the editor's pane and on the phone the map is a picture and the explorer's rows are buttons. Also a status line count, `/hesperus` and `/hesperus accept`, and the MCP server above wired in through `.mcp.json`. Nothing to build: `dist/` holds the CLI bundled with its grammars, so Node is the only requirement.
+**Claude Code plugin.** This repository is also a Claude Code plugin: a pane beside the chat with the boundary map, an explorer of its boxes and the findings, re-drawn after every edit the agent makes. The map is laid out for the pane's tall narrow shape (entries at the top, boundaries at the bottom, each layer wrapped to the pane's width) and drawn in character cells, so it is live: drag a box to move it (its wires follow, and it stays put across edits and sessions until **Overview**), drag the space or press the arrows to pan, click a box to select it (its source shown below) and click it again to open or close it, or to go to its source. The explorer below lists the same boxes as a tree: ↑↓ select, → ← open and close, Enter goes to the source in VS Code (`code -g`) or whatever opens the file. Both need the terminal or the desktop app; in the editor's pane and on the phone the map is a picture and the explorer's rows are buttons. Also a status line count, `/hesperus` and `/hesperus accept`, and the MCP server above. Nothing to build: `dist/` holds the CLI bundled with its grammars, and Claude Code installs its one package, `elkjs` (the layout the map is drawn with), from `package-lock.json` when it installs the plugin; in a clone, run `npm ci` once. Node and npm are the only requirements.
 
 ```
 /plugin marketplace add pmghartman/hesperus
@@ -85,7 +86,20 @@ The plugin's version (`.claude-plugin/plugin.json`) raises itself: a push to `ma
 
 ## Privacy Policy
 
-Hesperus runs on your machine and collects nothing: no telemetry, no accounts, and no request from the CLI, the MCP server or the plugin to any server. What the plugin runs: the MCP server (`node dist/hesperus.js mcp`); `node dist/hesperus.js check . --index --json --svg` in the session's folder when a session starts and a moment after each edit, which re-indexes only when a file changed; `node dist/hesperus.js svg .` to draw a view you open; and, on **Go to source**, `code -g`, `open` or `xdg-open` on that file. It reads the repo you point it at and writes only its own cache in that repo's `.hesperus/`, which stays there until you delete it. The one outside request is the interactive map's page, which the host (Claude Desktop, claude.ai) loads with the MCP Apps client from `unpkg.com`; that fetch goes out under the host's and unpkg's own policies and carries none of your code. The full policy is in [PRIVACY.md](PRIVACY.md).
+Hesperus runs on your machine and collects nothing: no telemetry, no accounts, and no request from the CLI, the MCP server or the plugin to any server. What the plugin runs and reads is listed below. It reads the repo you point it at and writes only its own cache in that repo's `.hesperus/`, which stays there until you delete it. The one outside request is the interactive map's page, which the host (Claude Desktop, claude.ai) loads with the MCP Apps client from `unpkg.com`; that fetch goes out under the host's and unpkg's own policies and carries none of your code. The full policy is in [PRIVACY.md](PRIVACY.md).
+
+### What the plugin runs and reads
+
+- **MCP server:** `node ${CLAUDE_PLUGIN_ROOT}/dist/hesperus.js mcp`, which reads the session's repo and writes its `.hesperus/` cache.
+- **Package:** `elkjs` 0.9.3, pinned in `package-lock.json` and installed by Claude Code with the plugin; nothing else is downloaded.
+- **Hooks module** (`hooks/register.tsx`):
+  - `session.start`: registers `/hesperus`, opens the Hesperus pane, and reads back from the plugin's own store where you dragged boxes.
+  - `tool.call`: lets every call run as it would and changes, blocks or answers none. After an `Edit`, `Write`, `MultiEdit`, `NotebookEdit` or `Bash` call it schedules a re-lint, since those may change source files.
+  - `command.run` for `/hesperus`, and the pane's own messages and drawing.
+- **Programs the hooks start**, each by name with its arguments, in the session's folder: `node <plugin>/dist/hesperus.js check . --index --json --svg --portrait <columns>` when a session starts and a moment after an edit (it re-indexes only when a file changed); `node <plugin>/dist/hesperus.js svg . --portrait <columns>` to draw a view you open, with the boxes to open as JSON on its input (`--view -`); `node <plugin>/dist/hesperus.js check . --accept` on `/hesperus accept`; and on **Go to source**, `code -g <file>:<line>`, else `open <file>` or `xdg-open <file>`.
+- **Files the hooks read:** `.hesperus/view.svg` and `.hesperus/view.json`, which the CLI just wrote, and the source file of the box you select, to show its lines.
+- **Sent anywhere:** nothing. The hooks make no network requests, and what the CLI prints stays in the pane and the status line.
+- **`tests/`:** the hooks module's tests, run by `claude plugin test`; the plugin never loads them. They start a session, call tools and answer process and file calls with mocks.
 
 
 ## Languages
@@ -129,6 +143,7 @@ A stale cache (new commit, lockfile, or tool version) fails loudly, then re-inde
 | `vscode/src/picture.ts`, `svg.ts`, `shelf.ts` | the boundary overview laid out and drawn as SVG; its layout in cells for a tall pane |
 | `.claude-plugin/`, `hooks/`, `types/`, `.mcp.json` | the Claude Code plugin: pane with its map (`hooks/map.tsx`) and explorer (`hooks/explorer.tsx`), status line, `/hesperus`, MCP wiring; `.github/workflows/plugin-version.yml` raises its version |
 | `dist/` | the CLI bundled with its grammars (`vscode/scripts/bundle.js`), committed so the plugin needs no build |
+| `package.json`, `package-lock.json` | the plugin's one package, `elkjs`, which Claude Code installs with it; kept out of `dist/` so no file passes the plugin directory's 1 MB limit |
 | `mcpb/manifest.json` | the Claude Desktop bundle's manifest; `vscode/scripts/mcpb.js` packs it with `dist/` |
 | `vscode/schema/policy.schema.json` | `hesperus.json` schema |
 | `vscode/src/lang` | tree-sitter syntax facts and editor extension per language |
@@ -141,6 +156,7 @@ TypeScript on Node, one npm package, no native code (tree-sitter runs as WebAsse
 ## Development
 
 ```
+npm ci                                 # elkjs, which the CLI in dist/ draws the map with
 cd vscode && npm ci && npm run build   # also rebuilds ../dist, which is committed: the plugin runs from it
 npm test                               # build plus a short smoke test
 ```

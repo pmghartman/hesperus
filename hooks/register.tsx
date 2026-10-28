@@ -306,17 +306,17 @@ export const register: Register = on => {
     const more = findings.length > findingRows && <Text dimColor>{`… ${findings.length - findingRows} more`}</Text>
     const hint = <Text dimColor>map: drag a box or the space · click selects, again opens · explorer: ↑↓ → ← ⏎</Text>
 
+    // The map and the explorer as Client elements by their string tag, each naming its one module.
     if (e.surface === 'terminal' || e.surface === 'desktop') {
-      const { Client } = $.ui.resolve(e)
       const map: HesperusMapProps = v ? { boxes: v.boxes, wires: v.wires, width: v.width, height: v.height, moves: mv, ...(a.focus ? { selected: a.focus } : {}) } : { boxes: [], wires: [], width: 0, height: 0, moves: {} }
       const omitted = v?.omitted ? <Text dimColor>{`${v.omitted} lighter wires left out`}</Text> : undefined
       return (
         <Box flexDirection="column">
           {head}
           {rows.length > 0 && tools}
-          {mapRows > 0 && <Client key="map" module="./map.tsx" props={map} height={mapRows} width="100%" />}
+          {mapRows > 0 && h('Client', { key: 'map', module: './map.tsx', props: map, height: mapRows, width: '100%' })}
           {omitted}
-          {rows.length > 0 && <Client key="explorer" module="./explorer.tsx" props={explorer} height={listRows} />}
+          {rows.length > 0 && h('Client', { key: 'explorer', module: './explorer.tsx', props: explorer, height: listRows })}
           {rows.length > 0 && hint}
           {source}
           {list}
