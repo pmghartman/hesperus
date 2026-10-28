@@ -34,6 +34,11 @@ export type HesperusBox = {
   container: boolean
   expandable: boolean
   open: boolean
+  /** Where it sits in the picture, in character cells. */
+  x: number
+  y: number
+  w: number
+  h: number
   path?: string
   /** 1-based. */
   line?: number
@@ -41,13 +46,28 @@ export type HesperusBox = {
   notes?: string[]
 }
 
-/** The picture last drawn: which boxes are open, which is outlined, and every box drawn. */
+/** One wire of the picture, its bends in cells; `may` when no call beneath it is resolved. */
+export type HesperusWire = { from: string; to: string; points: { x: number; y: number }[]; may: boolean; severity?: 'error' | 'warning' | 'info' }
+
+/** The picture last drawn: which boxes are open, which is outlined, every box and wire, and its extent in cells. */
 export type HesperusView = {
   open: { id: string; name: string; kind: string; under?: string }[]
   focus?: string
   boxes: HesperusBox[]
+  wires: HesperusWire[]
+  width: number
+  height: number
   omitted: number
 }
+
+/** Where the person dragged boxes to: cells right and down from where the layout put each, by id. */
+export type HesperusMoves = Record<string, [number, number]>
+
+/** The map Client's props. */
+export type HesperusMapProps = { boxes: HesperusBox[]; wires: HesperusWire[]; width: number; height: number; moves: HesperusMoves; selected?: string }
+
+/** What the map posts to the hooks module: the explorer's asks, and a box dragged somewhere. */
+export type HesperusMapPost = HesperusExplorerPost | { type: 'move'; id: string; dx: number; dy: number }
 
 /** What the person asked to see: the boxes open (absent, the overview's) and the one selected. */
 export type HesperusAsk = { open?: string[]; focus?: string }
@@ -91,6 +111,8 @@ declare module 'claude-code' {
       ask: Shaped<HesperusAsk>
       /** The selected box's source, or null. */
       peek: Shaped<HesperusPeek | null>
+      /** Where the person dragged boxes to, kept across sessions in the store. */
+      moves: Shaped<HesperusMoves>
     }
   }
 }

@@ -9,6 +9,7 @@ import { accept, Baseline, lint, Policy, Report, reportToJson, snapshot } from "
 import { HeadlessOutcome, indexHeadless } from "./engine";
 import { isGroup, parents } from "./core/aggregate";
 import { boundaryPicture } from "./picture";
+import { shelf } from "./shelf";
 import { gitHead, readBaseline, readPolicy, writeBaseline, writeReport } from "./review";
 import { toSvg } from "./svg";
 
@@ -17,14 +18,26 @@ export const VIEW_FILE = "view.svg";
 export const BOXES_FILE = "view.json";
 
 /** Which boxes to open and which to outline, as a pane asks for them. */
-export interface ViewAsk { open?: string[]; focus?: string }
-/** One drawn box: what a list of the picture needs to show it, open it and go to its source. */
+export interface ViewAsk { open?: string[]; focus?: string;
+  /** Lay the boxes out for a tall narrow pane: layers top to bottom, each wrapped to `columns` (default 60). The SVG stays as it is. */
+  portrait?: boolean; columns?: number }
+/** One drawn box: what a list of the picture needs to show it, open it and go to its source, and where
+ *  it sits, in character cells, so a pane can draw the picture itself. */
 export interface ViewBox { id: string; name: string; kind: string; parent?: string; /** The nearest open box it sits in. */ under?: string;
-  container: boolean; expandable: boolean; open: boolean;
+  container: boolean; expandable: boolean; open: boolean; x: number; y: number; w: number; h: number;
   path?: string; /** 1-based. */ line?: number; severity?: "error" | "warning" | "info"; notes?: string[] }
 /** An open box: drawn as a frame, or not at all where the flow view passes through it. */
 export interface ViewOpen { id: string; name: string; kind: string; under?: string }
-export interface ViewJson { open: ViewOpen[]; focus?: string; boxes: ViewBox[]; omitted: number }
+/** One wire, its bends in cells; `may` when no call beneath it is resolved. */
+export interface ViewWire { from: string; to: string; points: { x: number; y: number }[]; may: boolean; severity?: "error" | "warning" | "info" }
+export interface ViewJson { open: ViewOpen[]; focus?: string; boxes: ViewBox[]; wires: ViewWire[]; /** The picture's extent in cells. */ width: number; height: number; omitted: number }
+
+/** A character cell, as the layout's pixels map onto a pane's grid (CHAR wide, about two rows per leaf). */
+const CELL_W = 6.6, CELL_H = 13;
+const col = (x: number) => Math.round(x / CELL_W), row = (y: number) => Math.round(y / CELL_H);
+const PANE_COLUMNS = 60;
+/** A tall narrow pane holds fewer boxes before its wires tangle. */
+const PANE_NODES = 40;
 
 export interface Loaded { graph: Graph; policy: Policy; baseline?: Baseline; stale?: string; indexed?: HeadlessOutcome["languages"] }
 
@@ -126,7 +139,7 @@ export function callsJson(l: Loaded, query: string): string {
 /** Draws the boundary picture to `.hesperus/view.svg`, its boxes to `view.json`, and returns the markup.
  *  With no `ask`, the overview; with one, the boxes it opens, the rest shut. */
 export async function drawSvg(repo: string, l: Loaded, r: Report, ask?: ViewAsk): Promise<string> {
-  const laid = await boundaryPicture(l.graph, l.policy, r, undefined, ask?.open);
+  const laid = await boundaryPicture(l.graph, l.policy, r, ask?.portrait ? PANE_NODES : undefined, ask?.open);
   const ids = new Set(laid.boxes.map((b) => b.id));
   const focus = ask?.focus !== undefined && ids.has(ask.focus) ? ask.focus : undefined;
   const svg = toSvg(laid, focus);
@@ -143,13 +156,21 @@ export async function drawSvg(repo: string, l: Loaded, r: Report, ask?: ViewAsk)
     const n = byId.get(id);
     return { id, name: n?.name ?? id.slice(id.lastIndexOf("#") + 1), kind: n?.kind ?? "group", ...under(id) };
   });
-  const boxes: ViewBox[] = [...laid.boxes].sort((a, b) => a.y - b.y || a.x - b.x).map((b) => ({
+  // Cells: the picture's own geometry scaled, or laid out again for a tall narrow pane.
+  const tall = ask?.portrait ? shelf(laid, Math.max(20, ask.columns ?? PANE_COLUMNS)) : undefined;
+  const cell = (b: typeof laid.boxes[number]) => tall?.rects.get(b.id) ?? { x: col(b.x), y: row(b.y), w: Math.max(1, col(b.x + b.w) - col(b.x)), h: Math.max(1, row(b.y + b.h) - row(b.y)) };
+  const boxes: ViewBox[] = [...laid.boxes].map((b) => ({ b, c: cell(b) })).sort((a, b) => a.c.y - b.c.y || a.c.x - b.c.x).map(({ b, c }) => ({
     id: b.id, name: b.node.name, kind: b.node.kind, ...(b.parent && ids.has(b.parent) ? { parent: b.parent } : {}), ...under(b.id),
-    container: b.container, expandable: b.expandable, open: open.has(b.id),
+    container: b.container, expandable: b.expandable, open: open.has(b.id), ...c,
     ...(b.node.path ? { path: b.node.path } : {}), ...(b.node.range ? { line: b.node.range.start_line + 1 } : {}),
     ...(b.flag ? { severity: b.flag.severity, notes: b.flag.notes } : {}),
   }));
-  const json: ViewJson = { open: opened, ...(focus ? { focus } : {}), boxes, omitted: laid.omitted };
+  // Tall: no bends, the pane routes each wire between its boxes.
+  const wires: ViewWire[] = laid.wires.map((w) => ({
+    from: w.from, to: w.to, points: tall ? [] : w.points.map((p) => ({ x: col(p.x), y: row(p.y) })), may: w.rollups.every((r) => r.resolved === 0), ...(w.flag ? { severity: w.flag.severity } : {}),
+  }));
+  const extent = tall ? { width: tall.width, height: tall.height } : { width: col(laid.width) + 1, height: row(laid.height) + 1 };
+  const json: ViewJson = { open: opened, ...(focus ? { focus } : {}), boxes, wires, ...extent, omitted: laid.omitted };
   fs.mkdirSync(path.join(repo, CACHE_DIR), { recursive: true });
   fs.writeFileSync(path.join(repo, CACHE_DIR, VIEW_FILE), svg);
   fs.writeFileSync(path.join(repo, CACHE_DIR, BOXES_FILE), JSON.stringify(json));

@@ -1,11 +1,12 @@
 // Hesperus beside the chat: a pane with the boundary map, an explorer of its boxes and the findings,
-// re-drawn after every edit the agent makes, and a status line count. The explorer opens and closes boxes
-// (the map is drawn again with them), selects one (outlined on the map, its source shown) and goes to
-// source in the editor. The agent reads the same facts over MCP (.mcp.json).
+// re-drawn after every edit the agent makes, and a status line count. The map is drawn in cells where
+// the surface runs a Client (the terminal, the desktop app): its boxes drag, open and close, and go to
+// source; elsewhere (the editor, the phone) it is a picture. The flow runs top to bottom, so it fits a
+// tall narrow pane. The agent reads the same facts over MCP (.mcp.json).
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { HesperusAsk, HesperusBox, HesperusExplorerPost, HesperusExplorerProps, HesperusFinding, HesperusPeek, HesperusReport, HesperusRow, HesperusView } from '../types'
+import type { HesperusAsk, HesperusBox, HesperusExplorerProps, HesperusFinding, HesperusMapPost, HesperusMapProps, HesperusMoves, HesperusPeek, HesperusReport, HesperusRow, HesperusView } from '../types'
 
 const PANE = 'hesperus'
 const report = atom({ plugin: 'hesperus', key: 'report' } as const, null as HesperusReport | null, { shape: 'report-1' })
@@ -14,6 +15,7 @@ const busy = atom({ plugin: 'hesperus', key: 'busy' } as const, '')
 const boxes = atom({ plugin: 'hesperus', key: 'boxes' } as const, null as HesperusView | null, { shape: 'boxes-1' })
 const ask = atom({ plugin: 'hesperus', key: 'ask' } as const, {} as HesperusAsk, { shape: 'ask-1' })
 const peek = atom({ plugin: 'hesperus', key: 'peek' } as const, null as HesperusPeek | null, { shape: 'peek-1' })
+const moves = atom({ plugin: 'hesperus', key: 'moves' } as const, {} as HesperusMoves, { shape: 'moves-1' })
 
 /** Tools whose run may change source files. */
 const EDITS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit', 'Bash'])
@@ -35,8 +37,19 @@ let again: 'index' | 'draw' | undefined
 
 const cli = ($: EngineInterface) => `${$.plugin.root}/dist/hesperus.js`
 
-/** The CLI arguments and input that draw the view the person asked for; none for the overview. */
-const viewArgs = (a: HesperusAsk) => (a.open || a.focus ? { argv: ['--view', '-'], stdin: JSON.stringify(a) } : { argv: [] as string[], stdin: undefined })
+/** The pane's width in cells as last drawn, for the layout; and the width the picture was laid out at. */
+let paneColumns = 60, drawnColumns = 0
+
+/** The CLI arguments and input that draw the view the person asked for, laid out for a tall pane this
+ *  wide; no `--view` for the overview. */
+const viewArgs = (a: HesperusAsk) => {
+  drawnColumns = paneColumns
+  const portrait = ['--portrait', String(paneColumns)]
+  return a.open || a.focus ? { argv: [...portrait, '--view', '-'], stdin: JSON.stringify(a) } : { argv: portrait, stdin: undefined }
+}
+
+/** The store key of the boxes the person dragged, per repo. */
+const movesKey = (cwd: string) => `moves:${cwd}`
 
 /** Reads the picture and its boxes the CLI just drew. */
 async function loadPicture($: EngineInterface): Promise<void> {
@@ -44,11 +57,21 @@ async function loadPicture($: EngineInterface): Promise<void> {
   const svg = await $.fs.read(`${cwd}/.hesperus/view.svg`).catch(() => '')
   await update($, view, () => svg)
   const json = await $.fs.read(`${cwd}/.hesperus/view.json`).catch(() => '')
-  let v: HesperusView | null = null
+  let v: Partial<HesperusView> | null = null
   try {
-    v = JSON.parse(json) as HesperusView
+    v = JSON.parse(json) as Partial<HesperusView>
   } catch {}
-  if (v && Array.isArray(v.boxes)) await update($, boxes, () => v)
+  // A view.json an older CLI wrote has no wires or extent.
+  if (v && Array.isArray(v.boxes)) await update($, boxes, () => ({ wires: [], width: 0, height: 0, open: [], omitted: 0, ...v } as HesperusView))
+}
+
+/** Keeps where a box was dragged to, for this session and the next; back on the layout's spot, forgets it. */
+async function move($: EngineInterface, id: string, dx: number, dy: number): Promise<void> {
+  const next = await update($, moves, m => {
+    const { [id]: _, ...rest } = m
+    return dx || dy ? { ...rest, [id]: [dx, dy] as [number, number] } : rest
+  })
+  await $.store.set(movesKey(await $.session.cwd()), next).catch(() => undefined)
 }
 
 /** Re-index and lint the session's repo (`index`) or only draw the asked-for view again (`draw`), then
@@ -182,9 +205,12 @@ async function reveal($: EngineInterface, id: string): Promise<void> {
   $.ui.toast(`hesperus: nothing here opens ${b.path}`)
 }
 
+/** Back to the overview, every box where the layout puts it. */
 async function reset($: EngineInterface): Promise<void> {
   await update($, ask, () => ({}))
   await update($, peek, () => null)
+  await update($, moves, () => ({}))
+  await $.store.set(movesKey(await $.session.cwd()), {}).catch(() => undefined)
   void refresh($, 'draw')
 }
 
@@ -196,6 +222,8 @@ export const register: Register = on => {
       argumentHint: '[accept]',
     })
     void $.ui.open({ id: PANE, title: 'Hesperus' })
+    const kept = await $.store.get(movesKey(e.cwd)).catch(() => undefined)
+    if (kept && typeof kept === 'object') await update($, moves, () => kept as HesperusMoves)
     schedule($, 100)
     return next(e)
   })
@@ -218,11 +246,13 @@ export const register: Register = on => {
     return ran
   })
 
-  on('ui.message', { requestId: PANE, element: 'explorer' }, async ($, e) => {
-    const m = e.data as HesperusExplorerPost
+  on('ui.message', { requestId: PANE }, async ($, e) => {
+    if (e.element !== 'explorer' && e.element !== 'map') return {}
+    const m = e.data as HesperusMapPost
     if (m?.type === 'select') await select($, m.id)
     else if (m?.type === 'toggle') await toggle($, m.id)
     else if (m?.type === 'open') await reveal($, m.id)
+    else if (m?.type === 'move') await move($, m.id, m.dx, m.dy)
     return {}
   })
 
@@ -233,9 +263,13 @@ export const register: Register = on => {
     const v = await read($, boxes)
     const a = await read($, ask)
     const p = await read($, peek)
+    const mv = await read($, moves)
     const findings = r?.findings ?? []
     const rows = v ? rowsOf(v) : []
-    const room = e.viewport?.rows ?? 30
+    const room = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 30
+    // A pane that changed width since the picture was laid out gets it drawn again to fit.
+    if (e.props.bodyColumns > 0) paneColumns = e.props.bodyColumns
+    if (v && drawnColumns > 0 && paneColumns !== drawnColumns) void refresh($, 'draw')
     const selected = rows.find(x => x.id === a.focus)
     const explorer: HesperusExplorerProps = a.focus ? { rows, selected: a.focus } : { rows }
     const head = r === null
@@ -260,18 +294,25 @@ export const register: Register = on => {
         {f.path ? `${f.path}:${f.line ?? 1} ` : ''}{f.message}
       </Text>
     )
-    const listRows = Math.max(4, Math.min(rows.length, Math.floor(room / 3)))
-    const findingRows = Math.max(3, room - listRows - (source ? PEEK_BEFORE + PEEK_AFTER + 2 : 0) - 6)
+    // A tall narrow pane, top to bottom: the map takes the most room, then the explorer, the selected
+    // box's source, and the findings in what is left.
+    const mapRows = v?.boxes.length ? Math.max(8, Math.min(v.height, Math.floor(room * 0.45))) : 0
+    const listRows = Math.max(3, Math.min(rows.length, Math.floor(room / 5)))
+    const findingRows = Math.max(3, room - mapRows - listRows - (source ? PEEK_BEFORE + PEEK_AFTER + 2 : 0) - 7)
     const list = findings.slice(0, findingRows).map(line)
     const more = findings.length > findingRows && <Text dimColor>{`… ${findings.length - findingRows} more`}</Text>
-    const hint = <Text dimColor>↑↓ select · → ← open, close · ⏎ go to source · click a row</Text>
+    const hint = <Text dimColor>map: drag a box or the space · click selects, again opens · explorer: ↑↓ → ← ⏎</Text>
 
-    if (e.surface === 'terminal') {
+    if (e.surface === 'terminal' || e.surface === 'desktop') {
       const { Client } = $.ui.resolve(e)
+      const map: HesperusMapProps = v ? { boxes: v.boxes, wires: v.wires, width: v.width, height: v.height, moves: mv, ...(a.focus ? { selected: a.focus } : {}) } : { boxes: [], wires: [], width: 0, height: 0, moves: {} }
+      const omitted = v?.omitted ? <Text dimColor>{`${v.omitted} lighter wires left out`}</Text> : undefined
       return (
         <Box flexDirection="column">
           {head}
           {rows.length > 0 && tools}
+          {mapRows > 0 && <Client key="map" module="./map.tsx" props={map} height={mapRows} width="100%" />}
+          {omitted}
           {rows.length > 0 && <Client key="explorer" module="./explorer.tsx" props={explorer} height={listRows} />}
           {rows.length > 0 && hint}
           {source}
@@ -280,25 +321,10 @@ export const register: Register = on => {
         </Box>
       )
     }
+    // No Client here (the editor's pane, the phone): the picture, and a row is a button that selects, and opens once selected.
     const { Svg } = $.ui.resolve(e)
     const svg = await read($, view)
-    const picture = svg !== '' && <Svg source={svg} alt="The repo's folders and files on the left, each boundary it reaches as a box on the right; red marks a denied call, amber a call not yet reviewed, pink the box selected in the explorer." isInteractive />
-    if (e.surface === 'desktop') {
-      const { Client } = $.ui.resolve(e)
-      return (
-        <Box flexDirection="column" gap={1}>
-          {head}
-          {rows.length > 0 && tools}
-          {picture}
-          {rows.length > 0 && <Client key="explorer" module="./explorer.tsx" props={explorer} height={listRows} />}
-          {rows.length > 0 && hint}
-          {source}
-          {list}
-          {more}
-        </Box>
-      )
-    }
-    // No Client here (the editor's pane, the phone): a row is a button that selects, and opens once selected.
+    const picture = svg !== '' && <Svg source={svg} alt="The repo's folders and files at the top, each boundary it reaches as a box along the bottom; red marks a denied call, amber a call not yet reviewed, pink the box selected below." isInteractive />
     return (
       <Box flexDirection="column" gap={1}>
         {head}

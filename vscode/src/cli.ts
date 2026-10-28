@@ -21,6 +21,7 @@ const USAGE = `usage: hesperus <command> [dir] [options]
     --max-warnings N     exit 1 when there are more than N warnings (default: no limit)
   svg [dir]              draw the boundary overview to <dir>/${CACHE_DIR}/${VIEW_FILE}, its boxes to ${BOXES_FILE}
     --view FILE          draw the boxes FILE (- for stdin) opens instead, {"open": [ids], "focus": id}; also check --svg
+    --portrait [N]       lay the boxes of ${BOXES_FILE} out for a tall pane N columns wide (default 60); also check --svg
   mcp [dir]              serve the repo to an agent over MCP on stdin/stdout
 
 Boundaries: database, network, AI, cloud, queues, filesystem, processes, environment.
@@ -28,10 +29,14 @@ Exit status: 0 clean, 1 findings over the limit or any error, 2 no graph or bad 
 
 async function main(argv: string[]): Promise<number> {
   const flags = new Set<string>(), args: string[] = [];
-  let maxWarnings = Infinity, viewFile: string | undefined;
+  let maxWarnings = Infinity, viewFile: string | undefined, columns: number | undefined;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--max-warnings") maxWarnings = Number(argv[++i]);
     else if (argv[i] === "--view") viewFile = argv[++i];
+    else if (argv[i] === "--portrait") {
+      flags.add("--portrait");
+      if (/^\d+$/.test(argv[i + 1] ?? "")) columns = Number(argv[++i]);
+    }
     else if (argv[i].startsWith("--")) flags.add(argv[i]);
     else args.push(argv[i]);
   }
@@ -59,7 +64,11 @@ async function main(argv: string[]): Promise<number> {
     }
     const r = check(repo, l);
     if (cmd === "svg" || flag("--svg")) {
-      const ask = viewFile === undefined ? undefined : (JSON.parse(fs.readFileSync(viewFile === "-" ? 0 : path.resolve(viewFile), "utf8")) as ViewAsk);
+      const ask: ViewAsk = viewFile === undefined ? {} : (JSON.parse(fs.readFileSync(viewFile === "-" ? 0 : path.resolve(viewFile), "utf8")) as ViewAsk);
+      if (flag("--portrait")) {
+        ask.portrait = true;
+        if (columns !== undefined) ask.columns = columns;
+      }
       await drawSvg(repo, l, r, ask);
       console.error(`hesperus: drew ${path.join(CACHE_DIR, VIEW_FILE)}`);
       if (cmd === "svg") return 0;
