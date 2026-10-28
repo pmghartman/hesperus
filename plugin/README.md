@@ -29,10 +29,12 @@ Node and npm are the only requirements: Claude Code installs the plugin's one pa
 - **Hooks module** (`hooks/register.tsx`), which starts no programs:
   - `session.start`: registers `/hesperus`, opens the Hesperus pane, and reads back from the plugin's own store where you dragged boxes.
   - `tool.call`: lets every call run as it would and changes, blocks or answers none. After an `Edit`, `Write`, `MultiEdit`, `NotebookEdit` or `Bash` call it schedules a re-lint, since those may change source files.
-  - `command.run` for `/hesperus` and `/hesperus accept`, and the pane's own messages and drawing.
-  - For everything it shows, the pane calls the plugin's own MCP server above with `$.mcp.call`: `hesperus_check` to re-index and lint when a session starts and a moment after an edit (it re-indexes only when a file changed), `hesperus_svg` to draw the view you open, `hesperus_accept` on `/hesperus accept`, and `hesperus_open` on **Go to source**.
+  - `command.run`, matched to `/hesperus` alone, the one command the module registers: it answers `/hesperus` (opens the pane) and `/hesperus accept` itself, and sees no other command and no permission decision.
+  - The pane's own messages and drawing.
+  - For everything it shows, the pane calls the plugin's own MCP server above with `$.mcp.call`, by fixed tool names, and calls no other tool, server or command: `hesperus_check` to re-index and lint when a session starts and a moment after an edit (it re-indexes only when a file changed), `hesperus_svg` to draw the view you open, `hesperus_accept` on `/hesperus accept`, and `hesperus_open` on **Go to source**. Their answers stay on the machine, in the pane and the status line.
   - **Files it reads:** `.hesperus/view.svg` and `.hesperus/view.json`, which the server just drew, and the source file of the box you select, to show its lines.
 - **Sent anywhere:** nothing. Neither the server nor the hooks make network requests; what they find stays in the pane, the status line and the agent's context. The one outside request is the interactive map's page in hosts that draw MCP Apps (Claude Desktop, claude.ai), which the host loads with the MCP Apps client from `unpkg.com`, carrying none of your code.
+- **Patterns, not calls:** `dist/hesperus.js` holds the tables that classify what your code calls, so it spells names such as `getenv`, Go's `os` `Getenv`, PHP's `curl_*`, `child_process` and Go packages under `github.com/...`, and the bundled tree-sitter runtime cites an emscripten issue on GitHub in a comment. They are patterns matched against your source, never run: the bundle reads no environment variable, no credential and no network address, and downloads and executes nothing.
 - **`tests/`:** the hooks module's tests, run by `claude plugin test`; the plugin never loads them. They start a session, call tools and answer MCP and file calls with mocks.
 
 ## Privacy Policy
