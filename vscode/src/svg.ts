@@ -9,10 +9,10 @@ const KIND: Record<string, string> = {
 const SEV = { error: "#dc322f", warning: "#b58900", info: "#268bd2" } as const;
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 
-function box(b: Box): string {
+function box(b: Box, focus?: string): string {
   const kc = KIND[b.node.kind] ?? "#657b83";
   const flag = b.flag ? SEV[b.flag.severity] : undefined;
-  const stroke = flag ?? kc, width = flag ? 2 : b.node.kind === "boundary" ? 1.5 : 1;
+  const stroke = b.id === focus ? "#d33682" : flag ?? kc, width = b.id === focus ? 3 : flag ? 2 : b.node.kind === "boundary" ? 1.5 : 1;
   const fill = b.container ? `${kc}14` : "#ffffff";
   const dash = b.node.kind === "external" || b.node.kind === "external_package" ? ' stroke-dasharray="3 2"' : "";
   const notes = [b.node.name, ...(b.flag?.notes ?? [])].join("\n");
@@ -38,10 +38,11 @@ function wire(w: Wire): string {
 }
 
 /** The whole layout, containers first so leaves and wires draw over them. */
-export function toSvg(laid: Layout): string {
+/** `focus` outlines one box, as the pane's explorer selects it. */
+export function toSvg(laid: Layout, focus?: string): string {
   const boxes = [...laid.boxes].sort((a, b) => Number(b.container) - Number(a.container));
   const w = Math.ceil(laid.width) + 16, h = Math.ceil(laid.height) + 16;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="-8 -8 ${w} ${h}" font-family="system-ui, sans-serif">` +
     `<rect x="-8" y="-8" width="${w}" height="${h}" fill="#fdfdfd"/>` +
-    boxes.map(box).join("") + laid.wires.map(wire).join("") + "</svg>";
+    boxes.map((b) => box(b, focus)).join("") + laid.wires.map(wire).join("") + "</svg>";
 }

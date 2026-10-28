@@ -39,3 +39,57 @@ test('after an edit the pane shows the lint, on every surface', async ($, on) =>
     await ui.unmount()
   }
 })
+
+const VIEW = JSON.stringify({
+  open: [{ id: 'dir:src', name: 'src', kind: 'directory' }],
+  boxes: [
+    { id: 'fn:a', name: 'a.ts', kind: 'file', under: 'dir:src', container: false, expandable: false, open: false, path: 'src/a.ts', line: 3 },
+    { id: 'dir:lib', name: 'lib', kind: 'directory', container: false, expandable: true, open: false },
+    { id: 'boundary:network', name: 'Network', kind: 'boundary', container: false, expandable: true, open: false, severity: 'error', notes: ['core may not reach the network'] },
+  ],
+  omitted: 0,
+})
+
+test('the explorer selects, opens boxes and goes to source', async ($, on) => {
+  const clock = mock.clock(on)
+  const runs: { argv: readonly string[]; stdin?: string }[] = []
+  on('command.register', () => ({ value: { command: 'hesperus' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', (_, e) => {
+    runs.push({ argv: e.argv, stdin: e.init?.stdin })
+    return { value: { exitCode: e.argv.includes('check') ? 1 : 0, stdout: e.argv.includes('check') ? REPORT : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.read', (_, e) => ({ value: e.path.endsWith('view.json') ? VIEW : e.path === '/repo/src/a.ts' ? 'one\ntwo\nexport const a = 1\nfour\n' : '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>' }))
+
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
+  await clock.advance(1000)
+
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ ...PANE, surface })
+    await ui.resize({ columns: 60, rows: 4, in: 'explorer' })
+    expect((await ui.find({ type: 'Text', text: /a\.ts/, in: 'explorer' }))?.text).toContain('src/a.ts:3')
+
+    // Rows: src, a.ts (under src), lib, Network. Down selects a.ts: outlined on the map, its source shown.
+    await ui.key({ key: 'down', in: 'explorer' })
+    const drawn = runs.filter(r => r.argv.includes('svg'))
+    expect(drawn.at(-1)?.argv).toContain('--view')
+    expect(JSON.parse(drawn.at(-1)?.stdin ?? '{}').focus).toBe('fn:a')
+    expect(await ui.find({ type: 'Code' })).toBeDefined()
+
+    await ui.key({ key: 'return', in: 'explorer' })
+    expect(runs.some(r => r.argv.join(' ') === 'code -g src/a.ts:3')).toBe(true)
+
+    // Down to lib, right opens it: the map is drawn again with lib open beside src.
+    await ui.key({ key: 'down', in: 'explorer' })
+    await ui.key({ key: 'right', in: 'explorer' })
+    expect(JSON.parse(runs.filter(r => r.argv.includes('svg')).at(-1)?.stdin ?? '{}').open).toEqual(['dir:lib', 'dir:src'])
+
+    await ui.press({ key: 'reset' })
+    expect(runs.filter(r => r.argv.includes('svg')).at(-1)?.argv).not.toContain('--view')
+    await ui.unmount()
+  }
+})

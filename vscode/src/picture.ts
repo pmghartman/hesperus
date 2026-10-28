@@ -13,11 +13,18 @@ function merge(into: Flag | undefined, f: Flag): Flag {
   return { severity: worse(into.severity, f.severity) ? into.severity : f.severity, notes: [...new Set([...into.notes, ...f.notes])] };
 }
 
-export async function boundaryPicture(g: Graph, policy: Policy, report?: Report, budget = aggregate.OVERVIEW_NODES): Promise<Layout> {
+/** Past this many boxes ELK takes seconds and the picture is unreadable; the editor holds the same line. */
+export const MAX_BOXES = 500;
+
+/** The picture and the boxes open in it. `open` gives them (ids the graph no longer has are dropped);
+ *  absent, the overview opens as many levels as fit `budget`. */
+export async function boundaryPicture(g: Graph, policy: Policy, report?: Report, budget = aggregate.OVERVIEW_NODES, open?: Iterable<string>): Promise<Layout & { open: string[]; graph: Graph }> {
   const shown = boundaryGraph(g, policy.boundaries);
   const opts = { flow: true };
-  const expanded = aggregate.overview(shown, budget, opts);
+  const ids = new Set(shown.nodes.map((n) => n.id));
+  const expanded = open ? new Set([...open].filter((id) => ids.has(id) || aggregate.isGroup(id))) : aggregate.overview(shown, budget, opts);
   const all = aggregate.view(shown, expanded, opts);
+  if (all.nodes.length > MAX_BOXES) throw new Error(`that view would draw ${all.nodes.length} boxes; the limit is ${MAX_BOXES}`);
   const v = aggregate.withoutUnindexed(shown, aggregate.withoutNodes(all, libraryNodes(shown)));
   const flags = new Map<string, Flag>();
   for (const f of report?.findings ?? []) {
@@ -37,5 +44,5 @@ export async function boundaryPicture(g: Graph, policy: Policy, report?: Report,
           if (b) b.flag = merge(b.flag, f);
         }
       }
-  return laid;
+  return { ...laid, open: [...expanded].sort(), graph: shown };
 }

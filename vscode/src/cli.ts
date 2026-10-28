@@ -2,12 +2,13 @@
 // Hesperus from a terminal, a hook or an agent: index a repo without an editor, lint it, draw it,
 // or serve it over MCP. The editor extension keeps `.hesperus/` current when the repo is open there;
 // `index` does the same from syntax alone.
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { CACHE_DIR } from "./core/cache";
 import { BOUNDARY_INFO } from "./core/boundary";
 import { POLICY_FILE } from "./core/lint";
 import { serve } from "./mcp";
-import { acceptKeys, check, checkJson, drawSvg, load, VIEW_FILE } from "./service";
+import { acceptKeys, BOXES_FILE, check, checkJson, drawSvg, load, VIEW_FILE, ViewAsk } from "./service";
 
 const USAGE = `usage: hesperus <command> [dir] [options]
 
@@ -18,7 +19,8 @@ const USAGE = `usage: hesperus <command> [dir] [options]
     --svg                also draw the boundary overview to <dir>/${CACHE_DIR}/${VIEW_FILE}
     --accept             accept every current crossing as reviewed, then exit 0
     --max-warnings N     exit 1 when there are more than N warnings (default: no limit)
-  svg [dir]              draw the boundary overview to <dir>/${CACHE_DIR}/${VIEW_FILE}
+  svg [dir]              draw the boundary overview to <dir>/${CACHE_DIR}/${VIEW_FILE}, its boxes to ${BOXES_FILE}
+    --view FILE          draw the boxes FILE (- for stdin) opens instead, {"open": [ids], "focus": id}; also check --svg
   mcp [dir]              serve the repo to an agent over MCP on stdin/stdout
 
 Boundaries: database, network, AI, cloud, queues, filesystem, processes, environment.
@@ -26,15 +28,16 @@ Exit status: 0 clean, 1 findings over the limit or any error, 2 no graph or bad 
 
 async function main(argv: string[]): Promise<number> {
   const flags = new Set<string>(), args: string[] = [];
-  let maxWarnings = Infinity;
+  let maxWarnings = Infinity, viewFile: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--max-warnings") maxWarnings = Number(argv[++i]);
+    else if (argv[i] === "--view") viewFile = argv[++i];
     else if (argv[i].startsWith("--")) flags.add(argv[i]);
     else args.push(argv[i]);
   }
   const flag = (f: string) => flags.has(f);
   const cmd = args[0];
-  if (!["index", "check", "svg", "mcp"].includes(cmd) || args.length > 2 || flag("--help") || Number.isNaN(maxWarnings)) {
+  if (!["index", "check", "svg", "mcp"].includes(cmd) || args.length > 2 || flag("--help") || Number.isNaN(maxWarnings) || (argv.includes("--view") && !viewFile)) {
     console.error(USAGE);
     return 2;
   }
@@ -56,7 +59,8 @@ async function main(argv: string[]): Promise<number> {
     }
     const r = check(repo, l);
     if (cmd === "svg" || flag("--svg")) {
-      await drawSvg(repo, l, r);
+      const ask = viewFile === undefined ? undefined : (JSON.parse(fs.readFileSync(viewFile === "-" ? 0 : path.resolve(viewFile), "utf8")) as ViewAsk);
+      await drawSvg(repo, l, r, ask);
       console.error(`hesperus: drew ${path.join(CACHE_DIR, VIEW_FILE)}`);
       if (cmd === "svg") return 0;
     }

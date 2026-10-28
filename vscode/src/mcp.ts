@@ -1,12 +1,18 @@
 // An MCP server over stdio, so any agent (Claude Code, or anything that speaks MCP) can ask what the
 // repo reaches, what changed since the last review, and who calls what. JSON-RPC, one message per
 // line, no dependency: the protocol surface used here is small enough to write out.
+import { spawnSync } from "node:child_process";
 import * as readline from "node:readline";
 import * as path from "node:path";
+import { isGroup, parents } from "./core/aggregate";
+import { MAP_CSP, MAP_MIME, MAP_URI, mapHtml } from "./mapapp";
+import { boundaryPicture } from "./picture";
 import { acceptKeys, boundariesJson, callsJson, check, checkJson, diffJson, drawSvg, isBoundary, load, Loaded } from "./service";
 import { VERSION } from "./engine";
 
-interface Tool { name: string; description: string; inputSchema: Record<string, unknown>; run: (a: Record<string, unknown>) => Promise<string> }
+/** A tool's answer: text, or text for the model with data for an MCP App's page. */
+type Answer = string | { text: string; structuredContent: Record<string, unknown> };
+interface Tool { name: string; description: string; inputSchema: Record<string, unknown>; _meta?: Record<string, unknown>; run: (a: Record<string, unknown>) => Promise<Answer> }
 
 const DIR = { dir: { type: "string", description: "Repo root; defaults to the server's repo." } };
 const INDEX = { index: { type: "boolean", description: "Re-index from source first (a few seconds; the graph may be stale otherwise)." } };
@@ -19,6 +25,8 @@ export async function serve(repo: string): Promise<void> {
     if (a.index === true || !loaded.has(d)) loaded.set(d, await load(d, a.index === true));
     return [d, loaded.get(d)!] as const;
   };
+  /** The boxes open in each repo's map, as its page last left them. */
+  const maps = new Map<string, Set<string>>();
   const tools: Tool[] = [
     {
       name: "hesperus_index", description: "Rebuild the repo's graph from source (no editor needed). Run after editing files, before the other tools.",
@@ -76,10 +84,55 @@ export async function serve(repo: string): Promise<void> {
         return path.join(d, ".hesperus", "view.svg");
       },
     },
+    {
+      name: "hesperus_map", description: "Show the boundary map as an interactive graph (pan, zoom, open and close boxes, go to source) where the host draws MCP Apps; elsewhere, a one-line summary. Without arguments it shows the overview.",
+      inputSchema: { type: "object", properties: { ...DIR, ...INDEX,
+        toggle: { type: "string", description: "A box id to open or close." },
+        open: { type: "array", items: { type: "string" }, description: "Box ids to open." },
+        close: { type: "array", items: { type: "string" }, description: "Box ids to close, with everything open inside them." },
+        reset: { type: "boolean", description: "Back to the overview." } } },
+      _meta: { ui: { resourceUri: MAP_URI }, "ui/resourceUri": MAP_URI },
+      run: async (a) => {
+        const [d, l] = await get(a);
+        const r = check(d, l);
+        let open = a.reset === true ? undefined : maps.get(d);
+        const asks = typeof a.toggle === "string" || Array.isArray(a.open) || Array.isArray(a.close);
+        if (asks) {
+          open ??= new Set((await boundaryPicture(l.graph, l.policy, r)).open);
+          const par = parents(l.graph);
+          const up = (x: string) => (isGroup(x) ? x.slice(5, x.lastIndexOf("#")) : par.get(x));
+          const close = (c: string) => {
+            open!.delete(c);
+            for (const x of [...open!]) for (let p = up(x); p !== undefined; p = up(p)) if (p === c) open!.delete(x);
+          };
+          if (typeof a.toggle === "string") open.has(a.toggle) ? close(a.toggle) : open.add(a.toggle);
+          for (const id of Array.isArray(a.open) ? a.open.map(String) : []) open.add(id);
+          for (const id of Array.isArray(a.close) ? a.close.map(String) : []) close(id);
+        }
+        const { graph: _, open: now, ...layout } = await boundaryPicture(l.graph, l.policy, r, undefined, open);
+        maps.set(d, new Set(now));
+        const flagged = layout.boxes.filter((b) => b.flag).length;
+        return { text: `Boundary map of ${path.basename(d)}: ${layout.boxes.length} boxes, ${layout.wires.length} wires, ${flagged} flagged.`, structuredContent: { layout } };
+      },
+    },
+    {
+      name: "hesperus_open", description: "Open the source of a box of the boundary map in the editor (VS Code's `code -g` when installed, else the system's opener).",
+      inputSchema: { type: "object", properties: { ...DIR, id: { type: "string" } }, required: ["id"] },
+      run: async (a) => {
+        const [d, l] = await get(a);
+        const n = l.graph.nodes.find((x) => x.id === a.id);
+        if (!n?.path) return `No source for ${String(a.id)}.`;
+        const at = `${n.path}:${(n.range?.start_line ?? 0) + 1}`;
+        for (const [cmd, ...args] of [["code", "-g", at], [process.platform === "darwin" ? "open" : "xdg-open", n.path]])
+          if (spawnSync(cmd, args, { cwd: d, timeout: 15000 }).status === 0) return `Opened ${at}.`;
+        return `Nothing here opens ${n.path}.`;
+      },
+    },
   ];
   const resources = [
     { uri: "hesperus://report", name: "Latest lint report", mimeType: "application/json", read: async () => { const [d, l] = await get({}); return checkJson(l, check(d, l)); } },
     { uri: "hesperus://view.svg", name: "Boundary overview", mimeType: "image/svg+xml", read: async () => { const [d, l] = await get({}); return drawSvg(d, l, check(d, l)); } },
+    { uri: MAP_URI, name: "Boundary map", mimeType: MAP_MIME, _meta: { ui: { csp: MAP_CSP, prefersBorder: true } }, read: async () => mapHtml() },
   ];
 
   const out = (msg: unknown) => process.stdout.write(JSON.stringify(msg) + "\n");
@@ -100,13 +153,14 @@ export async function serve(repo: string): Promise<void> {
         case "ping":
           return reply(id, {});
         case "tools/list":
-          return reply(id, { tools: tools.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) });
+          return reply(id, { tools: tools.map(({ name, description, inputSchema, _meta }) => ({ name, description, inputSchema, ...(_meta ? { _meta } : {}) })) });
         case "tools/call": {
           const t = tools.find((x) => x.name === params.name);
           if (!t) return fail(id, -32602, `unknown tool ${String(params.name)}`);
           try {
-            const text = await t.run((params.arguments as Record<string, unknown>) ?? {});
-            return reply(id, { content: [{ type: "text", text }] });
+            const answer = await t.run((params.arguments as Record<string, unknown>) ?? {});
+            if (typeof answer === "string") return reply(id, { content: [{ type: "text", text: answer }] });
+            return reply(id, { content: [{ type: "text", text: answer.text }], structuredContent: answer.structuredContent });
           } catch (e) {
             return reply(id, { content: [{ type: "text", text: `hesperus: ${(e as Error).message}` }], isError: true });
           }
@@ -116,7 +170,7 @@ export async function serve(repo: string): Promise<void> {
         case "resources/read": {
           const r = resources.find((x) => x.uri === params.uri);
           if (!r) return fail(id, -32602, `unknown resource ${String(params.uri)}`);
-          return reply(id, { contents: [{ uri: r.uri, mimeType: r.mimeType, text: await r.read() }] });
+          return reply(id, { contents: [{ uri: r.uri, mimeType: r.mimeType, text: await r.read(), ...("_meta" in r ? { _meta: r._meta } : {}) }] });
         }
         default:
           if (!notification) fail(id, -32601, `unknown method ${String(method)}`);

@@ -7,11 +7,24 @@ import { CACHE_DIR, readHeader, readShards } from "./core/cache";
 import { Graph, pretty } from "./core/ir";
 import { accept, Baseline, lint, Policy, Report, reportToJson, snapshot } from "./core/lint";
 import { HeadlessOutcome, indexHeadless } from "./engine";
+import { isGroup, parents } from "./core/aggregate";
 import { boundaryPicture } from "./picture";
 import { gitHead, readBaseline, readPolicy, writeBaseline, writeReport } from "./review";
 import { toSvg } from "./svg";
 
 export const VIEW_FILE = "view.svg";
+/** The boxes of the last picture drawn, beside it, for a pane that lists them. */
+export const BOXES_FILE = "view.json";
+
+/** Which boxes to open and which to outline, as a pane asks for them. */
+export interface ViewAsk { open?: string[]; focus?: string }
+/** One drawn box: what a list of the picture needs to show it, open it and go to its source. */
+export interface ViewBox { id: string; name: string; kind: string; parent?: string; /** The nearest open box it sits in. */ under?: string;
+  container: boolean; expandable: boolean; open: boolean;
+  path?: string; /** 1-based. */ line?: number; severity?: "error" | "warning" | "info"; notes?: string[] }
+/** An open box: drawn as a frame, or not at all where the flow view passes through it. */
+export interface ViewOpen { id: string; name: string; kind: string; under?: string }
+export interface ViewJson { open: ViewOpen[]; focus?: string; boxes: ViewBox[]; omitted: number }
 
 export interface Loaded { graph: Graph; policy: Policy; baseline?: Baseline; stale?: string; indexed?: HeadlessOutcome["languages"] }
 
@@ -110,11 +123,36 @@ export function callsJson(l: Loaded, query: string): string {
   })));
 }
 
-/** Draws the boundary overview to `.hesperus/view.svg` and returns the markup. */
-export async function drawSvg(repo: string, l: Loaded, r: Report): Promise<string> {
-  const svg = toSvg(await boundaryPicture(l.graph, l.policy, r));
+/** Draws the boundary picture to `.hesperus/view.svg`, its boxes to `view.json`, and returns the markup.
+ *  With no `ask`, the overview; with one, the boxes it opens, the rest shut. */
+export async function drawSvg(repo: string, l: Loaded, r: Report, ask?: ViewAsk): Promise<string> {
+  const laid = await boundaryPicture(l.graph, l.policy, r, undefined, ask?.open);
+  const ids = new Set(laid.boxes.map((b) => b.id));
+  const focus = ask?.focus !== undefined && ids.has(ask.focus) ? ask.focus : undefined;
+  const svg = toSvg(laid, focus);
+  const open = new Set(laid.open);
+  const par = parents(laid.graph);
+  const byId = new Map(laid.graph.nodes.map((n) => [n.id, n]));
+  // Tier ids are `tier:<parent>#<key>`.
+  const up = (x: string) => (isGroup(x) ? x.slice(5, x.lastIndexOf("#")) : par.get(x));
+  const under = (id: string) => {
+    for (let p = up(id); p !== undefined; p = up(p)) if (open.has(p)) return { under: p };
+    return {};
+  };
+  const opened: ViewOpen[] = laid.open.map((id) => {
+    const n = byId.get(id);
+    return { id, name: n?.name ?? id.slice(id.lastIndexOf("#") + 1), kind: n?.kind ?? "group", ...under(id) };
+  });
+  const boxes: ViewBox[] = [...laid.boxes].sort((a, b) => a.y - b.y || a.x - b.x).map((b) => ({
+    id: b.id, name: b.node.name, kind: b.node.kind, ...(b.parent && ids.has(b.parent) ? { parent: b.parent } : {}), ...under(b.id),
+    container: b.container, expandable: b.expandable, open: open.has(b.id),
+    ...(b.node.path ? { path: b.node.path } : {}), ...(b.node.range ? { line: b.node.range.start_line + 1 } : {}),
+    ...(b.flag ? { severity: b.flag.severity, notes: b.flag.notes } : {}),
+  }));
+  const json: ViewJson = { open: opened, ...(focus ? { focus } : {}), boxes, omitted: laid.omitted };
   fs.mkdirSync(path.join(repo, CACHE_DIR), { recursive: true });
   fs.writeFileSync(path.join(repo, CACHE_DIR, VIEW_FILE), svg);
+  fs.writeFileSync(path.join(repo, CACHE_DIR, BOXES_FILE), JSON.stringify(json));
   return svg;
 }
 
