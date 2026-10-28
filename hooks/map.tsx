@@ -243,7 +243,7 @@ const MapView: ClientModule<HesperusMapProps, State> = (props, s) => {
         return (
           <Text wrap="truncate-end">
             {runs.map(r => (r.cell.color || r.cell.dim || r.cell.bold || r.cell.inverse
-              ? <Text color={r.cell.color} dimColor={r.cell.dim} weight={r.cell.bold ? 'semibold' : undefined} inverse={r.cell.inverse}>{r.text}</Text>
+              ? <Text color={r.cell.color} dimColor={r.cell.dim} bold={r.cell.bold} inverse={r.cell.inverse}>{r.text}</Text>
               : r.text))}
           </Text>
         )

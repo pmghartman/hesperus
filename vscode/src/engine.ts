@@ -31,9 +31,11 @@ const LOCKFILES = ["Cargo.lock", "go.sum", "package-lock.json", "pnpm-lock.yaml"
 /** Stamped into package.json at release; recorded in the cache header so an update re-indexes. */
 export const VERSION: string = JSON.parse(fs.readFileSync(path.join(PKG_ROOT, "package.json"), "utf8")).version;
 
-let ready: Promise<void> | undefined;
-/** Loads every grammar once; needed before indexing. */
-export const init = () => (ready ??= Promise.all(FRONTENDS.map((f) => f.init())).then(() => {}));
+const ready = new Map<string, Promise<void>>();
+/** Loads the grammars of the given languages, or of every language, each once; needed before indexing.
+ *  The CLI asks only for the repo's own: compiling every grammar costs seconds a run. */
+export const init = (ids?: readonly string[]) =>
+  Promise.all(FRONTENDS.filter((f) => !ids || ids.includes(f.id)).map((f) => ready.get(f.id) ?? ready.set(f.id, f.init()).get(f.id)!)).then(() => {});
 
 export interface Language { files: number; id: string; editor: Frontend["editor"] }
 /** Files no frontend owns, grouped by extension: candidates for the generic fallback. */
@@ -125,7 +127,12 @@ function generated(repo: string, paths: readonly string[]): Set<string> {
   return out;
 }
 
+/** The listing one headless index works from: it asks for the files several times, and each listing
+ *  runs git. */
+let pinned: { repo: string; files: string[] } | undefined;
+
 function listFiles(repo: string): string[] {
+  if (pinned?.repo === repo) return pinned.files;
   const git = spawnSync("git", ["-C", repo, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { maxBuffer: 1 << 30 });
   if (git.status === 0) {
     const all = git.stdout.toString("utf8").split("\0").filter((p) => p !== "");
@@ -215,7 +222,7 @@ export type LangResult = { lang: string; index: scip.Index } | { lang: string; e
 /** Builds the graph from each language's own result and writes the cache. A language that failed
  *  contributes its files as unindexed nodes; the rest of the repo is unaffected. */
 export async function index(repo: string, results: readonly LangResult[], lockfiles: readonly string[] = [], indexer = `${BRIDGE_TOOL.name} ${BRIDGE_TOOL.version}`): Promise<Graph> {
-  await init();
+  await init(results.flatMap((r) => ("index" in r ? [r.lang] : [])));
   const indexes = results.flatMap((r) => ("index" in r ? [r.index] : []));
   const unindexed = results
     .filter((r): r is { lang: string; error: string } => "error" in r)
@@ -227,11 +234,36 @@ export async function index(repo: string, results: readonly LangResult[], lockfi
 
 export interface HeadlessOutcome { graph: Graph; languages: { id: string; files: number; indexed: boolean }[] }
 
+/** The repo's languages and whether each indexes without an editor. */
+export function headlessLanguages(repo: string): HeadlessOutcome["languages"] {
+  return scan(repo).languages.map((l) => ({ id: l.id, files: l.files, indexed: !!FRONTENDS.find((f) => f.id === l.id)!.headless }));
+}
+
+/** What a headless index reads: every file's path, size and modification time, the lockfiles, HEAD
+ *  and the tool's version. The same stamp later means indexing again would build the same graph. */
+export function sourcesStamp(repo: string): string {
+  const parts = [VERSION, commit(repo), lockfileHash(repo, [])];
+  for (const p of listFiles(repo).sort(cmpStr)) {
+    const st = fs.statSync(path.join(repo, p), { throwIfNoEntry: false });
+    parts.push(`${p}\0${st?.size ?? -1}\0${st?.mtimeMs ?? -1}`);
+  }
+  return sha256Hex(parts.join("\n"));
+}
+
 /** Indexes every language in the repo from syntax alone and writes the cache. Languages whose
  *  syntax has no outline become unindexed nodes, as a language with no server does in the editor. */
 export async function indexHeadless(repo: string, lockfiles: readonly string[] = [], report: (s: string) => void = () => {}): Promise<HeadlessOutcome> {
-  await init();
+  pinned = { repo, files: listFiles(repo) };
+  try {
+    return await indexPinned(repo, lockfiles, report);
+  } finally {
+    pinned = undefined;
+  }
+}
+
+async function indexPinned(repo: string, lockfiles: readonly string[], report: (s: string) => void): Promise<HeadlessOutcome> {
   const s = scan(repo);
+  await init(s.languages.filter((l) => FRONTENDS.find((f) => f.id === l.id)?.headless).map((l) => l.id));
   const results: LangResult[] = [];
   const languages: HeadlessOutcome["languages"] = [];
   for (const l of s.languages) {

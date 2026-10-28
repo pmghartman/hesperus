@@ -113,13 +113,15 @@
     "vscode:prepublish": "npm run build",
     "package": "vsce package",
     "check": "node out/cli.js check",
-    "bundle": "node scripts/bundle.js"
+    "bundle": "node scripts/bundle.js",
+    "mcpb": "node scripts/mcpb.js"
   },
   "dependencies": {
     "elkjs": "0.9.3",
     "web-tree-sitter": "0.25.10"
   },
   "devDependencies": {
+    "@anthropic-ai/mcpb": "2.1.2",
     "@types/node": "20.14.10",
     "@types/vscode": "1.90.0",
     "@vscode/vsce": "3.2.1",

@@ -1,10 +1,8 @@
-<p align="center">
-  <img src="vscode/media/icon.png" alt="Hesperus" width="128" height="128">
-</p>
+![Hesperus](vscode/media/icon.png)
 
-<h1 align="center">Hesperus</h1>
+# Hesperus
 
-<p align="center">A boundary linter and live map for repos that agents write, built by static analysis.</p>
+A boundary linter and live map for repos that agents write, built by static analysis.
 
 Hesperus compiles source "up" into a graph an engineer can question: packages, files, types, and functions, with the calls and data flow between them. It is made for the person overseeing an agent who no longer reads every diff: what reaches databases, the internet, model APIs and other outside systems, what changed since they last looked, and what their policy forbids, without trusting an agent-drawn diagram.
 
@@ -83,6 +81,12 @@ or `claude --plugin-dir /path/to/hesperus` for one session. `dist/hesperus.js` i
 
 The plugin's version (`.claude-plugin/plugin.json`) raises itself: a push to `main` that changes what the plugin ships gets a patch bump committed back by the `plugin-version` workflow, unless that push already raised it; installed copies pick the change up on their next update. The VS Code extension is versioned by its release tags instead.
 
+**Claude Desktop.** The MCP server alone, as an MCP Bundle: open `hesperus-<version>.mcpb` with Claude Desktop (or drop it on *Settings → Extensions*), pick the repo to map, and ask about it in a chat; the boundary map draws inline. No pane, status line or commands, and nothing to install but the bundle. `cd vscode && npm run mcpb` packs `target/hesperus-<version>.mcpb` from `mcpb/manifest.json` and `dist/`, under the plugin's version.
+
+## Privacy Policy
+
+Hesperus runs on your machine and collects nothing: no telemetry, no accounts, and no request from the CLI, the MCP server or the plugin to any server. What the plugin runs: the MCP server (`node dist/hesperus.js mcp`); `node dist/hesperus.js check . --index --json --svg` in the session's folder when a session starts and a moment after each edit, which re-indexes only when a file changed; `node dist/hesperus.js svg .` to draw a view you open; and, on **Go to source**, `code -g`, `open` or `xdg-open` on that file. It reads the repo you point it at and writes only its own cache in that repo's `.hesperus/`, which stays there until you delete it. The one outside request is the interactive map's page, which the host (Claude Desktop, claude.ai) loads with the MCP Apps client from `unpkg.com`; that fetch goes out under the host's and unpkg's own policies and carries none of your code. The full policy is in [PRIVACY.md](PRIVACY.md).
+
 
 ## Languages
 
@@ -125,6 +129,7 @@ A stale cache (new commit, lockfile, or tool version) fails loudly, then re-inde
 | `vscode/src/picture.ts`, `svg.ts`, `shelf.ts` | the boundary overview laid out and drawn as SVG; its layout in cells for a tall pane |
 | `.claude-plugin/`, `hooks/`, `types/`, `.mcp.json` | the Claude Code plugin: pane with its map (`hooks/map.tsx`) and explorer (`hooks/explorer.tsx`), status line, `/hesperus`, MCP wiring; `.github/workflows/plugin-version.yml` raises its version |
 | `dist/` | the CLI bundled with its grammars (`vscode/scripts/bundle.js`), committed so the plugin needs no build |
+| `mcpb/manifest.json` | the Claude Desktop bundle's manifest; `vscode/scripts/mcpb.js` packs it with `dist/` |
 | `vscode/schema/policy.schema.json` | `hesperus.json` schema |
 | `vscode/src/lang` | tree-sitter syntax facts and editor extension per language |
 | `vscode/src/editor.ts` | reads symbols and references from the editor's language servers |

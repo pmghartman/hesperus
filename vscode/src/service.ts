@@ -6,7 +6,7 @@ import { BOUNDARIES, Boundary, BOUNDARY_INFO, Crossing } from "./core/boundary";
 import { CACHE_DIR, readHeader, readShards } from "./core/cache";
 import { Graph, pretty } from "./core/ir";
 import { accept, Baseline, lint, Policy, Report, reportToJson, snapshot } from "./core/lint";
-import { HeadlessOutcome, indexHeadless } from "./engine";
+import { HeadlessOutcome, headlessLanguages, indexHeadless, sourcesStamp } from "./engine";
 import { isGroup, parents } from "./core/aggregate";
 import { boundaryPicture } from "./picture";
 import { shelf } from "./shelf";
@@ -50,10 +50,25 @@ export function hasCache(repo: string): boolean {
   }
 }
 
-/** The graph, re-indexed when asked or when there is none yet. */
+/** The stamp of the sources the last headless index read (`sourcesStamp`). */
+const stampFile = (repo: string) => path.join(repo, CACHE_DIR, "sources");
+
+/** The graph, re-indexed when asked or when there is none yet; asked, but with no file changed since
+ *  the last index, the cached graph is the one indexing would build, so it is kept. */
 export async function load(repo: string, index = false, report?: (s: string) => void): Promise<Loaded> {
   let indexed: HeadlessOutcome["languages"] | undefined;
-  if (index || !hasCache(repo)) indexed = (await indexHeadless(repo, [], report)).languages;
+  if (index || !hasCache(repo)) {
+    const stamp = sourcesStamp(repo);
+    let last = "";
+    try {
+      if (hasCache(repo)) last = fs.readFileSync(stampFile(repo), "utf8");
+    } catch {}
+    if (stamp === last) indexed = headlessLanguages(repo);
+    else {
+      indexed = (await indexHeadless(repo, [], report)).languages;
+      fs.writeFileSync(stampFile(repo), stamp);
+    }
+  }
   const h = readHeader(repo);
   const graph = readShards(repo);
   const policy = readPolicy(repo);

@@ -98696,11 +98696,16 @@ var Grammar = class {
     this.visit = visit2;
   }
   lang;
+  /** Facts by source: an index reads each file's twice (its outline, then the graph), and a long-lived
+   *  server re-reads the files that did not change. Bounded, so it never holds a repo's history. */
+  seen = /* @__PURE__ */ new Map();
   async init() {
     this.lang = await loadGrammar(this.file);
   }
   facts(source) {
     if (!this.lang) throw new Error(`grammar ${this.file} used before init()`);
+    const hit = this.seen.get(source);
+    if (hit) return hit;
     const p = new import_web_tree_sitter.Parser();
     p.setLanguage(this.lang);
     const f = noFacts();
@@ -98714,6 +98719,8 @@ var Grammar = class {
       tree.delete();
     }
     p.delete();
+    if (this.seen.size >= 4096) this.seen.clear();
+    this.seen.set(source, f);
     return f;
   }
 };
@@ -100384,8 +100391,8 @@ var Rust = {
 var FRONTENDS = [Go, Js, Rust, CSharp, Cpp, Dart, Python, Java, Kotlin, Php, Ruby];
 var LOCKFILES = ["Cargo.lock", "go.sum", "package-lock.json", "pnpm-lock.yaml", "poetry.lock", "uv.lock", "yarn.lock"];
 var VERSION = JSON.parse(fs7.readFileSync(path6.join(PKG_ROOT, "package.json"), "utf8")).version;
-var ready;
-var init2 = () => ready ??= Promise.all(FRONTENDS.map((f) => f.init())).then(() => {
+var ready = /* @__PURE__ */ new Map();
+var init2 = (ids) => Promise.all(FRONTENDS.filter((f) => !ids || ids.includes(f.id)).map((f) => ready.get(f.id) ?? ready.set(f.id, f.init()).get(f.id))).then(() => {
 });
 var NOT_CODE = new Set("md markdown mdx txt rst adoc json jsonc json5 yaml yml toml ini cfg conf properties env xml xsd xsl xslt svg html htm css scss sass less csv tsv lock log sum mod map snap diff patch png jpg jpeg gif ico webp bmp tiff pdf zip gz tgz tar bz2 xz 7z rar woff woff2 ttf otf eot mp3 mp4 mov avi wav wasm bin exe dll so dylib class jar war o a obj lib pyc node vsix ipynb".split(" "));
 var genericExt = (p) => {
@@ -100446,7 +100453,9 @@ function generated(repo, paths) {
   for (let i2 = 0; i2 + 2 < f.length; i2 += 3) if (f[i2 + 2] === "set" || f[i2 + 2] === "true") out2.add(f[i2]);
   return out2;
 }
+var pinned;
 function listFiles(repo) {
+  if (pinned?.repo === repo) return pinned.files;
   const git = (0, import_node_child_process.spawnSync)("git", ["-C", repo, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { maxBuffer: 1 << 30 });
   if (git.status === 0) {
     const all = git.stdout.toString("utf8").split("\0").filter((p) => p !== "");
@@ -100490,17 +100499,36 @@ function sourceFiles(repo, lang) {
   return listFiles(repo).filter((p) => owner(p)?.id === lang).sort(cmpStr);
 }
 async function index(repo, results, lockfiles = [], indexer = `${BRIDGE_TOOL.name} ${BRIDGE_TOOL.version}`) {
-  await init2();
+  await init2(results.flatMap((r) => "index" in r ? [r.lang] : []));
   const indexes = results.flatMap((r) => "index" in r ? [r.index] : []);
   const unindexed = results.filter((r) => "error" in r).flatMap((r) => sourceFiles(repo, r.lang).map((path11) => ({ path: path11, reason: r.error })));
   const g = makeGraph(repo, merge2(indexes), unindexed);
   writeCache(repo, header(repo, lockfiles, indexer), g);
   return g;
 }
+function headlessLanguages(repo) {
+  return scan(repo).languages.map((l) => ({ id: l.id, files: l.files, indexed: !!FRONTENDS.find((f) => f.id === l.id).headless }));
+}
+function sourcesStamp(repo) {
+  const parts2 = [VERSION, commit(repo), lockfileHash(repo, [])];
+  for (const p of listFiles(repo).sort(cmpStr)) {
+    const st = fs7.statSync(path6.join(repo, p), { throwIfNoEntry: false });
+    parts2.push(`${p}\0${st?.size ?? -1}\0${st?.mtimeMs ?? -1}`);
+  }
+  return sha256Hex(parts2.join("\n"));
+}
 async function indexHeadless(repo, lockfiles = [], report = () => {
 }) {
-  await init2();
+  pinned = { repo, files: listFiles(repo) };
+  try {
+    return await indexPinned(repo, lockfiles, report);
+  } finally {
+    pinned = void 0;
+  }
+}
+async function indexPinned(repo, lockfiles, report) {
   const s = scan(repo);
+  await init2(s.languages.filter((l) => FRONTENDS.find((f) => f.id === l.id)?.headless).map((l) => l.id));
   const results = [];
   const languages = [];
   for (const l of s.languages) {
@@ -100740,9 +100768,22 @@ function hasCache(repo) {
     return false;
   }
 }
+var stampFile = (repo) => path8.join(repo, CACHE_DIR, "sources");
 async function load(repo, index2 = false, report) {
   let indexed;
-  if (index2 || !hasCache(repo)) indexed = (await indexHeadless(repo, [], report)).languages;
+  if (index2 || !hasCache(repo)) {
+    const stamp = sourcesStamp(repo);
+    let last = "";
+    try {
+      if (hasCache(repo)) last = fs9.readFileSync(stampFile(repo), "utf8");
+    } catch {
+    }
+    if (stamp === last) indexed = headlessLanguages(repo);
+    else {
+      indexed = (await indexHeadless(repo, [], report)).languages;
+      fs9.writeFileSync(stampFile(repo), stamp);
+    }
+  }
   const h = readHeader(repo);
   const graph = readShards(repo);
   const policy = readPolicy(repo);
@@ -100865,6 +100906,8 @@ var isBoundary = (s) => BOUNDARIES.includes(s);
 
 // src/mcp.ts
 var DIR = { dir: { type: "string", description: "Repo root; defaults to the server's repo." } };
+var READS = { readOnlyHint: true, openWorldHint: false };
+var WRITES = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 var INDEX = { index: { type: "boolean", description: "Re-index from source first (a few seconds; the graph may be stale otherwise)." } };
 async function serve(repo) {
   const loaded2 = /* @__PURE__ */ new Map();
@@ -100878,6 +100921,8 @@ async function serve(repo) {
   const tools = [
     {
       name: "hesperus_index",
+      title: "Index the repo",
+      annotations: WRITES,
       description: "Rebuild the repo's graph from source (no editor needed). Run after editing files, before the other tools.",
       inputSchema: { type: "object", properties: DIR },
       run: async (a) => {
@@ -100889,6 +100934,8 @@ async function serve(repo) {
     },
     {
       name: "hesperus_check",
+      title: "Lint boundary crossings",
+      annotations: READS,
       description: "Lint the repo's boundary crossings (database, network, AI, cloud, queues, filesystem, processes, environment) against hesperus.json and the accepted baseline. Errors are policy violations; warnings and info are crossings and dependencies not yet reviewed.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX } },
       run: async (a) => {
@@ -100898,6 +100945,8 @@ async function serve(repo) {
     },
     {
       name: "hesperus_diff",
+      title: "Changes since the last review",
+      annotations: READS,
       description: "What changed since the last accepted review: boundary crossings and dependencies added or removed, and any crossing the policy denies.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX } },
       run: async (a) => {
@@ -100907,6 +100956,8 @@ async function serve(repo) {
     },
     {
       name: "hesperus_boundaries",
+      title: "List boundary crossings",
+      annotations: READS,
       description: "Every call that leaves the repo, grouped by boundary and package, with the function and file:line that makes it.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX, boundary: { type: "string", enum: ["database", "network", "ai", "cloud", "messaging", "filesystem", "process", "environment"] } } },
       run: async (a) => {
@@ -100916,12 +100967,16 @@ async function serve(repo) {
     },
     {
       name: "hesperus_calls",
+      title: "Find callers and callees",
+      annotations: READS,
       description: "Callers and callees of the functions or types whose name contains the query, with file:line and how sure each edge is.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX, name: { type: "string" } }, required: ["name"] },
       run: async (a) => callsJson((await get(a))[1], String(a.name ?? ""))
     },
     {
       name: "hesperus_accept",
+      title: "Accept crossings as reviewed",
+      annotations: WRITES,
       description: "Mark crossings as reviewed so they stop being reported as new: the given finding keys, or all current crossings when none are given. Use only when the person has reviewed them.",
       inputSchema: { type: "object", properties: { ...DIR, keys: { type: "array", items: { type: "string" } } } },
       run: async (a) => {
@@ -100931,6 +100986,8 @@ async function serve(repo) {
     },
     {
       name: "hesperus_svg",
+      title: "Draw the boundary overview",
+      annotations: WRITES,
       description: "Draw the boundary overview to .hesperus/view.svg (the repo with each boundary as a box on the right, findings in red and amber) and return its path.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX } },
       run: async (a) => {
@@ -100941,6 +100998,8 @@ async function serve(repo) {
     },
     {
       name: "hesperus_map",
+      title: "Show the boundary map",
+      annotations: READS,
       description: "Show the boundary map as an interactive graph (pan, zoom, open and close boxes, go to source) where the host draws MCP Apps; elsewhere, a one-line summary. Without arguments it shows the overview.",
       inputSchema: { type: "object", properties: {
         ...DIR,
@@ -100976,6 +101035,8 @@ async function serve(repo) {
     },
     {
       name: "hesperus_open",
+      title: "Open a box's source",
+      annotations: READS,
       description: "Open the source of a box of the boundary map in the editor (VS Code's `code -g` when installed, else the system's opener).",
       inputSchema: { type: "object", properties: { ...DIR, id: { type: "string" } }, required: ["id"] },
       run: async (a) => {
@@ -101018,7 +101079,7 @@ async function serve(repo) {
         case "ping":
           return reply(id, {});
         case "tools/list":
-          return reply(id, { tools: tools.map(({ name: name2, description, inputSchema, _meta }) => ({ name: name2, description, inputSchema, ..._meta ? { _meta } : {} })) });
+          return reply(id, { tools: tools.map(({ name: name2, title, description, annotations, inputSchema, _meta }) => ({ name: name2, title, description, inputSchema, annotations: { title, ...annotations }, ..._meta ? { _meta } : {} })) });
         case "tools/call": {
           const t = tools.find((x) => x.name === params2.name);
           if (!t) return fail3(id, -32602, `unknown tool ${String(params2.name)}`);

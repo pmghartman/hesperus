@@ -12,9 +12,13 @@ import { VERSION } from "./engine";
 
 /** A tool's answer: text, or text for the model with data for an MCP App's page. */
 type Answer = string | { text: string; structuredContent: Record<string, unknown> };
-interface Tool { name: string; description: string; inputSchema: Record<string, unknown>; _meta?: Record<string, unknown>; run: (a: Record<string, unknown>) => Promise<Answer> }
+interface Tool { name: string; title: string; description: string; annotations: Record<string, boolean>; inputSchema: Record<string, unknown>; _meta?: Record<string, unknown>; run: (a: Record<string, unknown>) => Promise<Answer> }
 
 const DIR = { dir: { type: "string", description: "Repo root; defaults to the server's repo." } };
+// Hints for the host. Nothing here touches the repo's source or anything outside the machine: the
+// readers keep only Hesperus's own cache in .hesperus/ current, and the writers write only there too.
+const READS = { readOnlyHint: true, openWorldHint: false };
+const WRITES = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const INDEX = { index: { type: "boolean", description: "Re-index from source first (a few seconds; the graph may be stale otherwise)." } };
 
 export async function serve(repo: string): Promise<void> {
@@ -29,7 +33,7 @@ export async function serve(repo: string): Promise<void> {
   const maps = new Map<string, Set<string>>();
   const tools: Tool[] = [
     {
-      name: "hesperus_index", description: "Rebuild the repo's graph from source (no editor needed). Run after editing files, before the other tools.",
+      name: "hesperus_index", title: "Index the repo", annotations: WRITES, description: "Rebuild the repo's graph from source (no editor needed). Run after editing files, before the other tools.",
       inputSchema: { type: "object", properties: DIR },
       run: async (a) => {
         const d = at(a);
@@ -39,7 +43,7 @@ export async function serve(repo: string): Promise<void> {
       },
     },
     {
-      name: "hesperus_check", description: "Lint the repo's boundary crossings (database, network, AI, cloud, queues, filesystem, processes, environment) against hesperus.json and the accepted baseline. Errors are policy violations; warnings and info are crossings and dependencies not yet reviewed.",
+      name: "hesperus_check", title: "Lint boundary crossings", annotations: READS, description: "Lint the repo's boundary crossings (database, network, AI, cloud, queues, filesystem, processes, environment) against hesperus.json and the accepted baseline. Errors are policy violations; warnings and info are crossings and dependencies not yet reviewed.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX } },
       run: async (a) => {
         const [d, l] = await get(a);
@@ -47,7 +51,7 @@ export async function serve(repo: string): Promise<void> {
       },
     },
     {
-      name: "hesperus_diff", description: "What changed since the last accepted review: boundary crossings and dependencies added or removed, and any crossing the policy denies.",
+      name: "hesperus_diff", title: "Changes since the last review", annotations: READS, description: "What changed since the last accepted review: boundary crossings and dependencies added or removed, and any crossing the policy denies.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX } },
       run: async (a) => {
         const [d, l] = await get(a);
@@ -55,7 +59,7 @@ export async function serve(repo: string): Promise<void> {
       },
     },
     {
-      name: "hesperus_boundaries", description: "Every call that leaves the repo, grouped by boundary and package, with the function and file:line that makes it.",
+      name: "hesperus_boundaries", title: "List boundary crossings", annotations: READS, description: "Every call that leaves the repo, grouped by boundary and package, with the function and file:line that makes it.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX, boundary: { type: "string", enum: ["database", "network", "ai", "cloud", "messaging", "filesystem", "process", "environment"] } } },
       run: async (a) => {
         const [d, l] = await get(a);
@@ -63,12 +67,12 @@ export async function serve(repo: string): Promise<void> {
       },
     },
     {
-      name: "hesperus_calls", description: "Callers and callees of the functions or types whose name contains the query, with file:line and how sure each edge is.",
+      name: "hesperus_calls", title: "Find callers and callees", annotations: READS, description: "Callers and callees of the functions or types whose name contains the query, with file:line and how sure each edge is.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX, name: { type: "string" } }, required: ["name"] },
       run: async (a) => callsJson((await get(a))[1], String(a.name ?? "")),
     },
     {
-      name: "hesperus_accept", description: "Mark crossings as reviewed so they stop being reported as new: the given finding keys, or all current crossings when none are given. Use only when the person has reviewed them.",
+      name: "hesperus_accept", title: "Accept crossings as reviewed", annotations: WRITES, description: "Mark crossings as reviewed so they stop being reported as new: the given finding keys, or all current crossings when none are given. Use only when the person has reviewed them.",
       inputSchema: { type: "object", properties: { ...DIR, keys: { type: "array", items: { type: "string" } } } },
       run: async (a) => {
         const [d, l] = await get(a);
@@ -76,7 +80,7 @@ export async function serve(repo: string): Promise<void> {
       },
     },
     {
-      name: "hesperus_svg", description: "Draw the boundary overview to .hesperus/view.svg (the repo with each boundary as a box on the right, findings in red and amber) and return its path.",
+      name: "hesperus_svg", title: "Draw the boundary overview", annotations: WRITES, description: "Draw the boundary overview to .hesperus/view.svg (the repo with each boundary as a box on the right, findings in red and amber) and return its path.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX } },
       run: async (a) => {
         const [d, l] = await get(a);
@@ -85,7 +89,7 @@ export async function serve(repo: string): Promise<void> {
       },
     },
     {
-      name: "hesperus_map", description: "Show the boundary map as an interactive graph (pan, zoom, open and close boxes, go to source) where the host draws MCP Apps; elsewhere, a one-line summary. Without arguments it shows the overview.",
+      name: "hesperus_map", title: "Show the boundary map", annotations: READS, description: "Show the boundary map as an interactive graph (pan, zoom, open and close boxes, go to source) where the host draws MCP Apps; elsewhere, a one-line summary. Without arguments it shows the overview.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX,
         toggle: { type: "string", description: "A box id to open or close." },
         open: { type: "array", items: { type: "string" }, description: "Box ids to open." },
@@ -116,7 +120,7 @@ export async function serve(repo: string): Promise<void> {
       },
     },
     {
-      name: "hesperus_open", description: "Open the source of a box of the boundary map in the editor (VS Code's `code -g` when installed, else the system's opener).",
+      name: "hesperus_open", title: "Open a box's source", annotations: READS, description: "Open the source of a box of the boundary map in the editor (VS Code's `code -g` when installed, else the system's opener).",
       inputSchema: { type: "object", properties: { ...DIR, id: { type: "string" } }, required: ["id"] },
       run: async (a) => {
         const [d, l] = await get(a);
@@ -153,7 +157,7 @@ export async function serve(repo: string): Promise<void> {
         case "ping":
           return reply(id, {});
         case "tools/list":
-          return reply(id, { tools: tools.map(({ name, description, inputSchema, _meta }) => ({ name, description, inputSchema, ...(_meta ? { _meta } : {}) })) });
+          return reply(id, { tools: tools.map(({ name, title, description, annotations, inputSchema, _meta }) => ({ name, title, description, inputSchema, annotations: { title, ...annotations }, ...(_meta ? { _meta } : {}) })) });
         case "tools/call": {
           const t = tools.find((x) => x.name === params.name);
           if (!t) return fail(id, -32602, `unknown tool ${String(params.name)}`);

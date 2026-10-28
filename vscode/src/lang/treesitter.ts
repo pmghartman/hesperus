@@ -173,6 +173,9 @@ const LAMBDAS = new Set([
 /** A grammar plus the visitor that turns its trees into facts. */
 export class Grammar implements Syntax {
   private lang?: Language;
+  /** Facts by source: an index reads each file's twice (its outline, then the graph), and a long-lived
+   *  server re-reads the files that did not change. Bounded, so it never holds a repo's history. */
+  private seen = new Map<string, Facts>();
   constructor(readonly file: string, private visit: (n: Node, src: Source, f: Facts) => void) {}
 
   async init() {
@@ -181,6 +184,8 @@ export class Grammar implements Syntax {
 
   facts(source: string): Facts {
     if (!this.lang) throw new Error(`grammar ${this.file} used before init()`);
+    const hit = this.seen.get(source);
+    if (hit) return hit;
     const p = new Parser();
     p.setLanguage(this.lang);
     const f = noFacts();
@@ -194,6 +199,8 @@ export class Grammar implements Syntax {
       tree.delete();
     }
     p.delete();
+    if (this.seen.size >= 4096) this.seen.clear();
+    this.seen.set(source, f);
     return f;
   }
 }

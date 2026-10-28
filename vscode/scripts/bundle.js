@@ -23,7 +23,12 @@ esbuild.buildSync({
 // The graph page the MCP App draws (src/mapapp.ts reads these beside the bundle).
 fs.mkdirSync(path.join(dist, "media"), { recursive: true });
 for (const f of ["graph.js", "graph.css"]) fs.copyFileSync(path.join(root, "media", f), path.join(dist, "media", f));
-for (const g of fs.readdirSync(path.join(root, "grammars"))) fs.copyFileSync(path.join(root, "grammars", g), path.join(dist, "grammars", g));
+// Only the grammars of languages the CLI indexes without an editor (`headless` in src/lang); the rest
+// stay in the extension, and leaving them out keeps every file under the plugin directory's 5 MiB limit.
+const HEADLESS = ["go", "java", "javascript", "kotlin", "python", "rust", "tsx", "typescript"].map((l) => `tree-sitter-${l}.wasm`);
+fs.rmSync(path.join(dist, "grammars"), { recursive: true, force: true });
+fs.mkdirSync(path.join(dist, "grammars"), { recursive: true });
+for (const g of HEADLESS) fs.copyFileSync(path.join(root, "grammars", g), path.join(dist, "grammars", g));
 fs.copyFileSync(path.join(root, "node_modules", "web-tree-sitter", "tree-sitter.wasm"), path.join(dist, "tree-sitter.wasm"));
 const { version } = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
 fs.writeFileSync(path.join(dist, "package.json"), JSON.stringify({ name: "hesperus-dist", version, private: true, description: "Built by vscode/scripts/bundle.js; do not edit." }, null, 2) + "\n");

@@ -78,11 +78,11 @@ test('the explorer selects, opens boxes and goes to source', async ($, on) => {
     await ui.resize({ columns: 60, rows: 4, in: 'explorer' })
     expect((await ui.find({ type: 'Text', text: /a\.ts/, in: 'explorer' }))?.text).toContain('src/a.ts:3')
 
-    // Rows: src, a.ts (under src), lib, Network. Down selects a.ts: outlined on the map, its source shown.
+    // Rows: src, a.ts (under src), lib, Network. Down selects a.ts: the map outlines it from its props,
+    // with nothing drawn again, and its source is shown.
+    const before = runs.length
     await ui.key({ key: 'down', in: 'explorer' })
-    const drawn = runs.filter(r => r.argv.includes('svg'))
-    expect(drawn.at(-1)?.argv).toContain('--view')
-    expect(JSON.parse(drawn.at(-1)?.stdin ?? '{}').focus).toBe('fn:a')
+    expect(runs.slice(before).some(r => r.argv.includes('svg'))).toBe(false)
     expect(await ui.find({ type: 'Code' })).toBeDefined()
 
     await ui.key({ key: 'return', in: 'explorer' })
@@ -135,11 +135,12 @@ test('the map draws the boxes and their wires, selects on a click, and keeps a d
   // Its note, cut to the box's width.
   expect(await ui.find({ type: 'Text', text: /core may n…/, in: 'map' })).toBeDefined()
 
-  // A click on a.ts selects it: the picture is drawn again with it outlined, its source shown.
+  // A click on a.ts selects it: outlined in the cells with nothing drawn again, its source shown.
+  const before = runs.length
   await ui.pointer({ type: 'down', x: 2, y: 0, button: 'left', in: 'map' })
   await ui.pointer({ type: 'up', x: 2, y: 0, button: 'left', in: 'map' })
   await clock.advance(0)
-  expect(JSON.parse(runs.filter(r => r.argv.includes('svg')).at(-1)?.stdin ?? '{}').focus).toBe('fn:a')
+  expect(runs.slice(before).some(r => r.argv.includes('svg'))).toBe(false)
   expect(await ui.find({ type: 'Code' })).toBeDefined()
 
   // Dragging lib three cells right and one down keeps it there, in this session and the store.
@@ -154,5 +155,33 @@ test('the map draws the boxes and their wires, selects on a click, and keeps a d
   await ui.press({ key: 'reset' })
   await clock.advance(0)
   expect(kept.at(-1)).toEqual({})
+  await ui.unmount()
+})
+
+test('where the map is a picture, selecting a row draws it again with the box outlined', async ($, on) => {
+  const clock = mock.clock(on)
+  const runs: { argv: readonly string[]; stdin?: string }[] = []
+  on('command.register', () => ({ value: { command: 'hesperus' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.toast', () => ({ value: undefined }))
+  on('ui.status', () => ({ value: undefined }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.cwd', () => ({ value: '/repo' }))
+  on('process.run', (_, e) => {
+    runs.push({ argv: e.argv, stdin: e.init?.stdin })
+    return { value: { exitCode: e.argv.includes('check') ? 1 : 0, stdout: e.argv.includes('check') ? REPORT : '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  on('fs.read', (_, e) => ({ value: e.path.endsWith('view.json') ? VIEW : e.path === '/repo/src/a.ts' ? 'one\ntwo\nexport const a = 1\nfour\n' : '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>' }))
+
+  await $.session.start({ cwd: '/repo', surface: 'vscode', isInteractive: true })
+  await clock.advance(1000)
+
+  const ui = await $.ui.mount({ ...PANE, surface: 'vscode' })
+  await ui.press({ key: 'row:fn:a' })
+  await clock.advance(0)
+  const drawn = runs.filter(r => r.argv.includes('svg'))
+  expect(drawn.at(-1)?.argv).toContain('--view')
+  expect(JSON.parse(drawn.at(-1)?.stdin ?? '{}').focus).toBe('fn:a')
+  expect(await ui.find({ type: 'Code' })).toBeDefined()
   await ui.unmount()
 })

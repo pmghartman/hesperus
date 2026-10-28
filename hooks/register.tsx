@@ -39,6 +39,9 @@ const cli = ($: EngineInterface) => `${$.plugin.root}/dist/hesperus.js`
 
 /** The pane's width in cells as last drawn, for the layout; and the width the picture was laid out at. */
 let paneColumns = 60, drawnColumns = 0
+/** Whether a surface with no Client has shown the picture: only the picture outlines the selected box
+ *  itself, so only then does selecting draw again. The map Client outlines it from its props. */
+let pictured = false
 
 /** The CLI arguments and input that draw the view the person asked for, laid out for a tall pane this
  *  wide; no `--view` for the overview. */
@@ -186,7 +189,7 @@ async function select($: EngineInterface, id: string): Promise<void> {
     }
   }
   await update($, peek, () => next)
-  void refresh($, 'draw')
+  if (pictured) void refresh($, 'draw')
 }
 
 /** Opens a box's source in the editor: VS Code at the line when its `code` command is installed, else
@@ -323,6 +326,7 @@ export const register: Register = on => {
     }
     // No Client here (the editor's pane, the phone): the picture, and a row is a button that selects, and opens once selected.
     const { Svg } = $.ui.resolve(e)
+    pictured = true
     const svg = await read($, view)
     const picture = svg !== '' && <Svg source={svg} alt="The repo's folders and files at the top, each boundary it reaches as a box along the bottom; red marks a denied call, amber a call not yet reviewed, pink the box selected below." isInteractive />
     return (
