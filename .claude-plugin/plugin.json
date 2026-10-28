@@ -5,5 +5,11 @@
   "author": { "name": "pmghartman" },
   "repository": "https://github.com/pmghartman/hesperus",
   "license": "Apache-2.0",
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "mcpServers": {
+    "hesperus": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/dist/hesperus.js", "mcp"]
+    }
+  }
 }
