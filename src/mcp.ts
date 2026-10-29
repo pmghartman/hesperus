@@ -43,7 +43,7 @@ export async function serve(repo: string): Promise<void> {
       },
     },
     {
-      name: "hesperus_check", title: "Lint boundary crossings", annotations: READS, description: "Lint the repo's boundary crossings (database, network, AI, cloud, queues, filesystem, processes, environment) against hesperus.json and the accepted baseline. Errors are policy violations; warnings and info are crossings and dependencies not yet reviewed.",
+      name: "hesperus_check", title: "Lint boundary crossings", annotations: READS, description: "Lint the repo's boundary crossings (database, network, AI, cloud, queues, filesystem, processes, environment) against .hesperus/hesperus.json (the policy) and the accepted baseline. Errors are policy violations; warnings and info are crossings and dependencies not yet reviewed.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX } },
       run: async (a) => {
         const [d, l] = await get(a);

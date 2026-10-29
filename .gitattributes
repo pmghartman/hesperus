@@ -2,4 +2,3 @@
 *.scip binary
 *.wasm binary
 *.png binary
-plugin/dist/** linguist-generated

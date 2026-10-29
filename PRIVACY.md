@@ -1,14 +1,14 @@
 # Privacy Policy
 
-Covers Hesperus in every form it ships in: the CLI, the MCP server (including the Claude Desktop bundle), the Claude Code plugin, and the VS Code extension.
+Covers the Hesperus extension for VS Code and Open VSX, with the CLI and MCP server that ship inside it.
 
 ## Data collection
 
-None. Hesperus has no telemetry, analytics, crash reporting or accounts, and the CLI, the MCP server, the plugin and the extension make no network requests.
+None. Hesperus has no telemetry, analytics, crash reporting or accounts, and the CLI, the MCP server and the extension make no network requests.
 
 ## Usage and storage
 
-Hesperus reads the source of the repo you point it at, and only to build its graph. What it writes goes in that repo's `.hesperus/` folder (the graph, the accepted baseline, the latest report, and the pictures it draws), on your machine. It never changes your source files. `hesperus_open` asks your editor or your system's opener to open a file, and nothing else.
+Hesperus reads the source of the repo you point it at, and only to build its graph. What it writes goes in that repo's `.hesperus/` folder (the graph, the outline of each file it indexed, the policy, the accepted baseline, the latest report, and the pictures it draws), on your machine. It never changes your source files. `hesperus_open` asks your editor or your system's opener to open a file, and nothing else.
 
 ## Third-party sharing
 

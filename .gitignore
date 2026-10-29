@@ -1,4 +1,6 @@
-target/
 .hesperus/
 .vscode/
 node_modules/
+out/
+grammars/
+*.vsix

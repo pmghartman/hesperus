@@ -50,7 +50,7 @@ interface ElkEdge {
 }
 
 /** ELK, loaded on the first layout rather than with the module: indexing and linting never need it, and
- *  the CLI finds it in the plugin's node_modules, where Claude Code installs it, not in its own bundle. */
+ *  the CLI finds it in the node_modules beside it, not in its own bundle. */
 let elkLoaded: typeof ELK | undefined;
 function elkClass(): typeof ELK {
   try {

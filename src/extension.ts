@@ -7,27 +7,45 @@ import { BOUNDARIES, BOUNDARY_INFO, boundaryGraph, boundaryId, libraryNodes } fr
 import { EdgeKind, Graph, GraphNode } from "./core/ir";
 import { accept, defaultPolicy, Finding, lint, Policy, POLICY_FILE, Report, Severity, snapshot } from "./core/lint";
 import { Flag, layout, MAX_WIRES } from "./layout";
-import { FRONTENDS, genericFiles, ignored, index, isSource, LangResult, load, scan, Scan, sourceFiles, status } from "./engine";
-import { entries as flowEntries, Entry, flow as flowFrom } from "./core/flow";
+import { FRONTENDS, genericFiles, ignored, index, isSource, LangResult, load, owner, pin, scan, Scan, sourceFiles, status } from "./engine";
+import { entries as flowEntries, Entry, Flow, flow as flowFrom, flowText } from "./core/flow";
+import { ask, choose, chosen, detected } from "./assist";
+import { BRIDGE_TOOL, type BridgeFile } from "./core/bridge";
+import { CACHE_DIR } from "./core/cache";
+import { sha256Hex } from "./core/hash";
+import type { Index } from "./core/scip";
 import { flowLayout } from "./flowchart";
 import { flowInputs } from "./service";
-import { editorIndex, ensureExtension, hasExtension, installExtension } from "./editor";
+import { editorIndex, ensureExtension, installExtension, servedBy } from "./editor";
 import { LintSurface } from "./linter";
-import { gitHead, readBaseline, readPolicy, STARTER_POLICY, writeBaseline, writeReport } from "./review";
+import { ensureCacheDir, gitHead, readBaseline, readPolicy, STARTER_POLICY, writeBaseline, writeReport } from "./review";
 
 /** More boxes than this stalls the layout for minutes. */
 const MAX_BOXES = 500;
+/** Entry points sent to the sidebar; it shows a few and unfolds the rest on request. */
+const MAX_ENTRIES = 100;
+
+/** Each language's last index and the files it was built from, kept between loads and, under
+ *  `.hesperus/outline/`, between sessions: a change then re-indexes only the files it touched. */
+interface Last { index: Index; files: Map<string, BridgeFile> }
+/** On disk the text is left out; a file is taken as unchanged when its hash still matches. */
+interface Outline { tool: string; language: string; index: Index; files: { path: string; hash: string; symbols: BridgeFile["symbols"] }[] }
+const OUTLINE_TOOL = `${BRIDGE_TOOL.name} ${BRIDGE_TOOL.version}`;
+const outlineDir = (repo: string) => path.join(repo, CACHE_DIR, "outline");
+const outlineFile = (repo: string, lang: string) => path.join(outlineDir(repo), `${lang.replace(/[^a-z0-9]+/gi, "_")}.json`);
 
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 type Status =
-  | { state: "idle" | "checking"; label: string }
+  | { state: "idle" | "checking"; label: string; detail?: string }
   | { state: "installing" | "indexing"; label: string; reason: string }
   | { state: "ready"; label: string; nodes: number; edges: number }
   | { state: "error"; label: string; detail: string };
 
 const STATUS = {
   idle: { state: "idle", label: "Not loaded" },
+  /** No cache yet: nothing is written to the repo until a person asks. */
+  unindexed: { state: "idle", label: "Not indexed", detail: "Index reads the repo through the editor's language servers and keeps the graph in .hesperus/." },
   checking: { state: "checking", label: "Checking cache…" },
 } as const;
 
@@ -66,6 +84,12 @@ class Hesperus {
   /** Steps of the flow opened in place. */
   private openSteps = new Set<string>();
   private entryList?: Entry[];
+  /** The flow drawn last, for the Ask button. */
+  private lastFlow?: Flow;
+  /** Each language's last index and the files it was built from: a change re-indexes only what changed. */
+  private last = new Map<string, Last>();
+  /** Paths changed while an index ran, for the run that follows it. */
+  private queued = new Set<string>();
   // Guards tie code to the states it runs in; the automaton view is their picture, so boxes leave them out.
   private hidden = new Set<EdgeKind>(["guard"]);
   /** Outside libraries no boundary claims. Off by default: every box calls the standard library. */
@@ -101,9 +125,16 @@ class Hesperus {
     view.webview.options = { enableScripts: true, localResourceRoots: [this.media] };
     view.webview.html = page(view.webview, this.media, "sidebar", SIDEBAR_BODY);
     view.webview.onDidReceiveMessage((m) => this.onSidebar(m));
-    view.onDidChangeVisibility(() => view.visible && this.open());
+    view.onDidChangeVisibility(() => view.visible && this.show());
     view.onDidDispose(() => (this.sidebar = undefined));
-    if (view.visible) this.open();
+    if (view.visible) this.show();
+  }
+
+  /** The sidebar came up: the graph tab when there is a cache to draw, else the status alone. A repo is
+   *  never indexed, and `.hesperus/` never written, until a person presses Index. */
+  private show() {
+    const folder = this.folder;
+    return folder && status(folder.uri.fsPath).state === "missing" && !this.graph ? this.load(false) : this.open();
   }
 
   open() {
@@ -127,57 +158,109 @@ class Hesperus {
 
   /** Downloads missing indexers and indexes when the cache is missing or stale (or `force`), then renders.
    *  `keep` holds the user's place: what is open stays open (a re-index after an edit). */
-  load(force: boolean, keep = false): Promise<void> {
+  load(force: boolean, keep = false, changed?: readonly string[]): Promise<void> {
     if (this.busy) {
-      if (keep) this.again = true;
+      if (keep) {
+        this.again = true;
+        for (const p of changed ?? []) this.queued.add(p);
+      }
       return this.busy;
     }
-    this.busy = this.doLoad(force, keep).finally(() => {
+    this.busy = this.doLoad(force, keep, changed).finally(() => {
       this.busy = undefined;
-      if (this.again) (this.again = false, this.load(true, true));
+      if (this.again) {
+        this.again = false;
+        const next = [...this.queued];
+        this.queued.clear();
+        void this.load(true, true, next);
+      }
     });
     return this.busy;
   }
 
-  private async doLoad(force: boolean, keep = false) {
+  /** `changed`: the paths a watched edit touched. With a previous index in memory, only they are read and
+   *  asked about again; the rest of each language's index is kept, so an edit shows in seconds. */
+  private async doLoad(force: boolean, keep = false, changed?: readonly string[]) {
     const folder = this.folder;
     if (!folder) return this.setStatus({ state: "error", label: "Error", detail: "Open a folder to see its graph." });
     const repo = folder.uri.fsPath;
+    const unpin = pin(repo);
     try {
       this.setStatus(STATUS.checking);
       this.scanned = scan(repo);
       const st = status(repo);
-      if (force || st.state !== "ready") {
-        const reason = force ? "Re-index requested." : st.state === "missing" ? "No cache yet." : st.detail;
+      // The first index is the person's call: until they press Index, nothing is written to the repo.
+      if (!force && st.state === "missing" && !this.graph) return this.setStatus(STATUS.unindexed);
+      // A fresh session with an index on disk: its outlines come back, and the files edited since
+      // (another session, the agent while the editor was shut) count as changed.
+      if (!this.last.size && st.state !== "missing") {
+        const edited = this.loadOutlines(repo);
+        if (edited?.length) changed = [...(changed ?? []), ...edited];
+      }
+      if (force || st.state !== "ready" || (changed?.length && this.last.size)) {
+        // A change (watched, or found on disk since the last session), with last time's indexes at hand:
+        // only the changed files are read again. Index pressed is a whole read.
+        const partial = changed !== undefined && this.last.size > 0 && (keep || !force);
+        const reason = partial ? `${changed?.length ?? 0} files changed.` : force ? "Index requested." : st.state === "missing" ? "No cache yet." : st.detail;
+        if (!partial) this.last.clear();
         if (!this.scanned.languages.length) throw new Error("No supported language found in this folder.");
         // Each language resolves on its own; one that cannot (extension missing or silent) leaves its files
         // as unindexed nodes and the rest of the repo still builds.
         const results: LangResult[] = [];
         for (const l of this.scanned.languages) {
+          const files = sourceFiles(repo, l.id);
+          const prev = partial ? this.last.get(l.id) : undefined;
+          // What to read again: the changed files of this language, and any that came or went.
+          const mine = new Set((changed ?? []).filter((p) => owner(p)?.id === l.id));
+          if (prev) {
+            const now = new Set(files);
+            for (const p of prev.files.keys()) if (!now.has(p)) mine.add(p);
+            for (const p of files) if (!prev.files.has(p)) mine.add(p);
+            if (!mine.size) {
+              results.push({ lang: l.id, index: prev.index });
+              continue;
+            }
+          }
           try {
             this.setStatus({ state: "installing", label: `Checking the ${l.editor.name} extension…`, reason });
             // In the background (no Hesperus view open) a missing extension is not worth a prompt.
-            if (!this.panel && !this.sidebar && !hasExtension(l.editor.id)) throw new Error(`The ${l.editor.name} extension (${l.editor.id}) is not installed.`);
+            if (!this.panel && !this.sidebar && !servedBy(l)) throw new Error(`The ${l.editor.name} extension (${l.editor.id}) is not installed.`);
             await ensureExtension(l);
-            const ix = await editorIndex(repo, l.id, sourceFiles(repo, l.id), (s) => this.setStatus({ state: "indexing", label: `${l.editor.name}: ${s}`, reason }), { patience: 90, needCode: false, frontend: FRONTENDS.find((f) => f.id === l.id) });
+            const kept = new Map<string, BridgeFile>();
+            const ix = await editorIndex(repo, l.id, files, (s) => this.setStatus({ state: "indexing", label: `${l.editor.name}: ${s}`, reason }), {
+              patience: 90, needCode: false, frontend: FRONTENDS.find((f) => f.id === l.id), keep: kept,
+              ...(prev ? { previous: { index: prev.index, files: prev.files, changed: mine } } : {}),
+            });
+            this.last.set(l.id, { index: ix, files: kept });
             results.push({ lang: l.id, index: ix });
           } catch (e) {
             this.log.appendLine(`${l.id}: ${msg(e)}`);
-            results.push({ lang: l.id, error: msg(e) });
+            results.push(prev ? { lang: l.id, index: prev.index } : { lang: l.id, error: msg(e) });
           }
         }
         // Files no frontend owns: kept when the editor has a language server that finds code in them.
         // Definitions and references only, so their calls are `may` edges; silence just leaves them out.
         for (const g of this.scanned.generic) {
+          const key = `generic:${g.ext}`;
+          const files = genericFiles(repo, g.ext);
+          const prev = partial ? this.last.get(key) : undefined;
+          if (prev && files.length === prev.files.size && !(changed ?? []).some((p) => p.endsWith(`.${g.ext}`))) {
+            results.push({ lang: key, index: prev.index });
+            continue;
+          }
           try {
             this.setStatus({ state: "indexing", label: `.${g.ext}: asking the editor…`, reason });
-            const ix = await editorIndex(repo, "generic", genericFiles(repo, g.ext), (s) => this.setStatus({ state: "indexing", label: `.${g.ext}: ${s}`, reason }), { patience: 4, needCode: true });
-            results.push({ lang: `generic:${g.ext}`, index: ix });
+            const kept = new Map<string, BridgeFile>();
+            const ix = await editorIndex(repo, "generic", files, (s) => this.setStatus({ state: "indexing", label: `.${g.ext}: ${s}`, reason }), { patience: 4, needCode: true, keep: kept });
+            this.last.set(key, { index: ix, files: kept });
+            results.push({ lang: key, index: ix });
           } catch (e) {
             this.log.appendLine(`.${g.ext}: ${msg(e)}`);
+            if (prev) results.push({ lang: key, index: prev.index });
           }
         }
         await index(repo, results);
+        this.saveOutlines(repo);
         this.graph = undefined;
         if (!keep) this.expanded.clear();
       }
@@ -190,7 +273,65 @@ class Hesperus {
       await this.render();
     } catch (e) {
       this.setStatus({ state: "error", label: "Error", detail: msg(e) });
+    } finally {
+      unpin();
     }
+  }
+
+  /** Writes each language's index and file outlines beside the graph, for the next session. */
+  private saveOutlines(repo: string) {
+    try {
+      fs.mkdirSync(outlineDir(repo), { recursive: true });
+      for (const [lang, l] of this.last) {
+        const files = [...l.files.values()].map((f) => ({ path: f.path, hash: sha256Hex(f.text), symbols: f.symbols }));
+        const language = files.length ? l.files.values().next().value!.language : lang.replace(/:.*/, "");
+        const out: Outline = { tool: OUTLINE_TOOL, language, index: l.index, files };
+        fs.writeFileSync(outlineFile(repo, lang), JSON.stringify(out));
+      }
+    } catch (e) {
+      this.log.appendLine(`outline: ${msg(e)}`);
+    }
+  }
+
+  /** Reads the outlines a session before wrote, with each file's text as it is now. Returns the paths whose
+   *  text changed since (or are gone), or undefined when there is nothing usable on disk. */
+  private loadOutlines(repo: string): string[] | undefined {
+    let names: string[];
+    try {
+      names = fs.readdirSync(outlineDir(repo)).filter((n) => n.endsWith(".json"));
+    } catch {
+      return undefined;
+    }
+    const edited: string[] = [];
+    const byLang = new Map(this.scanned?.languages.map((l) => [outlineFile(repo, l.id), l.id] as const) ?? []);
+    for (const g of this.scanned?.generic ?? []) byLang.set(outlineFile(repo, `generic:${g.ext}`), `generic:${g.ext}`);
+    for (const n of names) {
+      const file = path.join(outlineDir(repo), n);
+      const lang = byLang.get(file);
+      if (!lang) continue;
+      try {
+        const o = JSON.parse(fs.readFileSync(file, "utf8")) as Outline;
+        if (o.tool !== OUTLINE_TOOL || !Array.isArray(o.files) || !o.index?.documents) continue;
+        const files = new Map<string, BridgeFile>();
+        for (const f of o.files) {
+          let text: string | undefined;
+          try {
+            text = fs.readFileSync(path.join(repo, f.path), "utf8");
+          } catch {
+            text = undefined;
+          }
+          if (text === undefined || sha256Hex(text) !== f.hash) edited.push(f.path);
+          // A changed file is read again anyway; keeping it lets the language's file set compare whole.
+          files.set(f.path, { path: f.path, language: o.language, text: text ?? "", symbols: f.symbols });
+        }
+        this.last.set(lang, { index: o.index, files });
+      } catch (e) {
+        this.log.appendLine(`outline ${n}: ${msg(e)}`);
+      }
+    }
+    if (!this.last.size) return undefined;
+    this.log.appendLine(`outlines: ${this.last.size} languages, ${edited.length} files changed since`);
+    return edited;
   }
 
   /** Reads the policy and baseline, lints, publishes findings, and rebuilds the drawn graph. The first lint
@@ -287,6 +428,7 @@ class Hesperus {
     const id = this.entry ?? all[0]?.id;
     const inp = await flowInputs(repo, { graph: this.graph, policy: this.policy }, this.report);
     const f = id ? flowFrom(this.graph, id, this.openSteps, inp) : undefined;
+    this.lastFlow = f;
     this.postSidebar();
     if (!f) {
       this.panel.webview.postMessage({ type: "status", status: { state: "error", label: "Error", detail: "No entry point found: nothing in the repo is called from outside it, or nothing is indexed yet. Find a function by name to chart it." } });
@@ -311,8 +453,8 @@ class Hesperus {
       status: this.status,
       mode: this.mode,
       entry: this.entry ?? entries[0]?.id ?? null,
-      entries: entries.slice(0, 40).map((e) => ({ id: e.id, name: e.name, doc: e.doc ?? null, path: e.path, line: e.line, reach: e.reach })),
-      moreEntries: Math.max(0, entries.length - 40),
+      entries: entries.slice(0, MAX_ENTRIES).map((e) => ({ id: e.id, name: e.name, doc: e.doc ?? null, path: e.path, line: e.line, reach: e.reach })),
+      moreEntries: Math.max(0, entries.length - MAX_ENTRIES),
       watch: this.watching,
       policy: { exists: !!this.folder && fs.existsSync(vscode.Uri.joinPath(this.folder.uri, POLICY_FILE).fsPath), error: this.policyError ?? null },
       findings: (this.report?.findings ?? []).slice(0, 200).map((f, i) => ({ i, rule: f.rule, severity: f.severity, message: f.message, path: f.path ?? null, line: (f.range?.start_line ?? 0) + 1 })),
@@ -320,9 +462,35 @@ class Hesperus {
       removed: this.report?.removed.length ?? 0,
       crossings: BOUNDARIES.filter((b) => this.report?.counts[b]).map((b) => ({ id: b, label: BOUNDARY_INFO[b].label, doc: BOUNDARY_INFO[b].doc, ...this.report!.counts[b]! })),
       repo: this.folder?.name ?? null,
-      languages: (this.scanned?.languages ?? []).map((l) => ({ ...l, installed: hasExtension(l.editor.id) })),
+      languages: (this.scanned?.languages ?? []).map((l) => ({ ...l, installed: servedBy(l) !== undefined })),
+      assistants: detected().map((a) => ({ id: a.id, label: a.label })),
+      assistant: chosen() ?? null,
       found,
     });
+  }
+
+  /** What the Ask button sends: the flow on screen, what is new or denied, and what the repo reaches. */
+  private prompt(): string {
+    const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + "\n…" : s);
+    const name = this.folder?.name ?? "this repo";
+    const out = [`Hesperus mapped the repository "${name}" by static analysis: what the program does from its entry points, and every call that reaches outside the repo (databases, the network, AI models, cloud services, queues, the filesystem, processes, the environment).`];
+    const flow = this.mode === "flow" ? this.lastFlow : undefined;
+    if (flow) out.push("", `Flow from ${flow.entry.name} (${flow.entry.path}:${flow.entry.line}), top down:`, "", clip(flowText(flow), 6000));
+    const findings = this.report?.findings ?? [];
+    if (findings.length) {
+      out.push("", `Findings (${findings.length}):`);
+      for (const f of findings.slice(0, 30)) out.push(`- ${f.severity}: ${f.message}${f.path ? ` (${f.path}:${(f.range?.start_line ?? 0) + 1})` : ""}`);
+      if (findings.length > 30) out.push(`- and ${findings.length - 30} more`);
+    } else if (this.report) out.push("", "Findings: none. Nothing is new since the last review and nothing the policy denies.");
+    const reach = BOUNDARIES.filter((b) => this.report?.counts[b]).map((b) => {
+      const c = this.report!.counts[b]!;
+      return `${BOUNDARY_INFO[b].label} ${c.out} out${c.in ? `, ${c.in} in` : ""}`;
+    });
+    if (reach.length) out.push("", `Reaches: ${reach.join("; ")}.`);
+    out.push("", flow
+      ? "Explain what this flow does in plain terms, point out where it leaves the repo and whether each crossing looks intended, and say which findings should be accepted and which fixed."
+      : "Summarize what this repo reaches outside itself, say whether each crossing looks intended, and say which findings should be accepted and which fixed.");
+    return out.join("\n");
   }
 
   /** Best name match; expands its ancestors so it is drawn, then centres on it. */
@@ -414,7 +582,10 @@ class Hesperus {
     const folder = this.folder;
     if (!folder) return;
     const uri = vscode.Uri.joinPath(folder.uri, POLICY_FILE);
-    if (!fs.existsSync(uri.fsPath)) await vscode.workspace.fs.writeFile(uri, Buffer.from(STARTER_POLICY));
+    if (!fs.existsSync(uri.fsPath)) {
+      ensureCacheDir(folder.uri.fsPath);
+      await vscode.workspace.fs.writeFile(uri, Buffer.from(STARTER_POLICY));
+    }
     await vscode.window.showTextDocument(uri);
   }
 
@@ -442,7 +613,7 @@ class Hesperus {
       const skip = ignored(folder.uri.fsPath, paths);
       if (paths.every((p) => skip.has(p))) return;
       this.log.appendLine(`changed: ${paths.slice(0, 5).join(", ")}${paths.length > 5 ? ` and ${paths.length - 5} more` : ""}`);
-      this.load(true, true);
+      this.load(true, true, paths.filter((p) => !skip.has(p)));
     }, delay);
   }
 
@@ -460,6 +631,8 @@ class Hesperus {
       await this.reveal(boundaryId(m.id as (typeof BOUNDARIES)[number]), true);
     } else if (m.type === "flow" || m.type === "map") {
       this.mode = m.type;
+      // The sidebar marks the current view at once, even when there is nothing to draw yet.
+      this.postSidebar();
       if (!this.panel) await this.open();
       else await this.render();
       this.panel?.webview.postMessage({ type: "fit" });
@@ -471,14 +644,19 @@ class Hesperus {
       else await this.render();
       this.panel?.webview.postMessage({ type: "fit" });
     } else if (m.type === "reindex") {
-      if (!this.panel) this.open();
+      // Opening the tab loads without indexing; a forced load while that runs would be dropped, so wait for it.
+      if (!this.panel) await this.open();
       await this.load(true);
     } else if (m.type === "install" && m.id) {
-      if (!this.panel) this.open();
+      if (!this.panel) await this.open();
       this.setStatus({ state: "installing", label: "Installing extension…", reason: m.id });
       await installExtension(m.id);
       await this.load(true);
     } else if (m.type === "find" && m.query) await this.find(m.query);
+    else if (m.type === "assistant" && m.id !== undefined) {
+      await choose(m.id);
+      this.postSidebar();
+    } else if (m.type === "ask") this.postSidebar(await ask(this.prompt()));
   }
 
   /** True, with a note in the sidebar, when the open boxes would draw more than the layout can handle. */
@@ -576,13 +754,18 @@ const GRAPH_BODY = `<svg id="view" xmlns="http://www.w3.org/2000/svg"><g id="sce
 <div id="tools"><button id="auto" title="Semantic Zoom: zooming in opens boxes" aria-pressed="true"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3M5 7h4M7 5v4"/></svg></button><span class="sep"></span><button id="out" title="Zoom Out"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button><span id="zoom">100%</span><button id="in" title="Zoom In"><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9"/></svg></button><button id="fit" title="Fit to Window"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button></div>
 <div id="msg">Loading…</div><div id="tip" hidden></div>`;
 
-const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" class="state"></div></header>
-<pre id="detail" hidden></pre>
+const SIDEBAR_BODY = `<header><div class="repo" id="repo"></div><div id="state" class="state"></div></header>
+<div id="detail" class="note" hidden></div>
 <ul id="missing" class="missing" hidden></ul>
-<div class="actions"><button id="flow" title="What the program does, step by step from an entry point">Flow</button><button id="map" class="secondary" title="What the repo reaches outside itself: databases, the network, models, files">Map</button><button id="reindex" class="secondary" title="Read the repo again">Re-index</button></div>
-<form id="find"><input id="q" type="search" placeholder="Find a function or file to chart" spellcheck="false" aria-label="Find"></form><div id="found" class="muted"></div>
-<section><h3>Starts from</h3><ul id="entries" class="entries"></ul><div id="more" class="muted" hidden></div></section>
-<section id="review"><h3>Review<span class="tools"><button id="policy" class="link" title="Rules for what each part of the repo may reach">Policy</button><button id="accept" class="link" title="Mark every new crossing and dependency as reviewed">Accept All</button></span></h3>
-<div id="summary" class="summary"></div><pre id="policy-error" class="err" hidden></pre><ul id="findings" class="findings"></ul></section>
-<section><h3>Reaches</h3><ul id="crossings" class="langs"></ul></section>
-<label title="Re-index when files change on disk, so edits an agent makes show up as findings"><input type="checkbox" id="watch">Watch for changes</label>`;
+<div class="bar"><div class="switch" role="group" aria-label="View"><button id="flow" aria-pressed="true" title="What the program does, step by step from an entry point">Flow</button><button id="map" aria-pressed="false" title="What the repo reaches outside itself: databases, the network, models, files">Map</button></div><button id="reindex" class="secondary" title="Read the repo through the editor's language servers; the graph is kept in .hesperus/">Index</button></div>
+<div class="bar"><select id="assistant" title="The AI assistant the Ask button sends to; kept in your settings"></select><button id="ask" class="secondary" title="Send what is on screen (the flow, the findings, what the repo reaches) to the assistant; the prompt is copied to the clipboard too">Ask</button></div>
+<form id="find" role="search"><input id="q" type="search" placeholder="Find a function or file to chart" spellcheck="false" aria-label="Find"></form>
+<div id="found" hidden></div>
+<section id="sec-entries"><button class="head" aria-expanded="true"><span class="chev"></span><span class="label">Starts from</span><span id="entry-count" class="badge"></span></button>
+<div class="body"><ul id="entries" class="rows"></ul><div id="more" class="foot" hidden><button id="unfold" class="link"></button><span id="more-note"></span></div></div></section>
+<section id="sec-review"><button class="head" aria-expanded="true"><span class="chev"></span><span class="label">Review</span><span id="review-count" class="badge"></span></button>
+<div class="body"><div class="tools"><span id="summary" class="summary"></span><span class="actions"><button id="policy" class="link" title="Rules for what each part of the repo may reach (.hesperus/hesperus.json)">Policy</button><button id="accept" class="link" title="Mark every new crossing and dependency as reviewed">Accept all</button></span></div>
+<div id="policy-error" class="note err" hidden></div><ul id="findings" class="rows"></ul></div></section>
+<section id="sec-reaches"><button class="head" aria-expanded="true"><span class="chev"></span><span class="label">Reaches</span><span id="reach-count" class="badge"></span></button>
+<div class="body"><ul id="crossings" class="rows"></ul></div></section>
+<footer><label class="check" title="Re-index when files change on disk, so edits an agent makes show up as findings"><input type="checkbox" id="watch"><span>Watch for changes</span></label></footer>`;

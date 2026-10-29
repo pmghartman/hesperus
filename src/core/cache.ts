@@ -93,8 +93,9 @@ function write(p: string, s: string) {
   io(p, () => fs.writeFileSync(p, s));
 }
 
-/** What a person accepted outlives re-indexing; everything else in the cache is rebuilt. */
-const KEEP = new Set(["baseline.json"]);
+/** What a person wrote or accepted outlives re-indexing, and so does the editor's outline of each file
+ *  (what lets a change re-index only the files it touched); everything else in the cache is rebuilt. */
+const KEEP = new Set(["baseline.json", "hesperus.json", "outline"]);
 
 /** Writes only under `<repo>/.hesperus`. Removes the old cache first, except what a person accepted. */
 export function writeCache(repo: string, header: Header, g: Graph) {

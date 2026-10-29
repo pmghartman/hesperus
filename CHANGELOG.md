@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The repository is the extension alone: the Claude Code plugin and the Claude Desktop bundle are retired, with their workflow and packaging, and the extension moves from `vscode/` to the root. The CLI and MCP server stay inside the extension.
+- A language is served by whichever installed extension declares it, not only the one Hesperus names; the install prompt comes only when none does. The sidebar is redrawn to the editor's own conventions: a view switch, collapsible sections with counts, single-line rows.
+- A watched change re-indexes only the files that changed: the rest of each language's index is kept in memory, and one listing of the repo serves a whole load.
+- **Ask** in the sidebar sends the flow on screen, the findings and what the repo reaches to an AI assistant the editor has (Copilot Chat, Claude Code, Cline, Roo Code, Continue, Kilo Code), chosen from a menu and kept in `hesperus.assistant`.
+- The policy moves to `.hesperus/hesperus.json`, untracked with the rest of the cache and kept across re-indexes. The sidebar writes nothing to the repo until **Index** is pressed (was Re-index). Flow and Map mark only the view that is up, and the entry points fold after the first few.
 - Claude Code plugin: the pane's map is drawn in character cells, laid out top to bottom and wrapped to the pane's width (`hesperus svg --portrait N`), with boxes that drag, select, open and close; where the pane cannot run it (the editor, the phone) the picture stays. `.hesperus/view.json` carries each box's cells and the wires. The plugin's version raises itself on `main`.
 - `hesperus index`: the graph from syntax alone, no editor: tree-sitter outlines, same-file and same-package name lookup, imports for the rest (JavaScript/TypeScript, Python, Go, Rust, Java, Kotlin). `hesperus check --index` and `--svg`; `hesperus svg` draws the boundary overview.
 - `hesperus mcp`: an MCP server over stdio with the lint, the diff since the last review, the crossings by boundary, callers and callees, accept, and the overview as a resource.

@@ -1,6 +1,6 @@
 // The boundary picture as the editor's graph tab draws it by default, laid out for a file or a pane:
 // the repo's overview with each boundary as a box on the right, findings flagged on the wires and the
-// boxes they touch. Shared by `hesperus svg`, the MCP server and the Claude Code plugin.
+// boxes they touch. Shared by `hesperus svg` and the MCP server.
 import * as aggregate from "./core/aggregate";
 import { boundaryGraph, libraryNodes } from "./core/boundary";
 import { Graph } from "./core/ir";

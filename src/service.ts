@@ -1,4 +1,4 @@
-// What the CLI, the MCP server and the Claude Code plugin do with a repo: index it headlessly, lint it,
+// What the CLI and the MCP server do with a repo: index it headlessly, lint it,
 // say what changed since the baseline, accept, draw. One place, so every agent-facing surface agrees.
 import * as fs from "node:fs";
 import * as path from "node:path";

@@ -194,10 +194,6 @@ async function headless(repo) {
   assert.equal(second.status, 0, `warnings alone pass: ${second.stderr}`);
   assert.equal(run(["check", repo, "--max-warnings", "0"]).status, 1, "over the warning limit, exit 1");
   assert.deepEqual(JSON.parse(second.stdout).findings.map((f) => `${f.rule}:${f.boundary}`).sort(), ["new-crossing:network", "new-dependency:network"], "new network crossing");
-  // The committed bundle is the same CLI, with nothing from node_modules.
-  const bundled = require("node:child_process").spawnSync(process.execPath, [path.join(__dirname, "..", "..", "plugin", "dist", "hesperus.js"), "check", repo, "--index", "--json"], { encoding: "utf8" });
-  assert.equal(bundled.status, 0, `dist: ${bundled.stderr}`);
-  assert.equal(JSON.parse(bundled.stdout).findings.length, 2, "dist lints the same");
   // MCP over stdio: initialize, list, call.
   const mcp = spawn(process.execPath, [cli, "mcp", repo], { stdio: ["pipe", "pipe", "inherit"] });
   const replies = new Map();
@@ -294,6 +290,18 @@ async function boundaries(repo) {
     const moves = g.edges.filter((e) => e.kind === "transition").map((e) => `${e.from.split(":").pop()}>${e.to.split(":").pop()}`).sort();
     assert.deepEqual(moves, ["#initial>false", "false>true", "true>false"], "flag machine");
     assert.equal(await make(), out);
+    // Incremental: a run that reads one file again, with the previous index, matches a full run, whether
+    // the caller or the callee changed; definitions outside the changed file are never asked about.
+    const U = "function helper() {}\n", CC = "function run() { helper(); }\n";
+    const pair = [{ path: "u.js", language: "javascript", text: U, symbols: [js("helper", 0, 9, 15)] }, { path: "c.js", language: "javascript", text: CC, symbols: [js("run", 0, 9, 12)] }];
+    const pairRefs = async (d) => (d.id.endsWith("/helper(0).") ? [{ path: "c.js", span: sp(0, 17, 0, 23) }] : []);
+    const pairOpts = { sites: (f) => (f.path === "c.js" ? [sp(0, 17, 0, 23)] : []), definitionsOf: async (p, at) => (p === "c.js" && at.character === 17 ? [{ path: "u.js", span: sp(0, 9, 0, 15) }] : []) };
+    const full = await bridge(pair, pairRefs, pairOpts);
+    assert.ok(full.documents.find((d) => d.relative_path === "c.js").occurrences.some((o) => o.symbol.endsWith("/helper(0).") && o.symbol_roles === 0), "full run links the call");
+    for (const changed of ["c.js", "u.js"]) {
+      const part = await bridge(pair, async (d) => (d.path === changed ? pairRefs(d) : assert.fail(`asked about ${d.id} outside ${changed}`)), { ...pairOpts, only: new Set([changed]), previous: full });
+      assert.deepEqual(part, full, `incremental run after ${changed} changed`);
+    }
     await player(repo);
     for (const [name, test] of [["boundary", boundaries], ["imports", imports], ["headless", headless], ["flow", flowTest]]) {
       const other = fs.mkdtempSync(path.join(os.tmpdir(), `hesperus-${name}-`));

@@ -128,9 +128,16 @@ function generated(repo: string, paths: readonly string[]): Set<string> {
   return out;
 }
 
-/** The listing one headless index works from: it asks for the files several times, and each listing
- *  runs git. */
+/** The listing one index works from: it asks for the files several times, and each listing runs git. */
 let pinned: { repo: string; files: string[] } | undefined;
+
+/** Holds one listing of the repo's files for the calls that follow, until the returned function runs. */
+export function pin(repo: string): () => void {
+  pinned = { repo, files: listFiles(repo) };
+  return () => {
+    if (pinned?.repo === repo) pinned = undefined;
+  };
+}
 
 function listFiles(repo: string): string[] {
   if (pinned?.repo === repo) return pinned.files;

@@ -131,6 +131,12 @@ export interface BridgeOptions {
   sites?: (f: BridgeFile) => Span[];
   /** Where the language server says the name at `at` is defined, in the repo or outside it. */
   definitionsOf?: (path: string, at: Pos) => Promise<(BridgeRef | BridgeExternal)[]>;
+  /** An incremental run: only these files' definitions are asked for references and only their call
+   *  sites for definitions. Every other file keeps what `previous` had, less the references that
+   *  pointed into these files (asked again from the other side). Files that are gone are named here
+   *  too, so what pointed into them goes. */
+  only?: ReadonlySet<string>;
+  previous?: Index;
 }
 
 /** Pairs a declaration with its definition when exactly two files declare the same qualified name.
@@ -165,6 +171,12 @@ function unify(w: Walk) {
 
 const within = (p: Pos, s: Span) => posKey(s.start, p) <= 0 && posKey(p, s.end) <= 0;
 
+/** UTF-8 byte column back to UTF-16 units, as `sites` and `refsOf` count. */
+const charCol = (lines: string[], line: number, byte: number) => Buffer.from(lines[line] ?? "", "utf8").subarray(0, byte).toString("utf8").length;
+
+/** `" workspace . a/b.ts/"` for `a/b.ts`: every symbol defined in that file carries it. */
+const pathMark = (p: string) => ` workspace . ${p.split("/").map((s) => esc(s) + "/").join("")}`;
+
 /** One SCIP index for `files`; `refsOf` asks the language server where a definition is used. */
 export async function bridge(files: BridgeFile[], refsOf: (d: BridgeDef, done: number, total: number) => Promise<BridgeRef[]>, opts: BridgeOptions = {}): Promise<Index> {
   const sorted = [...files].sort((a, b) => cmpStr(a.path, b.path));
@@ -174,12 +186,32 @@ export async function bridge(files: BridgeFile[], refsOf: (d: BridgeDef, done: n
   const concurrency = opts.concurrency ?? 8;
   // Types and namespaces never carry edges of their own (containment comes from the outline), so only
   // callables and values are asked. Each answer can take a language server seconds on a large repo.
-  const asked = w.defs.map((d, i) => ({ d, i })).filter(({ d }) => d.shape === "method" || d.shape === "term");
+  const only = opts.previous ? opts.only : undefined;
+  const asked = w.defs.map((d, i) => ({ d, i })).filter(({ d }) => (d.shape === "method" || d.shape === "term") && (!only || only.has(d.path)));
   const refs: BridgeRef[][] = w.defs.map(() => []);
   let done = 0;
   await pool(asked, concurrency, async ({ d, i }) => void (refs[i] = await refsOf(d, ++done, asked.length)));
   const covered = new Set<string>();
   const key = (path: string, p: Pos) => `${path}\0${p.line}:${p.character}`;
+  // Incremental: the unchanged files' references from last time, except those into a changed file.
+  // A line that lost one is asked again below, in case find-references from the other side misses it.
+  const reask = new Set<string>();
+  if (only && opts.previous) {
+    const marks = [...only].map(pathMark);
+    const stale = (symbol: string) => symbol.startsWith("lsp ") && marks.some((m) => symbol.includes(m));
+    for (const doc of opts.previous.documents) {
+      const lines = texts.get(doc.relative_path), occs = w.byFile.get(doc.relative_path);
+      if (only.has(doc.relative_path) || !lines || !occs) continue;
+      for (const o of doc.occurrences) {
+        if (o.symbol_roles & ROLE_DEFINITION) continue;
+        if (stale(o.symbol)) reask.add(`${doc.relative_path}\0${o.range[0]}`);
+        else {
+          occs.push(o);
+          covered.add(key(doc.relative_path, { line: o.range[0], character: charCol(lines, o.range[0], o.range[1]) }));
+        }
+      }
+    }
+  }
   w.defs.forEach((d, i) => {
     for (const r of refs[i]) {
       const lines = texts.get(r.path);
@@ -195,7 +227,8 @@ export async function bridge(files: BridgeFile[], refsOf: (d: BridgeDef, done: n
   if (sites && definitionsOf) {
     const byPath = new Map<string, BridgeDef[]>();
     for (const d of w.defs) (byPath.get(d.path) ?? byPath.set(d.path, []).get(d.path)!).push(d);
-    const todo = sorted.flatMap((f) => sites(f).filter((s) => !covered.has(key(f.path, s.start))).map((s) => ({ path: f.path, site: s })));
+    const wanted = (f: BridgeFile, s: Span) => !only || only.has(f.path) || reask.has(`${f.path}\0${s.start.line}`);
+    const todo = sorted.flatMap((f) => sites(f).filter((s) => wanted(f, s) && !covered.has(key(f.path, s.start))).map((s) => ({ path: f.path, site: s })));
     const found = await pool(todo, concurrency, (t) => definitionsOf(t.path, t.site.start));
     const lang = new Map(sorted.map((f) => [f.path, f.language]));
     todo.forEach((t, i) => {

@@ -13,7 +13,7 @@ import { acceptKeys, BOXES_FILE, check, checkJson, drawSvg, flowTextOf, load, VI
 const USAGE = `usage: hesperus <command> [dir] [options]
 
   index [dir]            build the graph from syntax alone (no editor needed) into <dir>/${CACHE_DIR}/
-  check [dir]            lint boundary crossings against <dir>/${POLICY_FILE} and the accepted baseline
+  check [dir]            lint boundary crossings against <dir>/${POLICY_FILE} (the policy) and the accepted baseline
     --index              re-index first (done anyway when there is no graph yet)
     --json               print the report as JSON
     --svg                also draw the boundary overview to <dir>/${CACHE_DIR}/${VIEW_FILE}

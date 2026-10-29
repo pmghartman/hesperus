@@ -693,7 +693,7 @@
       const s = m.status;
       msg.hidden = false;
       msg.className = (s.state === "error" ? "err" : "") + (L ? " over" : "");
-      msg.textContent = s.state === "error" ? s.detail : s.state === "ready" ? "" : (s.label || "Loading…") + "\nProgress is in the Hesperus sidebar.";
+      msg.textContent = s.state === "error" ? s.detail : s.state === "ready" ? "" : s.state === "idle" ? `${s.label}.\nPress Index in the Hesperus sidebar to read the repo.` :(s.label || "Loading…") + "\nProgress is in the Hesperus sidebar.";
       if (s.state === "error" || !L) (scene.replaceChildren(), labels.replaceChildren());
       pending = null;
       return;

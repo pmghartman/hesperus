@@ -1,3 +1,7 @@
+.github/**
+.hesperus/**
+hesperus.json
+.gitattributes
 src/**
 scripts/**
 out/**/*.test.js

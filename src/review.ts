@@ -12,6 +12,14 @@ export function gitHead(repo: string): string {
   return r.status === 0 ? r.stdout.trim() : "unknown";
 }
 
+/** Makes `.hesperus/` with its ignore file, so a policy written before the first index stays untracked. */
+export function ensureCacheDir(repo: string) {
+  const dir = path.join(repo, CACHE_DIR);
+  fs.mkdirSync(dir, { recursive: true });
+  const ignore = path.join(dir, ".gitignore");
+  if (!fs.existsSync(ignore)) fs.writeFileSync(ignore, "*\n");
+}
+
 /** The policy, or the default when the repo has none. Throws on a malformed file. */
 export function readPolicy(repo: string): Policy {
   const p = path.join(repo, POLICY_FILE);

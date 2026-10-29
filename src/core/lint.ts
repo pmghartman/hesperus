@@ -1,9 +1,10 @@
-// Lint: boundary crossings checked against the repo's policy (`hesperus.json`, written by people) and
-// against the last state a person accepted (`.hesperus/baseline.json`). Pure: graph in, findings out.
+// Lint: boundary crossings checked against the repo's policy (`.hesperus/hesperus.json`, written by people)
+// and against the last state a person accepted (`.hesperus/baseline.json`). Pure: graph in, findings out.
 import { Boundary, BOUNDARIES, BOUNDARY_INFO, crossings, Crossing, Extra } from "./boundary";
 import { cmpStr, Graph, pretty, Range } from "./ir";
 
-export const POLICY_FILE = "hesperus.json";
+/** The policy, repo-relative: under the cache directory, so the repo's own ignore files never see it. */
+export const POLICY_FILE = ".hesperus/hesperus.json";
 export const BASELINE_FILE = "baseline.json";
 export const REPORT_FILE = "report.json";
 

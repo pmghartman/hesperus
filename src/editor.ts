@@ -69,10 +69,14 @@ export function packageOf(uri: vscode.Uri): string {
 /** One SCIP index of `files` from the editor's language servers. `report` gets progress text. */
 export async function editorIndex(
   repo: string, lang: string, files: string[], report: (s: string) => void,
-  /** `patience`: seconds to wait for the first answer. `needCode`: refuse a language the server only outlines as data. */
-  opts: { patience: number; needCode: boolean; frontend?: Frontend } = { patience: 90, needCode: false },
+  /** `patience`: seconds to wait for the first answer. `needCode`: refuse a language the server only outlines as data.
+   *  `keep` receives every file as read, for the next run. `previous`: last time's index and files, and the
+   *  paths changed since (gone ones included): only those are read and asked again. */
+  opts: { patience: number; needCode: boolean; frontend?: Frontend; keep?: Map<string, BridgeFile>; previous?: { index: Index; files: ReadonlyMap<string, BridgeFile>; changed: ReadonlySet<string> } } = { patience: 90, needCode: false },
 ): Promise<Index> {
   const docs = new Map<string, vscode.Uri>(files.map((f) => [f, vscode.Uri.file(path.join(repo, f))]));
+  const prev = opts.previous;
+  const fresh = prev ? files.filter((f) => prev.changed.has(f) || !prev.files.has(f)) : files;
   const ask = async (f: string) =>
     (await vscode.commands.executeCommand<(vscode.DocumentSymbol | vscode.SymbolInformation)[]>("vscode.executeDocumentSymbolProvider", docs.get(f)!)) ?? [];
   // Some servers (cpptools) answer only for documents the editor has opened, and an unparsed file
@@ -88,19 +92,23 @@ export async function editorIndex(
   };
   // A server that is still starting answers with nothing: wait for the first answer from a few files,
   // not for every empty one.
-  const probe = files.slice(0, 8);
-  let answered = false;
+  const probe = (fresh.length ? fresh : files).slice(0, 8);
+  let answered = fresh.length === 0;
   for (let t = 0; t < opts.patience && !answered; t++) {
     report(t === 0 ? "Waiting for the language server…" : `Waiting for the language server… ${t}s`);
     answered = (await Promise.all(probe.map(ask))).some((s) => s.length > 0);
     if (!answered) await sleep(1000);
   }
   let read = 0;
+  const again = new Set(fresh);
   const loaded: BridgeFile[] = await pool(files, 12, async (f) => {
+    const kept = prev?.files.get(f);
+    if (kept && !again.has(f)) return kept;
     const [text, syms] = answered ? await Promise.all([fs.readFile(path.join(repo, f), "utf8"), outline(f)]) : ["", []];
-    if (++read % 20 === 0) report(`Reading symbols ${read}/${files.length}…`);
+    if (++read % 20 === 0) report(`Reading symbols ${read}/${fresh.length}…`);
     return { path: f, language: lang, text, symbols: symbols(syms) };
   });
+  if (opts.keep) for (const f of loaded) opts.keep.set(f.path, f);
   if (!answered) throw new Error(`No language server answered for ${lang} files. Install the editor's extension for the language (C/C++, C#, Rust analyzer, Dart) and reload.`);
   if (opts.needCode && !loaded.some((f) => hasCode(f.symbols))) throw new Error(`The editor outlines ${lang} files but finds no functions or types in them.`);
   const inRepo = (locs: vscode.Location[]): BridgeRef[] => {
@@ -147,6 +155,8 @@ export async function editorIndex(
   }, {
     concurrency: 32,
     unify: fe?.declarationsAcrossFiles,
+    // Declarations paired across files can change ids when any file does, so those languages index whole.
+    ...(prev && !fe?.declarationsAcrossFiles ? { only: prev.changed, previous: prev.index } : {}),
     sites,
     definitionsOf: async (p, at) => {
       if (++n % 25 === 0) report(`Resolving calls ${n}…`);
@@ -159,9 +169,30 @@ export async function editorIndex(
   });
 }
 
+/** Installed extensions with code of their own that declare a language (`contributes.languages`), by
+ *  language id. A grammar-only extension (no `main`) declares a language without serving it. */
+function contributors(): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const e of vscode.extensions.all) {
+    const pkg = e.packageJSON as { main?: string; browser?: string; contributes?: { languages?: { id?: string }[] } } | undefined;
+    if (!pkg?.main && !pkg?.browser) continue;
+    for (const l of pkg.contributes?.languages ?? []) if (l.id) (out.get(l.id) ?? out.set(l.id, []).get(l.id)!).push(e.id);
+  }
+  return out;
+}
+
+/** The installed extension that serves the language: the one the frontend names when it is there, else
+ *  any installed extension that declares the language id (a server comes with the extension that
+ *  declares its language), since a different Go or Python extension answers the same queries. */
+export function servedBy(l: Pick<Language, "id" | "editor">): string | undefined {
+  if (vscode.extensions.getExtension(l.editor.id)) return l.editor.id;
+  return contributors().get(l.id)?.[0];
+}
+
 /** The language's editor extension, installed and active; offers to install it when missing. */
 export async function ensureExtension(l: Language): Promise<void> {
-  let ext = vscode.extensions.getExtension(l.editor.id);
+  const have = servedBy(l);
+  let ext = have ? vscode.extensions.getExtension(have) : undefined;
   if (!ext) {
     const pick = await vscode.window.showInformationMessage(
       `Hesperus reads ${l.files.toLocaleString()} ${l.editor.name} files through the ${l.editor.name} extension, which is not installed.`,

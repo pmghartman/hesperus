@@ -63,7 +63,7 @@
       },
       {
         "command": "hesperus.refresh",
-        "title": "Hesperus: Re-index",
+        "title": "Hesperus: Index",
         "icon": "$(refresh)"
       },
       {
@@ -97,35 +97,36 @@
           "default": 1500,
           "minimum": 200,
           "description": "Milliseconds of quiet after the last change before re-indexing."
+        },
+        "hesperus.assistant": {
+          "type": "string",
+          "default": "",
+          "description": "The AI assistant extension the sidebar's Ask button sends to, by id: copilot, claude-code, cline, roo, continue or kilo. Chosen from the sidebar's menu; empty means the first one installed."
         }
       }
     },
     "jsonValidation": [
       {
-        "fileMatch": "hesperus.json",
+        "fileMatch": "**/.hesperus/hesperus.json",
         "url": "./schema/policy.schema.json"
       }
     ]
   },
   "scripts": {
-    "build": "node scripts/grammars.js && tsc -p . && node scripts/bundle.js",
+    "build": "node scripts/grammars.js && tsc -p .",
     "test": "npm run build && node scripts/smoke.js",
     "vscode:prepublish": "npm run build",
     "package": "vsce package",
-    "check": "node out/cli.js check",
-    "bundle": "node scripts/bundle.js",
-    "mcpb": "node scripts/mcpb.js"
+    "check": "node out/cli.js check"
   },
   "dependencies": {
     "elkjs": "0.9.3",
     "web-tree-sitter": "0.25.10"
   },
   "devDependencies": {
-    "@anthropic-ai/mcpb": "2.1.2",
     "@types/node": "20.14.10",
     "@types/vscode": "1.90.0",
     "@vscode/vsce": "3.2.1",
-    "esbuild": "^0.24.2",
     "tree-sitter-c-sharp": "0.23.5",
     "tree-sitter-cpp": "0.23.4",
     "tree-sitter-dart": "1.0.0",
