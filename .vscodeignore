@@ -15,3 +15,4 @@ node_modules/web-tree-sitter/lib/**
 node_modules/web-tree-sitter/src/**
 node_modules/web-tree-sitter/tree-sitter.js
 node_modules/web-tree-sitter/*.d.ts
+.vscode/**
