@@ -16,6 +16,9 @@ export interface Frontend {
   syntax(path: string): Syntax | undefined;
   /** How this language's imports name what they reach; without it, unresolved calls stay unresolved. */
   imports?: Imports;
+  /** Names the language calls without writing them where it calls (`__add__` for `+`, `invoke` for `f()`):
+   *  their uses carry no name token, so the editor asks for their references instead. */
+  implicit?: RegExp;
   /** Its syntax outlines definitions, so the headless indexer can index it without a language server. */
   headless?: boolean;
 }

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- icon.svg drawn for a tab: 16 cells, its strokes 3 cells wide on whole cells so no edge falls
+       between pixels, flat, in the same sunset with no shadow, sheen or fold to blur at this size -->
+  <defs>
+    <linearGradient id="sun" gradientUnits="userSpaceOnUse" x1="2" y1="2" x2="14" y2="15"><stop offset="0" stop-color="#ffd27a"/><stop offset="0.35" stop-color="#ff8f5a"/><stop offset="0.68" stop-color="#ec4f6e"/><stop offset="1" stop-color="#8b3394"/></linearGradient>
+    <linearGradient id="dusk" gradientUnits="userSpaceOnUse" x1="2" y1="2" x2="14" y2="15"><stop offset="0" stop-color="#f29a4a"/><stop offset="0.35" stop-color="#e5574a"/><stop offset="0.68" stop-color="#b8305f"/><stop offset="1" stop-color="#5a1c6e"/></linearGradient>
+  </defs>
+  <!-- the stem at the back in the sunset's dusk, the arch and leg over it -->
+  <path fill="url(#dusk)" d="M2,3H6V12H3V4H2Z"/>
+  <path fill="url(#sun)" d="M3,7.5A5.5,5.5 0 0 1 14,7.5H11A2.5,2.5 0 0 0 6,7.5Z M11,7H14V15H11Z"/>
+</svg>

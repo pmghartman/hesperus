@@ -137,5 +137,6 @@ export const Python: Frontend = {
   editor: { id: "ms-python.python", name: "Python" },
   imports: PY_IMPORTS,
   init: () => PYTHON.init(),
+  implicit: /^__\w+__$/,
   syntax: () => PYTHON,
 };

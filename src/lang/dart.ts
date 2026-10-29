@@ -228,5 +228,6 @@ export const Dart: Frontend = {
   extensions: ["dart"],
   editor: { id: "Dart-Code.dart-code", name: "Dart and Flutter" },
   init: () => DART.init(),
+  implicit: /^call$/,
   syntax: () => DART,
 };

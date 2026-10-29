@@ -19,7 +19,8 @@ export interface BridgeSymbol {
   children: BridgeSymbol[];
 }
 export interface BridgeFile { path: string; language: string; text: string; symbols: BridgeSymbol[] }
-export interface BridgeDef { id: string; path: string; selection: Span; shape: BridgeSymbol["shape"] }
+/** `token` is the name as the file spells it at `selection`, which an outline's name need not be (`f(int)`). */
+export interface BridgeDef { id: string; path: string; selection: Span; shape: BridgeSymbol["shape"]; kind: number; token: string }
 export interface BridgeRef { path: string; span: Span }
 /** A definition outside the repo: its package, and its name with the types that own it, outermost first. */
 export interface BridgeExternal { package: string; names: string[] }
@@ -85,7 +86,8 @@ function walk(files: BridgeFile[], texts: Map<string, string[]>): Walk {
           continue;
         }
         const info: SymbolInformation = { symbol: id, documentation: [], relationships: [], kind: leaf.kind, display_name: leaf.name, enclosing_symbol: par };
-        const entry: Entry = { occ, def: { id, path: f.path, selection: sel, shape: leaf.shape }, size: size(raw.range), qual: qpre + descriptor(leaf, 0), shape: leaf.shape, info };
+        const token = sel.start.line === sel.end.line ? (lines[sel.start.line] ?? "").slice(sel.start.character, sel.end.character) : "";
+        const entry: Entry = { occ, def: { id, path: f.path, selection: sel, shape: leaf.shape, kind: leaf.kind, token }, size: size(raw.range), qual: qpre + descriptor(leaf, 0), shape: leaf.shape, info };
         seen.set(id, entry);
         out.entries.push(entry);
         occs.push(occ);
@@ -130,7 +132,14 @@ export interface BridgeOptions {
   /** Call-site name tokens of a file, from syntax. */
   sites?: (f: BridgeFile) => Span[];
   /** Where the language server says the name at `at` is defined, in the repo or outside it. */
-  definitionsOf?: (path: string, at: Pos) => Promise<(BridgeRef | BridgeExternal)[]>;
+  definitionsOf?: (path: string, at: Pos, done: number, total: number) => Promise<(BridgeRef | BridgeExternal)[]>;
+  /** Name tokens of a file whose text `wanted` accepts, from syntax. With it (and `definitionsOf`), a whole
+   *  run asks each token where it is defined instead of each definition where it is used: the same
+   *  occurrences, but a name many definitions share is resolved once per use, not once per definition
+   *  per use, and each question is a short one. Only definitions `named` rejects are asked for references. */
+  uses?: (f: BridgeFile, wanted: (name: string) => boolean) => Span[];
+  /** Whether a definition's uses carry its name token, so `uses` finds them; a constructor's do not. */
+  named?: (d: BridgeDef) => boolean;
   /** An incremental run: only these files' definitions are asked for references and only their call
    *  sites for definitions. Every other file keeps what `previous` had, less the references that
    *  pointed into these files (asked again from the other side). Files that are gone are named here
@@ -187,7 +196,12 @@ export async function bridge(files: BridgeFile[], refsOf: (d: BridgeDef, done: n
   // Types and namespaces never carry edges of their own (containment comes from the outline), so only
   // callables and values are asked. Each answer can take a language server seconds on a large repo.
   const only = opts.previous ? opts.only : undefined;
-  const asked = w.defs.map((d, i) => ({ d, i })).filter(({ d }) => (d.shape === "method" || d.shape === "term") && (!only || only.has(d.path)));
+  const { sites, uses, definitionsOf } = opts;
+  const used = (d: BridgeDef) => d.shape === "method" || d.shape === "term";
+  // An incremental run still asks the changed files' definitions: a use of one in an unchanged file is
+  // no token that run reads again.
+  const byUse = !only && uses && definitionsOf ? (d: BridgeDef) => d.token !== "" && (opts.named?.(d) ?? true) : () => false;
+  const asked = w.defs.map((d, i) => ({ d, i })).filter(({ d }) => used(d) && (!only || only.has(d.path)) && !byUse(d));
   const refs: BridgeRef[][] = w.defs.map(() => []);
   let done = 0;
   await pool(asked, concurrency, async ({ d, i }) => void (refs[i] = await refsOf(d, ++done, asked.length)));
@@ -222,17 +236,33 @@ export async function bridge(files: BridgeFile[], refsOf: (d: BridgeDef, done: n
     }
   });
   // Find-references misses calls (macros, templates, headers still loading); a call site's own
-  // definition lookup does not. Only sites the references left unexplained are asked.
-  const { sites, definitionsOf } = opts;
-  if (sites && definitionsOf) {
+  // definition lookup does not. Only sites the references left unexplained are asked, and with `uses`
+  // every other token named like a definition, but the definitions' own names.
+  if ((sites || uses) && definitionsOf) {
     const byPath = new Map<string, BridgeDef[]>();
     for (const d of w.defs) (byPath.get(d.path) ?? byPath.set(d.path, []).get(d.path)!).push(d);
     const wanted = (f: BridgeFile, s: Span) => !only || only.has(f.path) || reask.has(`${f.path}\0${s.start.line}`);
-    const todo = sorted.flatMap((f) => sites(f).filter((s) => wanted(f, s) && !covered.has(key(f.path, s.start))).map((s) => ({ path: f.path, site: s })));
-    const found = await pool(todo, concurrency, (t) => definitionsOf(t.path, t.site.start));
+    const reread = new Set([...reask].map((k) => k.slice(0, k.indexOf("\0"))));
+    const names = new Set(w.defs.filter((d) => used(d) && d.token !== "").map((d) => d.token.toLowerCase()));
+    const named = (n: string) => names.has(n.toLowerCase());
+    const todo = sorted.flatMap((f) => {
+      const calls = sites?.(f) ?? [];
+      const skip = new Set([...calls.map((s) => s.start), ...(byPath.get(f.path) ?? []).map((d) => d.selection.start)].map((p) => key(f.path, p)));
+      const rest = uses && (!only || only.has(f.path) || reread.has(f.path)) ? uses(f, named).filter((s) => !skip.has(key(f.path, s.start))) : [];
+      return [...calls.map((site) => ({ path: f.path, site, call: true })), ...rest.map((site) => ({ path: f.path, site, call: false }))]
+        .filter((t) => wanted(f, t.site) && !covered.has(key(f.path, t.site.start)));
+    });
+    let asks = 0;
+    const found = await pool(todo, concurrency, (t) => definitionsOf(t.path, t.site.start, ++asks, todo.length));
     const lang = new Map(sorted.map((f) => [f.path, f.language]));
     todo.forEach((t, i) => {
       const inside = found[i].filter((l): l is BridgeRef => "path" in l);
+      if (!t.call) {
+        // A use that is no call is what find-references lists: the in-repo callables and values it names.
+        const hits = new Set(inside.flatMap((l) => (byPath.get(l.path) ?? []).filter((d) => used(d) && within(l.span.start, d.selection)).map((d) => d.id)));
+        for (const symbol of hits) w.byFile.get(t.path)!.push({ symbol, symbol_roles: 0, ...span(texts.get(t.path)!, t.site) });
+        return;
+      }
       const hit = inside.map((l) => (byPath.get(l.path) ?? []).find((d) => within(l.span.start, d.selection))).find((d) => d !== undefined);
       // Only when every answer lies outside: an in-repo answer that is no definition (a local) stays unresolved.
       const ext = inside.length ? undefined : found[i].find((l): l is BridgeExternal => "package" in l);

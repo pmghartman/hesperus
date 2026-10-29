@@ -74,5 +74,6 @@ export const Ruby: Frontend = {
   extensions: ["rb", "rake", "gemspec"],
   editor: { id: "Shopify.ruby-lsp", name: "Ruby LSP" },
   init: () => RUBY.init(),
+  implicit: /^(initialize|call)$/,
   syntax: () => RUBY,
 };

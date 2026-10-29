@@ -81,5 +81,6 @@ export const Php: Frontend = {
   extensions: ["php", "phtml"],
   editor: { id: "bmewburn.vscode-intelephense-client", name: "PHP Intelephense" },
   init: () => PHP.init(),
+  implicit: /^__/,
   syntax: () => PHP,
 };

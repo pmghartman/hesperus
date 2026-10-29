@@ -1,11 +1,11 @@
 // The flow laid out as a chart: steps top to bottom, a decision's yes side indented under it and its
-// no side under that (an else-if ladder stays level with its first decision, read down the left), a
-// loop's body indented with a line back up, an opened call's steps indented in a frame. Plain
-// arithmetic, no layout library: the shape is a tree, and reading order is source order. A long flow
-// is broken into columns that read left to right, as many as make the chart fit the pane best; with a
+// no side under that; an else-if ladder's decisions side by side in rows as wide as the pane, each with
+// its yes side beneath it; a loop's body indented with a line back up, an opened call's steps indented
+// in a frame. Plain arithmetic, no layout library: the shape is a tree, and reading order is source
+// order. A long flow is broken into columns that read left to right, as many as make the chart fit the pane best; with a
 // narrative, the top-level steps sit in titled phase bands.
 import { Boundary } from "./core/boundary";
-import { Entry, firstSentence, Flow, Step } from "./core/flow";
+import { Entry, firstSentence, Flow, IfStep, Step } from "./core/flow";
 import { Severity } from "./core/lint";
 import { Narrative } from "./core/narrate";
 
@@ -51,6 +51,8 @@ export const CHAR = 6.6;
 const PAD = 44, MIN_W = 150, MAX_W = 330, H1 = 30, LINE = 14, GAP = 18, IND = 32, FRAME = 12, SIDE = 14;
 const COND_H = 36, COND_LINE = 14, TAG_H = 22, END = 14, PHASE_H = 24, PHASE_PAD = 8, JUMP = 16, COLGAP = 56;
 const MAX_COLUMNS = 6;
+/** Between two decisions of a ladder side by side. */
+const HGAP = 40;
 /** Code is drawn in a monospace font a touch wider than the body text. */
 const CODE = CHAR * 1.05;
 
@@ -77,9 +79,10 @@ const condLines = (text: string) => wrapTo(text.replace(/\s+/g, " "), Math.floor
 const condWidth = (keyword: string, lines: string[]) => Math.max(MIN_W, Math.min(MAX_W, Math.max(...lines.map((l) => l.length * CODE)) + keyword.length * CHAR + PAD + 30));
 
 /** Where the flow leaves a box: its bottom (the default), or its left side for a loop's exit and a
- *  decision's untaken side, so those lines never cross the branch beneath. `via`: lanes the line takes
- *  on its way, outermost last: a yes side's exits pass right of the no side drawn beneath them. */
-interface Exit { box: FlowBox; side?: boolean; label?: string; via?: { x: number; y: number }[] }
+ *  decision's untaken side, so those lines never cross the branch beneath; or its right side, for a
+ *  decision in a row passing on to the next. `via`: lanes the line takes on its way, outermost last: a
+ *  yes side's exits pass right of the no side drawn beneath them. */
+interface Exit { box: FlowBox; side?: "left" | "right"; label?: string; via?: { x: number; y: number }[] }
 interface Placed { bottom: number; right: number; exits: Exit[] }
 
 interface Built { layout: FlowLayout; /** Height of each top-level step's block, gap included. */ heights: number[]; /** Width of the one column. */ colWidth: number }
@@ -87,9 +90,11 @@ interface Built { layout: FlowLayout; /** Height of each top-level step's block,
 /** The chart for a flow, with its narrative's phases when there is one. */
 export function flowLayout(f: Flow, opts: FlowLayoutOptions = {}): FlowLayout {
   // First in one column, to measure each top-level step; then in the columns that fit the pane best.
-  const one = build(f, opts.narrative, new Set());
+  // A ladder's row is as wide as the pane, within reason.
+  const rowMax = Math.max(2 * MAX_W + HGAP, Math.min(opts.viewport?.width ?? 1200, 1600));
+  const one = build(f, opts.narrative, new Set(), rowMax);
   const breaks = columns(one, opts.viewport);
-  return breaks.size ? build(f, opts.narrative, breaks).layout : one.layout;
+  return breaks.size ? build(f, opts.narrative, breaks, rowMax).layout : one.layout;
 }
 
 /** Which top-level steps open a new column: none, or a packing into the number of columns that needs
@@ -123,7 +128,7 @@ function columns(one: Built, viewport?: { width: number; height: number }): Set<
   return best.breaks;
 }
 
-function build(f: Flow, narrative: Narrative | undefined, breaks: ReadonlySet<number>): Built {
+function build(f: Flow, narrative: Narrative | undefined, breaks: ReadonlySet<number>, rowMax: number): Built {
   const boxes: FlowBox[] = [], links: FlowLink[] = [];
   let right = 0, colRight = 0;
   const add = (b: FlowBox) => {
@@ -138,9 +143,15 @@ function build(f: Flow, narrative: Narrative | undefined, breaks: ReadonlySet<nu
   // from a side, out to the left and down; then along each `via` lane, down to it and across.
   const route = (e: Exit, laneY: number) => {
     const b = e.box;
-    const pts = e.side ? [{ x: b.x, y: b.y + b.h / 2 }, { x: b.x - SIDE, y: b.y + b.h / 2 }] : [{ x: cx(b), y: b.y + b.h }];
-    if (e.side) left = Math.min(left, b.x - SIDE);
-    for (const v of e.via ?? []) pts.push({ x: pts[pts.length - 1].x, y: v.y }, { x: v.x, y: v.y });
+    const mid = b.y + b.h / 2;
+    const pts = e.side === "left" ? [{ x: b.x, y: mid }, { x: b.x - SIDE, y: mid }] : e.side === "right" ? [{ x: b.x + b.w, y: mid }] : [{ x: cx(b), y: b.y + b.h }];
+    if (e.side === "left") left = Math.min(left, b.x - SIDE);
+    for (const v of e.via ?? []) {
+      const last = pts[pts.length - 1];
+      if (last.y !== v.y) pts.push({ x: last.x, y: v.y });
+      pts.push({ x: v.x, y: v.y });
+      left = Math.min(left, v.x);
+    }
     pts.push({ x: pts[pts.length - 1].x, y: laneY });
     return pts;
   };
@@ -188,6 +199,11 @@ function build(f: Flow, narrative: Narrative | undefined, breaks: ReadonlySet<nu
         exits = bottomOf(b);
         bottom = b.y + b.h + GAP;
         colR = Math.max(colR, b.x + b.w);
+      } else if (s.kind === "if" && s.no.length === 1 && s.no[0].kind === "if") {
+        const p = ladder(s, x, bottom, exits, lbl);
+        exits = p.exits;
+        bottom = p.bottom;
+        colR = Math.max(colR, p.right);
       } else if (s.kind === "if") {
         const lines = condLines(s.text);
         const d = add({ id: s.id, kind: "if", x, y: bottom, w: condWidth("if", lines), h: COND_H + (lines.length - 1) * COND_LINE, text: s.text, keyword: "if", lines, path: s.in, line: s.line });
@@ -200,12 +216,12 @@ function build(f: Flow, narrative: Narrative | undefined, breaks: ReadonlySet<nu
         let out = yes.exits, b = yes.bottom, r = Math.max(yes.right, d.x + d.w);
         if (s.no.length) {
           const ladder = s.no.length === 1 && s.no[0].kind === "if";
-          const no = place(s.no, ladder ? x : x + IND, yes.bottom + GAP / 2, [{ box: d, side: true, label: "no" }]);
+          const no = place(s.no, ladder ? x : x + IND, yes.bottom + GAP / 2, [{ box: d, side: "left", label: "no" }]);
           const lane = { x: Math.max(r, no.right) + SIDE, y: yes.bottom - GAP / 2 };
           out = [...yes.exits.map((e) => ({ ...e, via: [...(e.via ?? []), lane] })), ...no.exits];
           b = no.bottom;
           r = lane.x + 2;
-        } else out = [...out, { box: d, side: true, label: "no" }];
+        } else out = [...out, { box: d, side: "left", label: "no" }];
         exits = out;
         bottom = Math.max(b, d.y + d.h + GAP);
         colR = Math.max(colR, r);
@@ -217,10 +233,10 @@ function build(f: Flow, narrative: Narrative | undefined, breaks: ReadonlySet<nu
         // Back from the body's end, up to the header's underside at its left.
         const xb = x + IND - 10;
         for (const e of body.exits) {
-          const pts = e.side && !e.via?.length ? [{ x: e.box.x, y: e.box.y + e.box.h / 2 }] : route(e, body.bottom - GAP / 2);
+          const pts = e.side === "left" && !e.via?.length ? [{ x: e.box.x, y: e.box.y + e.box.h / 2 }] : route(e, body.bottom - GAP / 2);
           links.push({ from: e.box.id, to: h.id, back: true, points: [...pts, { x: xb, y: pts[pts.length - 1].y }, { x: xb, y: h.y + h.h }] });
         }
-        exits = [{ box: h, side: true, label: "done" }];
+        exits = [{ box: h, side: "left", label: "done" }];
         bottom = body.bottom + GAP / 2;
         colR = Math.max(colR, body.right, h.x + h.w);
       } else if (s.kind === "switch") {
@@ -236,7 +252,7 @@ function build(f: Flow, narrative: Narrative | undefined, breaks: ReadonlySet<nu
           y1 = body.bottom;
           r = Math.max(r, body.right, tag.x + tag.w);
         }
-        if (!s.cases.some((c) => c.text === "otherwise")) out.push({ box: d, side: true, label: "else" });
+        if (!s.cases.some((c) => c.text === "otherwise")) out.push({ box: d, side: "left", label: "else" });
         exits = out.length ? out : bottomOf(d);
         bottom = y1;
         colR = Math.max(colR, r);
@@ -251,6 +267,56 @@ function build(f: Flow, narrative: Narrative | undefined, breaks: ReadonlySet<nu
       }
     }
     return { bottom, right: colR, exits };
+  };
+
+  /** An else-if ladder in rows: its decisions side by side, each passing on to the next from its right
+   *  side, its yes side beneath it, a final else in a column of its own. A row that would run past
+   *  `rowMax` wraps beneath; the exits of a row above a wrap run along its foot and down the ladder's left. */
+  const ladder = (first: IfStep, x: number, y: number, from: Exit[], label?: string): Placed => {
+    const ds = [first];
+    for (let s = first; s.no.length === 1 && s.no[0].kind === "if"; ) ds.push((s = s.no[0] as IfStep));
+    const collector = x - SIDE;
+    let top = y, colX = x, rowRight = x, rowBottom = y, right = x;
+    let rowOut: Exit[] = [], done: Exit[] = [];
+    let prev: FlowBox | undefined, into: Exit[] | undefined = from;
+    const mid = (b: FlowBox) => b.y + b.h / 2;
+    const wrap = () => {
+      const busY = rowBottom - GAP / 2;
+      done = [...done, ...rowOut.map((e) => ({ ...e, via: [...(e.via ?? []), { x: collector, y: busY }] }))];
+      into = [{ box: prev!, side: "right", label: "no", via: [{ x: rowRight + SIDE, y: mid(prev!) }] }];
+      right = Math.max(right, rowRight + SIDE + 2);
+      rowOut = [];
+      top = rowBottom + GAP;
+      colX = rowRight = x;
+    };
+    ds.forEach((s, i) => {
+      const lines = condLines(s.text), w = condWidth("if", lines);
+      if (prev && colX + w > x + rowMax) wrap();
+      const d = add({ id: s.id, kind: "if", x: colX, y: top, w, h: COND_H + (lines.length - 1) * COND_LINE, text: s.text, keyword: "if", lines, path: s.in, line: s.line });
+      if (into) join(into, d, i === 0 ? label : undefined);
+      else {
+        const a = { x: prev!.x + prev!.w, y: mid(prev!) }, b = { x: d.x, y: mid(d) }, gx = d.x - HGAP / 2;
+        links.push({ from: prev!.id, to: d.id, label: "no", points: a.y === b.y ? [a, b] : [a, { x: gx, y: a.y }, { x: gx, y: b.y }, b] });
+      }
+      const yes = s.yes.length ? place(s.yes, colX + IND, d.y + d.h + GAP, bottomOf(d), "yes") : { bottom: d.y + d.h + GAP, right: d.x + d.w, exits: [{ box: d, label: "yes" }] };
+      rowOut.push(...yes.exits);
+      rowBottom = Math.max(rowBottom, yes.bottom);
+      rowRight = Math.max(rowRight, yes.right, d.x + d.w);
+      colX = rowRight + HGAP;
+      prev = d;
+      into = undefined;
+    });
+    const last = ds[ds.length - 1], d = prev!;
+    let fall: Exit | undefined;
+    if (last.no.length) {
+      if (colX + MIN_W > x + rowMax) wrap();
+      const at = into ? x : colX;
+      const el = place(last.no, at, into ? top : d.y + d.h + GAP, into ?? [{ box: d, side: "right", label: "no", via: [{ x: colX - HGAP / 2, y: mid(d) }] }]);
+      rowOut.push(...el.exits);
+      rowBottom = Math.max(rowBottom, el.bottom);
+      rowRight = Math.max(rowRight, el.right);
+    } else fall = { box: d, side: "right", label: "no", via: [{ x: rowRight + SIDE, y: mid(d) }] };
+    return { bottom: rowBottom, right: Math.max(right, rowRight + (fall ? SIDE + 2 : 0)), exits: [...done, ...rowOut, ...(fall ? [fall] : [])] };
   };
 
   // The entry at the top of the first column; every column's steps start level with the first's.

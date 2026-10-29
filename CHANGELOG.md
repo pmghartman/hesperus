@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- An else-if ladder in the control flow chart is laid across: its decisions side by side, each passing on to the next from its right, its yes side beneath it and a final else in a column of its own, in rows as wide as the pane. A dispatch on a message's type is a few rows instead of a tall stack.
+- The control flow no longer takes a function's decisions from another: a file edited since the index is read as having no syntax (its calls still show, in order) until it is indexed again, instead of its branches being read at the lines the old index gave.
+- **Trace From Here** opens the chart beside the code instead of over it; a chart already open is brought up where it is.
+- The chart's tab has its own icon, drawn for 16 pixels: whole-pixel strokes and no shadow or sheen, which smudged the η at that size.
+- The graph lists the folders and files it has opened along its top: the flow view dissolves an opened one into what it holds, which left no box to close it by. Each chip closes its folder and what was opened inside it.
+
+- **Index** draws the graph before it is complete: a first read resolves each call site with go-to-definition and draws the chart and its entry points from that; the whole read runs after it under the drawing and replaces it when done, taking the first one's files and answers instead of asking them again. Only the whole graph is written to `.hesperus/`.
+- The whole read asks each name token where it is defined instead of each definition where it is used (find-references, which on a large repo kept a server busy for minutes to an hour, and timed out). Syntax lists the tokens named like a definition in the repo, or like a name a file imports from it under its own; each is asked once, however many definitions share its name. The occurrences are the same; definitions whose uses carry no name token (constructors, operators, `__add__`, Kotlin's `invoke`, Rust's `Add::add`) are still asked for their references. A re-index after an edit asks as before. Each language's phases, with counts and times, go to the Hesperus output channel.
+
 - The boundary review is out for now: no policy file, no accepted baseline, no findings. The Problems diagnostics and their quick fixes, the status bar count, the `hesperus.policy` command, `hesperus check` and its flags, the `hesperus_check`, `hesperus_diff` and `hesperus_accept` tools, the `audit` prompt and the report resource are removed. The boundary crossings themselves stay: in the sidebar, on the boundary graph, as terminals of the control flow, and through `hesperus_boundaries`.
 - **Trace From Here**, a button in the editor's title bar: the control flow chart from the entry point that reaches the code under the cursor, every call on the way opened, centred on the call into it. Code nothing reaches is traced from itself; module-level code is the file's on-load flow.
 - Entry points list the name in full and cut the path from its start, so the file name stays readable.

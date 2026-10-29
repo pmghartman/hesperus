@@ -87,6 +87,12 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 #tools svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
 #tools #auto[aria-pressed="true"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent); }
 #tools .sep { width: 1px; height: 16px; margin: 0 3px; background: var(--border); }
+#opened { position: fixed; top: 6px; left: 10px; right: 200px; display: flex; flex-wrap: wrap; gap: 4px; }
+#opened[hidden] { display: none; }
+#opened button { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 6px 0 8px; border: 1px solid var(--border); border-radius: 11px; background: var(--vscode-editorWidget-background); color: var(--vscode-foreground); font: inherit; font-size: 11px; cursor: pointer; }
+#opened button:hover { background: var(--vscode-toolbar-hoverBackground); }
+#opened button span { color: var(--muted); }
+#opened button:focus-visible { outline: 1px solid var(--accent); outline-offset: -1px; }
 #zoom { min-width: 38px; text-align: center; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
 #msg { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; white-space: pre-wrap; color: var(--muted); font-size: 13px; pointer-events: none; }
 #msg.err { color: var(--vscode-errorForeground); font-family: var(--vscode-editor-font-family); font-size: 12px; text-align: left; }

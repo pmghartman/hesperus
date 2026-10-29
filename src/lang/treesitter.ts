@@ -347,4 +347,25 @@ export class Grammar implements Syntax {
     this.seen.set(source, f);
     return f;
   }
+
+  /** Parsed again rather than kept with the facts: every name in a large repo is more than the cache should hold. */
+  names(source: string, wanted: (name: string) => boolean): Range[] {
+    if (!this.lang) throw new Error(`grammar ${this.file} used before init()`);
+    const p = new Parser();
+    p.setLanguage(this.lang);
+    const out: Range[] = [];
+    const tree = p.parse(source);
+    if (tree) {
+      const src = new Source(source);
+      walk(tree.rootNode, (n) => {
+        if (n.childCount === 0 && n.isNamed && NAME.test(n.text) && wanted(n.text)) out.push(src.range(n));
+      });
+      tree.delete();
+    }
+    p.delete();
+    return out;
+  }
 }
+
+/** A token that can name a definition: letters, digits, `_` and `$`, and Ruby's `?` and `!` at the end. */
+const NAME = /^[\p{L}_$][\p{L}\p{N}_$]*[?!]?$/u;

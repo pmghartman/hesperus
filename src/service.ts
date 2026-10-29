@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { BOUNDARIES, Boundary, BOUNDARY_INFO, Crossing } from "./core/boundary";
 import { CACHE_DIR, readHeader, readShards } from "./core/cache";
 import { Graph, pretty } from "./core/ir";
+import { sha256Hex } from "./core/hash";
 import { defaultPolicy, lint, Policy, Report, snapshot } from "./core/lint";
 import { gitHead, HeadlessOutcome, headlessLanguages, indexHeadless, init, owner, sourcesStamp } from "./engine";
 import { entries, Entry, flow, Flow, FlowInputs, flowText } from "./core/flow";
@@ -105,8 +106,20 @@ export async function flowInputs(repo: string, l: Loaded, r?: Report): Promise<F
     if (x) x.notes.push(f.message);
     else flags.set(k, { severity: f.severity, notes: [f.message] });
   }
+  // A file edited since the index holds its branches at other lines than the graph's ranges say: read
+  // with them, a function would take another's decisions. Such a file is read as having no syntax.
+  const hashes = new Map(l.graph.nodes.filter((n) => n.kind === "file" && n.path && n.hash).map((n) => [n.path!, n.hash!]));
   return {
-    readSource: (p) => { try { return fs.readFileSync(path.join(repo, p), "utf8"); } catch { return undefined; } },
+    readSource: (p) => {
+      let text: string;
+      try {
+        text = fs.readFileSync(path.join(repo, p), "utf8");
+      } catch {
+        return undefined;
+      }
+      const h = hashes.get(p);
+      return h === undefined || sha256Hex(text) === h ? text : undefined;
+    },
     syntaxFor: (p) => owner(p)?.syntax(p),
     importsFor: (p) => owner(p)?.imports,
     extra: l.policy.boundaries,

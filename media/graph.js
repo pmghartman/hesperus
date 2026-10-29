@@ -727,6 +727,21 @@
     return lines.join("\n");
   }
 
+  // Folders and files opened in the graph dissolve into what they hold, leaving no box to click shut:
+  // each is a chip that closes it.
+  function showOpened(list) {
+    const box = $("opened");
+    box.replaceChildren();
+    for (const o of list) {
+      const b = document.createElement("button");
+      b.title = `Close ${o.path ?? o.name}`;
+      b.append(o.name, Object.assign(document.createElement("span"), { textContent: "×" }));
+      b.onclick = () => vs.postMessage({ type: "close", id: o.id });
+      box.append(b);
+    }
+    box.hidden = !list.length;
+  }
+
   addEventListener("message", ({ data: m }) => {
     if (m.type === "hidden") {
       hidden = m.hidden;
@@ -737,7 +752,7 @@
       msg.hidden = false;
       msg.className = (s.state === "error" ? "err" : "") + (L ? " over" : "");
       msg.textContent = s.state === "error" ? s.detail : s.state === "ready" ? "" : s.state === "idle" ? `${s.label}.\nRun Index in the Hesperus sidebar.` : (s.label || "Loading…");
-      if (s.state === "error" || !L) (scene.replaceChildren(), labels.replaceChildren());
+      if (s.state === "error" || !L) (scene.replaceChildren(), labels.replaceChildren(), ($("opened").hidden = true));
       pending = null;
       return;
     }
@@ -745,6 +760,7 @@
     if (m.type === "fit") return fit();
     if (m.type === "flow") {
       msg.hidden = true;
+      $("opened").hidden = true;
       pending = null;
       pinned = null;
       svg.classList.add("flowing");
@@ -753,6 +769,7 @@
     }
     if (m.type === "automaton") {
       msg.hidden = true;
+      $("opened").hidden = true;
       F = null;
       story.hidden = true;
       pending = null;
@@ -770,6 +787,7 @@
       if (zoom) pending = null;
       L = m.layout;
       draw(m, zoom);
+      showOpened(m.opened ?? []);
     }
   });
   // The host lays the flow out in as many columns as fit the pane, so it is told the pane's size, once

@@ -126,6 +126,23 @@ function flowThrough(g: Graph, par: Map<string, string>, expanded: ReadonlySet<s
   };
 }
 
+/** Structure the flow view has opened and dissolved into its children, outermost first: with no box of
+ *  its own, it is closed from a list instead. Only what the person opened, and only what is in sight. */
+export function dissolved(g: Graph, expanded: ReadonlySet<string>, opts: ViewOptions = {}): string[] {
+  if (!opts.flow) return [];
+  const par = parents(g);
+  const through = flowThrough(g, par, expanded);
+  const depth = (id: string) => {
+    let d = 0;
+    for (let p = par.get(id); p !== undefined && p !== REPO_ID; p = par.get(p)) {
+      if (!expanded.has(p) && !through(p)) return -1;
+      d++;
+    }
+    return d;
+  };
+  return [...expanded].filter((id) => through(id) && depth(id) >= 0).sort((a, b) => depth(a) - depth(b) || cmpStr(a, b));
+}
+
 /** Nodes views pass through: never drawn, opened with their parent. Files (unless asked for),
  *  and structure that is its parent's only child (a module's one file), which adds a level and
  *  no grouping. Top-level nodes are always drawn, so every edge has a box to land on. */

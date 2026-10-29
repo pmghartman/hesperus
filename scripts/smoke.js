@@ -151,6 +151,12 @@ helper();
   assert.ok(wide.boxes.filter((b) => b.kind === "jump").length === wide.columns - 1, "a connector between columns");
   assert.ok(wide.boxes.every((b) => b.x >= 0 && b.y >= 0), "columns in positive space");
   assert.equal(flowLayout(long, { viewport: { width: 300, height: 4000 } }).columns, 1, "one column for a tall pane");
+  // An else-if ladder lays its decisions side by side, in rows that wrap on a narrow pane.
+  let ladder = [];
+  for (let i = 5; i >= 0; i--) ladder = [{ kind: "if", id: `d${i}`, in: "app.js", text: `m.type === "t${i}"`, line: i + 1, yes: [{ ...long.steps[i], id: `y${i}` }], no: ladder }];
+  const rows = (w) => new Set(flowLayout({ entry: f.entry, flagged: 0, steps: ladder }, { viewport: { width: w, height: 800 } }).boxes.filter((b) => b.kind === "if").map((b) => b.y)).size;
+  assert.equal(rows(3000), 1, "one row on a wide pane");
+  assert.ok(rows(700) > 1, "rows on a narrow pane");
 }
 
 async function player(repo) {
@@ -166,7 +172,24 @@ async function player(repo) {
   // `addEventListener` is defined outside the repo, so the function handed to it is an event.
   const listen = at("addEventListener")[0];
   const opts = { sites: () => [listen], definitionsOf: async () => [{ package: "dom", names: ["Window", "addEventListener"] }] };
-  const g = makeGraph(repo, await bridge([{ path: "player.js", language: "javascript", text: PLAYER, symbols }], refs, opts), []);
+  const file = { path: "player.js", language: "javascript", text: PLAYER, symbols };
+  const byRefs = await bridge([file], refs, opts);
+  const g = makeGraph(repo, byRefs, []);
+  // The same index from each name token's definition instead of each definition's references: with every
+  // definition left to its uses, and with one (`play`) still asked for its references.
+  const { Js } = require("../out/lang/js");
+  const word = (at) => /^[\w$]+/.exec(lines[at.line].slice(at.character))?.[0];
+  const uses = {
+    sites: opts.sites,
+    uses: (f, wanted) => Js.syntax(f.path).names(f.text, wanted).map((r) => sp(r.start_line, r.start_col, r.end_line, r.end_col)),
+    definitionsOf: async (p, at) => {
+      if (at.line === listen.start.line && at.character === listen.start.character) return opts.definitionsOf();
+      const s = symbols.find((x) => x.name === word(at));
+      return s ? [{ path: p, span: s.selection }] : [];
+    },
+  };
+  assert.deepEqual(await bridge([file], async (d) => assert.fail(`asked for the references of ${d.id}`), uses), byRefs, "uses instead of references");
+  assert.deepEqual(await bridge([file], async (d) => (d.token === "play" ? refs(d) : assert.fail(`asked for the references of ${d.id}`)), { ...uses, named: (d) => d.token !== "play" }), byRefs, "references for what uses cannot name");
   const a = automaton(g);
   assert.deepEqual(a.inputs.map((i) => i.name), ["eject", "load", "mute", "pause", "play", "stop"], "inputs");
   const name = (id) => a.inputs.find((i) => i.id === id).name;

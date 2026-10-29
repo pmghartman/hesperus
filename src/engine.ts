@@ -230,14 +230,19 @@ export type LangResult = { lang: string; index: scip.Index } | { lang: string; e
 /** Builds the graph from each language's own result and writes the cache. A language that failed
  *  contributes its files as unindexed nodes; the rest of the repo is unaffected. */
 export async function index(repo: string, results: readonly LangResult[], lockfiles: readonly string[] = [], indexer = `${BRIDGE_TOOL.name} ${BRIDGE_TOOL.version}`): Promise<Graph> {
+  const g = await draft(repo, results);
+  writeCache(repo, header(repo, lockfiles, indexer), g);
+  return g;
+}
+
+/** The graph of each language's result, not written: a first drawing while the rest of an index runs. */
+export async function draft(repo: string, results: readonly LangResult[]): Promise<Graph> {
   await init(results.flatMap((r) => ("index" in r ? [r.lang] : [])));
   const indexes = results.flatMap((r) => ("index" in r ? [r.index] : []));
   const unindexed = results
     .filter((r): r is { lang: string; error: string } => "error" in r)
     .flatMap((r) => sourceFiles(repo, r.lang).map((path) => ({ path, reason: r.error })));
-  const g = makeGraph(repo, scip.merge(indexes), unindexed);
-  writeCache(repo, header(repo, lockfiles, indexer), g);
-  return g;
+  return makeGraph(repo, scip.merge(indexes), unindexed);
 }
 
 export interface HeadlessOutcome { graph: Graph; languages: { id: string; files: number; indexed: boolean }[] }

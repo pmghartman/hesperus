@@ -122,5 +122,6 @@ export const Kotlin: Frontend = {
   extensions: ["kt", "kts"],
   editor: { id: "fwcd.kotlin", name: "Kotlin" },
   init: () => KOTLIN.init(),
+  implicit: /^(unary(Plus|Minus)|not|inc|dec|plus|minus|times|div|rem|rangeTo|rangeUntil|contains|get|set|invoke|(plus|minus|times|div|rem)Assign|equals|compareTo|iterator|next|hasNext|component\d+|getValue|setValue|provideDelegate)$/,
   syntax: () => KOTLIN,
 };

@@ -231,5 +231,6 @@ export const Rust: Frontend = {
   extensions: ["rs"],
   editor: { id: "rust-lang.rust-analyzer", name: "Rust Analyzer" },
   init: () => RUST.init(),
+  implicit: /^((add|sub|mul|div|rem|bit(and|or|xor)|sh[lr])(_assign)?|neg|not|index(_mut)?|deref(_mut)?|drop|call(_mut|_once)?|eq|ne|partial_cmp|cmp|lt|le|gt|ge)$/,
   syntax: () => RUST,
 };

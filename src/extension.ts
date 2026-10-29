@@ -7,7 +7,7 @@ import { BOUNDARIES, BOUNDARY_INFO, boundaryGraph, boundaryId, libraryNodes } fr
 import { EdgeKind, Graph, GraphNode } from "./core/ir";
 import { defaultPolicy, Policy, Report, Severity } from "./core/lint";
 import { Flag, layout, MAX_WIRES } from "./layout";
-import { FRONTENDS, genericFiles, ignored, index, isSource, LangResult, load, owner, pin, scan, Scan, sourceFiles, status } from "./engine";
+import { draft, FRONTENDS, genericFiles, ignored, index, isSource, LangResult, load, owner, pin, scan, Scan, sourceFiles, status } from "./engine";
 import { entries as flowEntries, Entry, Flow, flow as flowFrom, wayTo } from "./core/flow";
 import { connectClaudeCode, hasClaudeCode, registerWithEditor } from "./connect";
 import { Narrative, narrativeKey, NARRATIVES_FILE, readNarrative } from "./core/narrate";
@@ -17,7 +17,7 @@ import { sha256Hex } from "./core/hash";
 import type { Index } from "./core/scip";
 import { flowLayout, FlowLayout } from "./flowchart";
 import { crossingsOf, flowInputs } from "./service";
-import { editorIndex, ensureExtension, installExtension, servedBy, servesExtension } from "./editor";
+import { Asked, editorIndex, ensureExtension, installExtension, servedBy, servesExtension } from "./editor";
 
 /** More boxes than this stalls the layout for minutes. */
 const MAX_BOXES = 500;
@@ -118,6 +118,8 @@ class Hesperus {
   private panel?: vscode.WebviewPanel;
   private sidebar?: vscode.WebviewView;
   private busy?: Promise<void>;
+  /** The graph drawn is the index's first read, from call sites; find-references is still running. */
+  private drafted = false;
   private log = vscode.window.createOutputChannel("Hesperus");
 
   constructor(private ctx: vscode.ExtensionContext) {}
@@ -157,17 +159,18 @@ class Hesperus {
     return folder && status(folder.uri.fsPath).state === "missing" && !this.graph ? this.load(false) : this.open();
   }
 
-  open() {
+  /** The chart's tab, revealed where it is; made in `column` when there is none. */
+  open(column: vscode.ViewColumn = vscode.ViewColumn.Active) {
     if (this.panel) this.panel.reveal(undefined, true);
     else {
       const name = this.folder?.name;
       const p = vscode.window.createWebviewPanel(
         "hesperus",
         name ? `Hesperus: ${name}` : "Hesperus",
-        { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
+        { viewColumn: column, preserveFocus: true },
         { enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [this.media] },
       );
-      p.iconPath = vscode.Uri.joinPath(this.media, "icon.svg");
+      p.iconPath = vscode.Uri.joinPath(this.media, "tab.svg");
       p.webview.html = page(p.webview, this.media, "graph", GRAPH_BODY);
       p.webview.onDidReceiveMessage((m) => this.onGraph(m));
       p.onDidDispose(() => (this.panel = undefined));
@@ -225,48 +228,74 @@ class Hesperus {
         // only the changed files are read again. Index pressed is a whole read.
         const partial = changed !== undefined && this.last.size > 0 && (keep || !force);
         // Why it indexes, in a few words; the cache's own account of being stale is the tooltip.
-        const [brief, why] = partial ? [`${changed?.length ?? 0} files changed`, undefined] : force ? ["Index requested", undefined] : st.state === "missing" ? ["No cache", undefined] : ["Cache stale", st.detail];
+        let [brief, why] = partial ? [`${changed?.length ?? 0} files changed`, undefined] : force ? ["Index requested", undefined] : st.state === "missing" ? ["No cache", undefined] : ["Cache stale", st.detail];
         if (!partial) this.last.clear();
         if (!this.scanned.languages.length) throw new Error("No supported language found in this folder.");
-        // Each language resolves on its own; one that cannot (extension missing or silent) leaves its files
-        // as unindexed nodes and the rest of the repo still builds.
-        const results: LangResult[] = [];
         // Every language's server starts now, so none waits for the one indexed before it.
         for (const l of this.scanned.languages) {
           const first = sourceFiles(repo, l.id)[0];
           if (first && servedBy(l)) vscode.workspace.openTextDocument(path.join(repo, first)).then(undefined, () => {});
         }
-        for (const l of this.scanned.languages) {
-          const files = sourceFiles(repo, l.id);
-          const prev = partial ? this.last.get(l.id) : undefined;
-          // What to read again: the changed files of this language, and any that came or went.
-          const mine = new Set((changed ?? []).filter((p) => owner(p)?.id === l.id));
-          if (prev) {
-            const now = new Set(files);
-            for (const p of prev.files.keys()) if (!now.has(p)) mine.add(p);
-            for (const p of files) if (!prev.files.has(p)) mine.add(p);
-            if (!mine.size) {
-              results.push({ lang: l.id, index: prev.index });
+        // A whole read is drawn first from its call sites alone (each call's definition, quick), then read
+        // again with find-references, which on a large repo keeps a server busy for minutes to an hour.
+        // The second read takes the first one's files and answers instead of asking them again.
+        const asked = new Map<string, Asked>();
+        const failed = new Map<string, string>();
+        // Each language resolves on its own; one that cannot (extension missing or silent) leaves its files
+        // as unindexed nodes and the rest of the repo still builds.
+        const languages = async (calls: boolean) => {
+          const results: LangResult[] = [];
+          for (const l of this.scanned!.languages) {
+            const files = sourceFiles(repo, l.id);
+            const prev = partial ? this.last.get(l.id) : undefined;
+            // What to read again: the changed files of this language, and any that came or went.
+            const mine = new Set((changed ?? []).filter((p) => owner(p)?.id === l.id));
+            if (prev) {
+              const now = new Set(files);
+              for (const p of prev.files.keys()) if (!now.has(p)) mine.add(p);
+              for (const p of files) if (!prev.files.has(p)) mine.add(p);
+              if (!mine.size) {
+                results.push({ lang: l.id, index: prev.index });
+                continue;
+              }
+            }
+            const no = failed.get(l.id);
+            if (no !== undefined) {
+              results.push({ lang: l.id, error: no });
               continue;
             }
+            try {
+              if (!asked.has(l.id)) {
+                this.setStatus({ state: "installing", label: `Checking the ${l.editor.name} extension…`, brief, detail: why });
+                // In the background (no Hesperus view open) a missing extension is not worth a prompt.
+                if (!this.panel && !this.sidebar && !servedBy(l)) throw new Error(`The ${l.editor.name} extension (${l.editor.id}) is not installed.`);
+                await ensureExtension(l);
+              }
+              const a = asked.get(l.id) ?? asked.set(l.id, { files: new Map(), definitions: new Map() }).get(l.id)!;
+              const kept = new Map<string, BridgeFile>();
+              const ix = await editorIndex(repo, l.id, files, (s) => this.setStatus({ state: "indexing", label: `${l.editor.name}: ${s}`, brief, detail: why }), {
+                patience: 90, needCode: false, frontend: FRONTENDS.find((f) => f.id === l.id), keep: kept, calls, asked: a, log: (s) => this.log.appendLine(s),
+                ...(prev ? { previous: { index: prev.index, files: prev.files, changed: mine } } : {}),
+              });
+              if (!calls) this.last.set(l.id, { index: ix, files: kept });
+              results.push({ lang: l.id, index: ix });
+            } catch (e) {
+              this.log.appendLine(`${l.id}: ${msg(e)}`);
+              if (!prev) failed.set(l.id, msg(e));
+              results.push(prev ? { lang: l.id, index: prev.index } : { lang: l.id, error: msg(e) });
+            }
           }
-          try {
-            this.setStatus({ state: "installing", label: `Checking the ${l.editor.name} extension…`, brief, detail: why });
-            // In the background (no Hesperus view open) a missing extension is not worth a prompt.
-            if (!this.panel && !this.sidebar && !servedBy(l)) throw new Error(`The ${l.editor.name} extension (${l.editor.id}) is not installed.`);
-            await ensureExtension(l);
-            const kept = new Map<string, BridgeFile>();
-            const ix = await editorIndex(repo, l.id, files, (s) => this.setStatus({ state: "indexing", label: `${l.editor.name}: ${s}`, brief, detail: why }), {
-              patience: 90, needCode: false, frontend: FRONTENDS.find((f) => f.id === l.id), keep: kept,
-              ...(prev ? { previous: { index: prev.index, files: prev.files, changed: mine } } : {}),
-            });
-            this.last.set(l.id, { index: ix, files: kept });
-            results.push({ lang: l.id, index: ix });
-          } catch (e) {
-            this.log.appendLine(`${l.id}: ${msg(e)}`);
-            results.push(prev ? { lang: l.id, index: prev.index } : { lang: l.id, error: msg(e) });
-          }
+          return results;
+        };
+        if (!partial) {
+          this.graph = await draft(repo, await languages(true));
+          this.entryList = undefined;
+          this.relint();
+          this.drafted = true;
+          brief = "Calls drawn";
+          await this.render();
         }
+        const results = await languages(false);
         // Files no frontend owns: kept when the editor has a language server that finds code in them.
         // Definitions and references only, so their calls are `may` edges; silence just leaves them out.
         for (const g of this.scanned.generic) {
@@ -282,7 +311,7 @@ class Hesperus {
           try {
             this.setStatus({ state: "indexing", label: `.${g.ext}: asking the editor…`, brief, detail: why });
             const kept = new Map<string, BridgeFile>();
-            const ix = await editorIndex(repo, "generic", files, (s) => this.setStatus({ state: "indexing", label: `.${g.ext}: ${s}`, brief, detail: why }), { patience: 4, needCode: true, keep: kept });
+            const ix = await editorIndex(repo, "generic", files, (s) => this.setStatus({ state: "indexing", label: `.${g.ext}: ${s}`, brief, detail: why }), { patience: 4, needCode: true, keep: kept, log: (s) => this.log.appendLine(s) });
             this.last.set(key, { index: ix, files: kept });
             results.push({ lang: key, index: ix });
           } catch (e) {
@@ -293,18 +322,19 @@ class Hesperus {
         await index(repo, results);
         this.saveOutlines(repo);
         this.graph = undefined;
-        if (!keep) this.expanded.clear();
+        if (!keep && !this.drafted) this.expanded.clear();
       }
       if (!this.graph) {
         this.graph = load(repo);
         this.entryList = undefined;
-        this.relint(keep && this.expanded.size > 0);
+        this.relint((keep || this.drafted) && this.expanded.size > 0);
       }
       this.setStatus({ state: "ready", label: "Ready", nodes: this.graph.nodes.length, edges: this.graph.edges.length });
       await this.render();
     } catch (e) {
       this.fail(msg(e));
     } finally {
+      this.drafted = false;
       unpin();
     }
   }
@@ -427,7 +457,10 @@ class Hesperus {
             }
           }
       this.postSidebar(laid.omitted ? `${laid.omitted} lighter wires omitted (${MAX_WIRES} drawn).` : undefined);
-      this.panel.webview.postMessage({ type: "layout", layout: laid, hidden: [...this.hidden], ...extra });
+      // Folders and files the flow view opened have no box left to close them by: listed instead.
+      const byId = new Map(g.nodes.map((n) => [n.id, n]));
+      const opened = aggregate.dissolved(g, this.expanded, this.opts).map((id) => ({ id, name: byId.get(id)?.name ?? id, path: byId.get(id)?.path ?? null }));
+      this.panel.webview.postMessage({ type: "layout", layout: laid, hidden: [...this.hidden], opened, ...extra });
     } catch (e) {
       this.fail(msg(e));
     }
@@ -481,8 +514,8 @@ class Hesperus {
   private setStatus(s: Status) {
     this.status = s;
     this.postSidebar();
-    // "checking" runs on every open; leave the current drawing up meanwhile.
-    if (s.state !== "checking") this.panel?.webview.postMessage({ type: "status", status: s });
+    // "checking" runs on every open, and an index runs on under its first drawing: leave the drawing up meanwhile.
+    if (s.state !== "checking" && !(this.drafted && (s.state === "indexing" || s.state === "installing"))) this.panel?.webview.postMessage({ type: "status", status: s });
   }
 
   private postSidebar(found?: string) {
@@ -545,7 +578,7 @@ class Hesperus {
         await vscode.commands.executeCommand("hesperus.graph.focus");
         return void vscode.window.showInformationMessage("Hesperus: run Index in the sidebar first.");
       }
-      await this.open();
+      await this.open(vscode.ViewColumn.Beside);
       if (!this.graph) return;
     }
     const line = ed.selection.active.line;
@@ -565,7 +598,9 @@ class Hesperus {
     this.openSteps = new Set(way.open);
     const from = this.graph.nodes.find((n) => n.id === way.entry);
     this.postSidebar(way.last ? `${target.name} · from ${from?.name ?? way.entry}, ${way.open.length} calls down` : `${target.name} · ${target.kind}`);
-    if (!this.panel) await this.open();
+    // Beside the code, not over it; a chart already open is brought up where it is.
+    if (!this.panel) await this.open(vscode.ViewColumn.Beside);
+    else this.panel.reveal(undefined, true);
     await this.render({ focus: way.last ?? target.id });
   }
 
@@ -704,6 +739,11 @@ class Hesperus {
       this.expanded.has(m.id) ? this.expanded.delete(m.id) : this.expanded.add(m.id);
       if (this.tooBig()) this.expanded = before;
       await this.render({ anchor: m.id });
+    } else if (m.type === "close" && m.id) {
+      // Closing forgets what was open inside, as zooming out does.
+      this.expanded.delete(m.id);
+      for (const x of [...this.expanded]) if (this.inside(x, m.id)) this.expanded.delete(x);
+      await this.render();
     } else if (m.type === "zoom") {
       const before = new Set(this.expanded);
       // Semantic zoom. Closing a box forgets what was open inside it, so reopening shows one level.
@@ -775,7 +815,7 @@ function page(webview: vscode.Webview, media: vscode.Uri, name: string, body: st
 
 const GRAPH_BODY = `<svg id="view" xmlns="http://www.w3.org/2000/svg"><g id="scene"></g><g id="labels"></g></svg>
 <div id="tools"><button id="auto" title="Semantic zoom: zooming in expands boxes" aria-pressed="true"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3M5 7h4M7 5v4"/></svg></button><span class="sep"></span><button id="out" title="Zoom out"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button><span id="zoom">100%</span><button id="in" title="Zoom in"><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9"/></svg></button><button id="fit" title="Fit to pane"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button></div>
-<div id="msg">Loading…</div><div id="story" hidden></div><div id="tip" hidden></div>`;
+<div id="opened" hidden></div><div id="msg">Loading…</div><div id="story" hidden></div><div id="tip" hidden></div>`;
 
 const SIDEBAR_BODY = `<header><div class="repo" id="repo"></div><div id="state" class="state"></div></header>
 <div id="detail" class="note" hidden></div>

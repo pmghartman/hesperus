@@ -141,4 +141,6 @@ export const noFacts = (): Facts => ({ calls: [], symbols: [], imports: [], para
 
 export interface Syntax {
   facts(source: string): Facts;
+  /** Name tokens (identifiers, as the grammar's leaves) whose text `wanted` accepts, in source order. */
+  names?(source: string, wanted: (name: string) => boolean): Range[];
 }

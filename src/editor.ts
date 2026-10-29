@@ -4,7 +4,9 @@
 import * as vscode from "vscode";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { BridgeExternal, BridgeFile, BridgeRef, BridgeSymbol, bridge, pool, Span } from "./core/bridge";
+import { BridgeDef, BridgeExternal, BridgeFile, BridgeRef, BridgeSymbol, bridge, pool, Pos, Span } from "./core/bridge";
+import type { Range } from "./core/ir";
+import type { ImportDecl } from "./core/syntax";
 import { Index } from "./core/scip";
 import { init, type Language } from "./engine";
 import type { Frontend } from "./core/frontend";
@@ -68,14 +70,21 @@ export function packageOf(uri: vscode.Uri): string {
   return segs[segs.length - 2] ?? uri.scheme;
 }
 
+/** What a calls-only run leaves for the whole run after it: the files it read and each call site's answer. */
+export interface Asked { files: Map<string, BridgeFile>; definitions: Map<string, Promise<(BridgeRef | BridgeExternal)[]>> }
+
 /** One SCIP index of `files` from the editor's language servers. `report` gets progress text. */
 export async function editorIndex(
   repo: string, lang: string, files: string[], report: (s: string) => void,
   /** `patience`: seconds to wait for the first answer. `needCode`: refuse a language the server only outlines as data.
    *  `keep` receives every file as read, for the next run. `previous`: last time's index and files, and the
-   *  paths changed since (gone ones included): only those are read and asked again. */
-  opts: { patience: number; needCode: boolean; frontend?: Frontend; keep?: Map<string, BridgeFile>; previous?: { index: Index; files: ReadonlyMap<string, BridgeFile>; changed: ReadonlySet<string> } } = { patience: 90, needCode: false },
+   *  paths changed since (gone ones included): only those are read and asked again. `calls`: no find-references,
+   *  only each call site's definition; quick, and short of the uses that are not calls. `asked`: filled by such a
+   *  run and taken by the whole one after it, so neither a file nor a call site is asked twice. `log` gets a
+   *  line with each phase's count and time. */
+  opts: { patience: number; needCode: boolean; frontend?: Frontend; keep?: Map<string, BridgeFile>; previous?: { index: Index; files: ReadonlyMap<string, BridgeFile>; changed: ReadonlySet<string> }; calls?: boolean; asked?: Asked; log?: (s: string) => void } = { patience: 90, needCode: false },
 ): Promise<Index> {
+  const t0 = Date.now();
   const docs = new Map<string, vscode.Uri>(files.map((f) => [f, vscode.Uri.file(path.join(repo, f))]));
   const prev = opts.previous;
   const fresh = prev ? files.filter((f) => prev.changed.has(f) || !prev.files.has(f)) : files;
@@ -100,7 +109,8 @@ export async function editorIndex(
   // A server that is still starting answers with nothing: wait for the first answer from a few files,
   // not for every empty one.
   const probe = (fresh.length ? fresh : files).slice(0, 8);
-  let answered = fresh.length === 0;
+  const asked = opts.asked;
+  let answered = fresh.length === 0 || !!asked?.files.size;
   for (let t = 0; t < opts.patience && !answered; t++) {
     report(t === 0 ? "Waiting for the language server…" : `Waiting for the language server… ${t}s`);
     answered = (await Promise.all(probe.map(ask))).some((s) => s.length > 0);
@@ -111,12 +121,14 @@ export async function editorIndex(
   const loaded: BridgeFile[] = await pool(files, 12, async (f) => {
     const kept = prev?.files.get(f);
     if (kept && !again.has(f)) return kept;
+    const had = asked?.files.get(f);
+    if (had) return had;
     const text = answered ? await fs.readFile(path.join(repo, f), "utf8") : "";
     const syms = answered ? await outline(f, text) : [];
     if (++read % 20 === 0) report(`Reading symbols ${read}/${fresh.length}…`);
     return { path: f, language: lang, text, symbols: symbols(syms) };
   });
-  if (opts.keep) for (const f of loaded) opts.keep.set(f.path, f);
+  for (const m of [opts.keep, asked?.files]) if (m) for (const f of loaded) m.set(f.path, f);
   if (!answered) throw new Error(`No language server answered for ${lang} files. Install the editor's extension for the language (C/C++, C#, Rust analyzer, Dart) and reload.`);
   if (opts.needCode && !loaded.some((f) => hasCode(f.symbols))) throw new Error(`The editor outlines ${lang} files but finds no functions or types in them.`);
   const inRepo = (locs: vscode.Location[]): BridgeRef[] => {
@@ -128,16 +140,30 @@ export async function editorIndex(
     return out;
   };
   await init();
+  const tRead = Date.now();
   // Syntax columns are UTF-8 bytes; the editor counts UTF-16 units.
   const utf16 = (lines: string[], line: number, col: number) => Buffer.from(lines[line] ?? "", "utf8").subarray(0, col).toString("utf8").length;
-  const sites = (f: BridgeFile): Span[] => {
-    const facts = fe?.syntax(f.path)?.facts(f.text);
-    if (!facts) return [];
+  const spans = (f: BridgeFile, rs: Range[]): Span[] => {
     const lines = f.text.split("\n");
     const pos = (line: number, col: number) => ({ line, character: utf16(lines, line, col) });
-    return facts.calls.map(({ callee: c }) => ({ start: pos(c.start_line, c.start_col), end: pos(c.end_line, c.end_col) }));
+    return rs.map((c) => ({ start: pos(c.start_line, c.start_col), end: pos(c.end_line, c.end_col) }));
   };
-  let n = 0;
+  const sites = (f: BridgeFile): Span[] => {
+    const facts = fe?.syntax(f.path)?.facts(f.text);
+    return facts ? spans(f, facts.calls.map((c) => c.callee)) : [];
+  };
+  // Every name token that may use a definition, when syntax reads every file: also the names this file
+  // imports from the repo under names of its own (`import { a as b }`), whose uses resolve to `a`.
+  const tokenized = !!fe && files.every((f) => fe.syntax(f)?.names);
+  const uses = (f: BridgeFile, wanted: (name: string) => boolean): Span[] => {
+    const syn = fe!.syntax(f.path)!;
+    const fromRepo = (d: ImportDecl) => !fe!.imports || fe!.imports.local(d.module, f.path, d.member !== undefined ? [d.member] : []).length > 0;
+    const aliases = new Set(syn.facts(f.text).imports.filter(fromRepo).map((d) => d.local.toLowerCase()));
+    return spans(f, syn.names!(f.text, (n) => wanted(n) || aliases.has(n.toLowerCase())));
+  };
+  // Uses a token never names: a constructor's (`new Foo`, `Foo()`), an operator's (`a + b`), and what the
+  // language calls by convention. Those definitions are asked for their references.
+  const named = (d: BridgeDef) => d.kind !== 9 && /^[\p{L}_$][\p{L}\p{N}_$]*[?!]?$/u.test(d.token) && !fe?.implicit?.test(d.token);
   // A server that never answers one query must not stall the run: give up on it after this long.
   const within = <T>(p: Thenable<T>, fallback: T) => Promise.race([Promise.resolve(p), sleep(QUERY_MS).then(() => fallback)]);
   // Names an outside definition by the outline of its own file: the types around it, then itself.
@@ -155,7 +181,20 @@ export async function editorIndex(
     }
     return { package: packageOf(l.uri), names };
   };
-  return bridge(loaded, async (d, done, total): Promise<BridgeRef[]> => {
+  // Where the name at a call site or other token is defined: in the repo, or the package outside it.
+  const definition = async (p: string, at: Pos): Promise<(BridgeRef | BridgeExternal)[]> => {
+    const r = (await within(vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>("vscode.executeDefinitionProvider", docs.get(p)!, new vscode.Position(at.line, at.character)), [])) ?? [];
+    const locs = r.map((x) => ("targetUri" in x ? new vscode.Location(x.targetUri, x.targetSelectionRange ?? x.targetRange) : x));
+    // Files outside this index (other repos, installed packages, ignored folders) are dependencies.
+    const ours = locs.filter((l) => docs.has(rel(repo, l.uri) ?? ""));
+    return ours.length ? inRepo(ours) : Promise.all(locs.slice(0, 1).map(outside));
+  };
+  // How long each phase took, for the output channel: reading, then references, then definitions.
+  const phase = { refs: 0, refsAt: 0, defs: 0, defsAt: 0 };
+  const ix = await bridge(loaded, async (d, done, total): Promise<BridgeRef[]> => {
+    if (opts.calls) return [];
+    if (!phase.refsAt) phase.refsAt = Date.now();
+    phase.refs = total;
     if (done % 10 === 0 || done === total) report(`Finding references ${done}/${total}…`);
     const at = new vscode.Position(d.selection.start.line, d.selection.start.character);
     return inRepo((await within(vscode.commands.executeCommand<vscode.Location[]>("vscode.executeReferenceProvider", docs.get(d.path)!, at), [])) ?? []);
@@ -165,15 +204,25 @@ export async function editorIndex(
     // Declarations paired across files can change ids when any file does, so those languages index whole.
     ...(prev && !fe?.declarationsAcrossFiles ? { only: prev.changed, previous: prev.index } : {}),
     sites,
-    definitionsOf: async (p, at) => {
-      if (++n % 25 === 0) report(`Resolving calls ${n}…`);
-      const r = (await within(vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>("vscode.executeDefinitionProvider", docs.get(p)!, new vscode.Position(at.line, at.character)), [])) ?? [];
-      const locs = r.map((x) => ("targetUri" in x ? new vscode.Location(x.targetUri, x.targetSelectionRange ?? x.targetRange) : x));
-      // Files outside this index (other repos, installed packages, ignored folders) are dependencies.
-      const ours = locs.filter((l) => docs.has(rel(repo, l.uri) ?? ""));
-      return ours.length ? inRepo(ours) : Promise.all(locs.slice(0, 1).map(outside));
+    ...(tokenized && !opts.calls ? { uses, named } : {}),
+    definitionsOf: (p, at, done, total) => {
+      if (!phase.defsAt) phase.defsAt = Date.now();
+      phase.defs = total;
+      if (done % 25 === 0 || done === total) report(`${opts.calls ? "Resolving calls" : "Resolving names"} ${done}/${total}…`);
+      const k = `${p}\0${at.line}:${at.character}`;
+      const had = asked?.definitions.get(k);
+      if (had) return had;
+      const q = definition(p, at);
+      asked?.definitions.set(k, q);
+      return q;
     },
   });
+  const now = Date.now(), secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
+  const refsEnd = phase.defsAt || now;
+  opts.log?.(`${lang}${opts.calls ? " (calls)" : ""}: ${fresh.length} files read in ${secs(tRead - t0)}; ` +
+    `references of ${phase.refs} definitions in ${secs(phase.refsAt ? refsEnd - phase.refsAt : 0)}; ` +
+    `definitions at ${phase.defs} ${tokenized && !opts.calls ? "names" : "call sites"} in ${secs(phase.defsAt ? now - phase.defsAt : 0)}`);
+  return ix;
 }
 
 /** Installed extensions with code of their own that declare a language (`contributes.languages`), by
