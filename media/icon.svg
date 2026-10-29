@@ -1,15 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="hesperus">
   <!-- Hesperus's mark: η, the evening star's initial, folded as Phosphorus's and Sulfur's: the
        arch over the stem at the shoulder and under the leg, a soft shadow wherever a band passes
-       under, one dusk blue in flat tones, one white sheen over the whole, on nothing.
+       under, one sunset gradient (amber, coral, dusk violet) in flat tones, one white sheen over the whole, on nothing.
        The source media/icon.png is rendered from -->
   <defs>
-    <linearGradient id="light" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8cc4ff"/><stop offset="1" stop-color="#4f9cf9"/></linearGradient>
-    <linearGradient id="mid" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#3d7ff2"/><stop offset="1" stop-color="#2f6be0"/></linearGradient>
-    <linearGradient id="deep" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#1f4fb8"/><stop offset="1" stop-color="#2a5fcc"/></linearGradient>
+    <linearGradient id="light" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffc27a"/><stop offset="1" stop-color="#ff8a5b"/></linearGradient>
+    <linearGradient id="mid" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#f4685f"/><stop offset="1" stop-color="#d64a6e"/></linearGradient>
+    <linearGradient id="deep" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5b2a86"/><stop offset="1" stop-color="#7a3592"/></linearGradient>
     <linearGradient id="sheen" gradientUnits="userSpaceOnUse" x1="0" y1="160" x2="0" y2="900"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
     <filter id="soft" filterUnits="userSpaceOnUse" x="-200" y="-200" width="1424" height="1424"><feGaussianBlur stdDeviation="18"/></filter>
-    <filter id="drop" filterUnits="userSpaceOnUse" x="-200" y="-200" width="1424" height="1424"><feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#061a40" flood-opacity="0.26"/></filter>
+    <filter id="drop" filterUnits="userSpaceOnUse" x="-200" y="-200" width="1424" height="1424"><feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#2a0b3d" flood-opacity="0.26"/></filter>
     <!-- the stem with η's entry spur; the arch, a half ring; the leg, down past the baseline -->
     <polygon id="p-stem" stroke-width="32" stroke-linejoin="round" points="196,200 380,200 380,692 270,692 270,272 196,272"/>
     <path id="p-arch" stroke-width="32" stroke-linejoin="round" d="M270,470 A235,250 0 0,1 740,470 L630,470 A125,145 0 0,0 380,470 Z"/>
@@ -23,9 +23,9 @@
   <g style="isolation:isolate" transform="translate(44 -24)">
     <g filter="url(#drop)">
       <use xlink:href="#p-stem" fill="url(#deep)" stroke="url(#deep)"/>
-      <g mask="url(#m-stem)"><use xlink:href="#p-arch" fill="#061a40" stroke="#061a40" opacity="0.42" filter="url(#soft)"/></g>
+      <g mask="url(#m-stem)"><use xlink:href="#p-arch" fill="#2a0b3d" stroke="#2a0b3d" opacity="0.42" filter="url(#soft)"/></g>
       <use xlink:href="#p-arch" fill="url(#mid)" stroke="url(#mid)"/>
-      <g mask="url(#m-arch)"><use xlink:href="#p-leg" fill="#061a40" stroke="#061a40" opacity="0.4" filter="url(#soft)"/></g>
+      <g mask="url(#m-arch)"><use xlink:href="#p-leg" fill="#2a0b3d" stroke="#2a0b3d" opacity="0.4" filter="url(#soft)"/></g>
       <use xlink:href="#p-leg" fill="url(#light)" stroke="url(#light)"/>
     </g>
     <rect x="0" y="0" width="1024" height="1024" fill="url(#sheen)" opacity="0.3" mask="url(#m-all)" style="mix-blend-mode:overlay"/>
