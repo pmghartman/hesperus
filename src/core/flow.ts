@@ -7,7 +7,7 @@
 import { Boundary, BOUNDARY_INFO, classifyGraph, Extra } from "./boundary";
 import { cmpStr, contains, Graph, GraphEdge, GraphNode, isCallable, Range } from "./ir";
 import { Severity } from "./lint";
-import { Branch, Facts, Syntax } from "./syntax";
+import { Branch, Facts, Imports, Syntax } from "./syntax";
 
 /** A call into the repo: a step the person can open to see its own steps. */
 export interface CallStep {
@@ -25,6 +25,8 @@ export interface CallStep {
   /** Consecutive calls to the same callee, folded. */
   count: number;
   may: boolean;
+  /** The callee has no steps of its own the chart would show: nothing to open. */
+  leaf?: boolean;
   /** Its own steps, when opened. */
   steps?: Step[];
   /** Opened, but empty: nothing in it the chart would show. */
@@ -53,7 +55,8 @@ export interface SwitchStep { kind: "switch"; id: string; in: string; text: stri
 export interface CatchStep { kind: "catch"; id: string; in: string; text: string; line: number; body: Step[] }
 export type Step = CallStep | BoundaryStep | IfStep | LoopStep | SwitchStep | CatchStep;
 
-/** Where the program starts: a callable nothing in the repo calls, or a file's own top-level code. */
+/** Where the program starts: a callable nothing in the repo calls, or the top-level code of a file no
+ *  other file imports. */
 export interface Entry {
   id: string;
   name: string;
@@ -84,6 +87,8 @@ export interface FlowInputs {
   /** Repo-relative path to text, for the branches in a function. */
   readSource: (path: string) => string | undefined;
   syntaxFor: (path: string) => Syntax | undefined;
+  /** How the file's language names what its imports reach; tells which files other files load. */
+  importsFor?: (path: string) => Imports | undefined;
   /** Policy's extra boundary packages. */
   extra?: Extra;
   /** Lint findings by `local\0external`. */
@@ -93,12 +98,55 @@ export interface FlowInputs {
 /** How deep opened calls nest before the chart stops following. */
 export const MAX_DEPTH = 6;
 
+/** Syntax facts per file, read once. */
+function factsCache(inp: FlowInputs): (path: string) => Facts | undefined {
+  const cache = new Map<string, Facts | undefined>();
+  return (path) => {
+    if (!cache.has(path)) {
+      const text = inp.readSource(path), syn = inp.syntaxFor(path);
+      cache.set(path, text !== undefined && syn ? syn.facts(text) : undefined);
+    }
+    return cache.get(path);
+  };
+}
+
+/** Which of a file's own calls run when it loads. A call inside a named declaration runs when that is
+ *  called, not on load; so does one inside a function literal, unless the literal is the module's body
+ *  (a file wrapped in `(() => { … })()` holds nearly all of its calls in one literal). */
+function onLoad(facts: Facts | undefined, sites: Range[]): (r: Range) => boolean {
+  if (!facts) return () => true;
+  const smallest = (list: Range[], r: Range) => {
+    let best: Range | undefined;
+    for (const x of list) if (contains(x, r) && (!best || contains(best, x))) best = x;
+    return best;
+  };
+  const body = new Set(facts.lambdas.filter((l) => sites.filter((s) => contains(l, s)).length >= Math.max(1, sites.length * 0.9)));
+  return (r) => {
+    if (facts.decls.some((d) => contains(d, r))) return false;
+    const l = smallest(facts.lambdas, r);
+    return l === undefined || body.has(l);
+  };
+}
+
 /** The program's entry points, those that drive the most of it first, then by file and line. */
 export function entries(g: Graph, inp: FlowInputs): Entry[] {
   const byId = new Map(g.nodes.map((n) => [n.id, n]));
   const out = outgoing(g);
+  const factsOf = factsCache(inp);
+  const onLoadOf = new Map<string, (r: Range) => boolean>();
+  const runsOnLoad = (file: GraphNode, r: Range) => {
+    if (!onLoadOf.has(file.id)) onLoadOf.set(file.id, onLoad(factsOf(file.path!), (out.get(file.id) ?? []).map((e) => e.site!.range)));
+    return onLoadOf.get(file.id)!(r);
+  };
+  // Called: by a callable, or by a file's own top-level code (`main()` at the foot of a script is a
+  // step of that file's load, not a second entry).
   const called = new Set<string>();
-  for (const e of g.edges) if (e.kind === "call" && isCallable(byId.get(e.from)?.kind ?? "repo")) called.add(e.to);
+  for (const e of g.edges) {
+    if (e.kind !== "call") continue;
+    const from = byId.get(e.from);
+    if (!from) continue;
+    if (isCallable(from.kind) || (from.kind === "file" && from.path && e.site && runsOnLoad(from, e.site.range))) called.add(e.to);
+  }
   const reach = (id: string) => {
     const seen = new Set<string>([id]);
     const stack = [id];
@@ -115,6 +163,29 @@ export function entries(g: Graph, inp: FlowInputs): Entry[] {
     const t = byId.get(e.to);
     return !!t && ((isCallable(t.kind) && !!t.path) || cls.has(e.to));
   };
+  // A file another file imports (or calls into) runs when that file loads it, not on its own: only the
+  // files nothing loads are where the program starts.
+  const files = new Set<string>();
+  for (const n of g.nodes) if (n.kind === "file" && n.path) files.add(n.path);
+  const loaded = new Set<string>();
+  for (const e of g.edges) {
+    if (e.kind !== "call") continue;
+    const a = byId.get(e.from)?.path, b = byId.get(e.to)?.path;
+    if (a && b && a !== b) loaded.add(b);
+  }
+  for (const p of files) {
+    const imp = inp.importsFor?.(p);
+    const f = imp && factsOf(p);
+    if (!f) continue;
+    for (const d of f.imports) {
+      for (const l of imp.local(d.module, p, d.member !== undefined ? [d.member] : [])) {
+        for (const x of l.files) {
+          if (x.endsWith("/")) for (const y of files) { if (y.startsWith(x) && !y.slice(x.length).includes("/")) loaded.add(y); }
+          else if (files.has(x)) loaded.add(x);
+        }
+      }
+    }
+  }
   const list: Entry[] = [];
   for (const n of g.nodes) {
     if (!n.path) continue;
@@ -122,9 +193,14 @@ export function entries(g: Graph, inp: FlowInputs): Entry[] {
     if (isCallable(n.kind)) {
       if (called.has(n.id) || !calls.some(shown)) continue;
       list.push({ id: n.id, name: n.name, doc: n.doc, path: n.path, line: (n.range?.start_line ?? 0) + 1, kind: n.kind as "function" | "method", reach: reach(n.id), steps: calls.filter(shown).length });
-    } else if (n.kind === "file" && calls.some(shown)) {
-      // Module-level code: what runs when the file loads.
-      list.push({ id: n.id, name: `${n.name} (on load)`, path: n.path, line: 1, kind: "file", reach: reach(n.id), steps: calls.filter(shown).length });
+    } else if (n.kind === "file" && !loaded.has(n.path)) {
+      // Module-level code: what runs when the file loads. A script whose load is one call into the
+      // repo (`main()`) is entered as that function: the chart then starts where the reader expects.
+      const steps = calls.filter((e) => shown(e) && runsOnLoad(n, e.site!.range));
+      const only = steps.length === 1 ? byId.get(steps[0].to) : undefined;
+      if (only && isCallable(only.kind) && only.path && (out.get(only.id) ?? []).some(shown))
+        list.push({ id: only.id, name: only.name, doc: only.doc, path: only.path, line: (only.range?.start_line ?? 0) + 1, kind: only.kind as "function" | "method", reach: reach(only.id), steps: (out.get(only.id) ?? []).filter(shown).length });
+      else if (steps.length) list.push({ id: n.id, name: `${n.name} (on load)`, path: n.path, line: 1, kind: "file", reach: reach(n.id), steps: steps.length });
     }
   }
   // Built and vendored files are code too, but never where a reader wants to start.
@@ -142,14 +218,7 @@ export function flow(g: Graph, entryId: string, open: ReadonlySet<string>, inp: 
   if (!root?.path) return undefined;
   const out = outgoing(g);
   const cls = classifyGraph(g, inp.extra);
-  const cache = new Map<string, Facts | undefined>();
-  const factsOf = (path: string): Facts | undefined => {
-    if (!cache.has(path)) {
-      const text = inp.readSource(path), syn = inp.syntaxFor(path);
-      cache.set(path, text !== undefined && syn ? syn.facts(text) : undefined);
-    }
-    return cache.get(path);
-  };
+  const factsOf = factsCache(inp);
   /** The branches in a callable's body: the smallest declaration or function literal around its name. */
   const branchesIn = (path: string, ident: Range | undefined): Branch[] => {
     const f = factsOf(path);
@@ -159,21 +228,30 @@ export function flow(g: Graph, entryId: string, open: ReadonlySet<string>, inp: 
     for (const d of [...f.decls, ...f.lambdas]) if (contains(d, ident) && (!body || contains(body, d))) body = d;
     return body ? f.branches.filter((b) => contains(body!, b.range)) : [];
   };
-  let flagged = 0;
-
-  const stepsOf = (fn: GraphNode, prefix: string, depth: number, chain: Set<string>): Step[] => {
-    const calls = out.get(fn.id) ?? [];
-    const branches = fn.path ? branchesIn(fn.path, fn.range) : [];
-    // Items in source order: calls worth a step, and the branches that hold them.
-    interface Item { at: Range; call?: GraphEdge; branch?: Branch }
-    const items: Item[] = [];
-    for (const e of calls) {
+  /** The calls under a node that the chart would draw as steps. */
+  const stepCalls = (fn: GraphNode): GraphEdge[] => {
+    const calls = (out.get(fn.id) ?? []).filter((e) => {
       const t = byId.get(e.to);
       // A call back into the same function is recursion, or a local helper the index folded into its
       // owner; neither is a step a reader wants drawn under it.
-      if (!t || e.to === fn.id) continue;
-      if ((isCallable(t.kind) && t.path) || cls.has(e.to)) items.push({ at: e.site!.range, call: e });
-    }
+      return !!t && e.to !== fn.id && ((isCallable(t.kind) && !!t.path) || cls.has(e.to));
+    });
+    if (fn.kind !== "file" || !fn.path) return calls;
+    const runs = onLoad(factsOf(fn.path), (out.get(fn.id) ?? []).map((e) => e.site!.range));
+    return calls.filter((e) => runs(e.site!.range));
+  };
+  const leaves = new Map<string, boolean>();
+  const isLeaf = (t: GraphNode) => {
+    if (!leaves.has(t.id)) leaves.set(t.id, stepCalls(t).length === 0);
+    return leaves.get(t.id)!;
+  };
+  let flagged = 0;
+
+  const stepsOf = (fn: GraphNode, prefix: string, depth: number, chain: Set<string>): Step[] => {
+    const branches = fn.path ? branchesIn(fn.path, fn.range) : [];
+    // Items in source order: calls worth a step, and the branches that hold them.
+    interface Item { at: Range; call?: GraphEdge; branch?: Branch }
+    const items: Item[] = stepCalls(fn).map((e) => ({ at: e.site!.range, call: e }));
     if (!items.length) return [];
     for (const b of branches) items.push({ at: b.range, branch: b });
     const before = (a: Range, b: Range) => a.start_line - b.start_line || a.start_col - b.start_col || b.end_line - a.end_line || b.end_col - a.end_col;
@@ -209,7 +287,8 @@ export function flow(g: Graph, entryId: string, open: ReadonlySet<string>, inp: 
             steps.push({ kind: "boundary", id, in: fn.path!, target: e.to, boundary: c.boundary, name, line: line(e.site!.range), count: 1, may, ...(f ? { flag: f.severity, notes: f.notes } : {}) });
           } else {
             const step: CallStep = { kind: "call", id, in: fn.path!, target: e.to, name: t.name, doc: t.doc, path: t.path, line: line(e.site!.range), count: 1, may };
-            if (open.has(id)) {
+            if (isLeaf(t)) step.leaf = true;
+            else if (open.has(id)) {
               if (depth >= MAX_DEPTH || chain.has(e.to)) step.cut = true;
               else {
                 const inner = stepsOf(t, `${id}/`, depth + 1, new Set([...chain, e.to]));
@@ -272,29 +351,31 @@ export function firstSentence(doc: string | undefined, max = 90): string | undef
   return s.length > max ? s.slice(0, max - 1) + "…" : s;
 }
 
-/** The flow as indented text, for a terminal or an agent. */
-export function flowText(f: Flow): string {
+/** The flow as indented text, for a terminal or an agent. With `label`, each top-level step is tagged
+ *  (`[S1]`, `[S2]`, …) so an answer can point back at it. */
+export function flowText(f: Flow, label?: (i: number) => string): string {
   const lines: string[] = [`▶ ${f.entry.name}${f.entry.doc ? `  — ${firstSentence(f.entry.doc)}` : ""}  (${f.entry.path}:${f.entry.line})`];
   const times = (n: number) => (n > 1 ? ` ×${n}` : "");
-  const walk = (steps: Step[], pad: string) => {
-    for (const s of steps) {
+  const walk = (steps: Step[], pad: string, top: boolean) => {
+    steps.forEach((s, i) => {
+      const tag = top && label ? `${label(i)} ` : "";
       if (s.kind === "call") {
-        lines.push(`${pad}▭ ${s.name}${times(s.count)}${s.may ? " (may)" : ""}${s.doc ? `  — ${firstSentence(s.doc)}` : ""}  ${s.path ?? ""}`);
-        if (s.steps) walk(s.steps, pad + "   ");
+        lines.push(`${pad}${tag}▭ ${s.name}${times(s.count)}${s.may ? " (may)" : ""}${s.doc ? `  — ${firstSentence(s.doc)}` : ""}  ${s.path ?? ""}`);
+        if (s.steps) walk(s.steps, pad + "   ", false);
         else if (s.empty) lines.push(`${pad}   (nothing further the chart shows)`);
         else if (s.cut) lines.push(`${pad}   (deeper than the chart follows)`);
-      } else if (s.kind === "boundary") lines.push(`${pad}⬚ ${s.name}${times(s.count)}  [${BOUNDARY_INFO[s.boundary].label}]${s.flag ? `  ${s.flag.toUpperCase()}: ${(s.notes ?? []).join("; ")}` : ""}`);
+      } else if (s.kind === "boundary") lines.push(`${pad}${tag}⬚ ${s.name}${times(s.count)}  [${BOUNDARY_INFO[s.boundary].label}]${s.flag ? `  ${s.flag.toUpperCase()}: ${(s.notes ?? []).join("; ")}` : ""}`);
       else if (s.kind === "if") {
-        lines.push(`${pad}◇ ${s.text}?`);
-        if (s.yes.length) (lines.push(`${pad}│ yes:`), walk(s.yes, pad + "│  "));
-        if (s.no.length) (lines.push(`${pad}│ no:`), walk(s.no, pad + "│  "));
-      } else if (s.kind === "loop") (lines.push(`${pad}↻ ${s.text}`), walk(s.body, pad + "│  "));
+        lines.push(`${pad}${tag}◇ if ${s.text}`);
+        if (s.yes.length) (lines.push(`${pad}│ yes:`), walk(s.yes, pad + "│  ", false));
+        if (s.no.length) (lines.push(`${pad}│ no:`), walk(s.no, pad + "│  ", false));
+      } else if (s.kind === "loop") (lines.push(`${pad}${tag}↻ ${s.text}`), walk(s.body, pad + "│  ", false));
       else if (s.kind === "switch") {
-        lines.push(`${pad}◇ ${s.text}`);
-        for (const c of s.cases) (lines.push(`${pad}│ ${c.text}:`), walk(c.body, pad + "│  "));
-      } else if (s.kind === "catch") (lines.push(`${pad}⚠ ${s.text}`), walk(s.body, pad + "│  "));
-    }
+        lines.push(`${pad}${tag}◇ switch on ${s.text}`);
+        for (const c of s.cases) (lines.push(`${pad}│ ${c.text}:`), walk(c.body, pad + "│  ", false));
+      } else if (s.kind === "catch") (lines.push(`${pad}${tag}⚠ ${s.text}`), walk(s.body, pad + "│  ", false));
+    });
   };
-  walk(f.steps, "   ");
+  walk(f.steps, "   ", true);
   return lines.join("\n") + "\n";
 }

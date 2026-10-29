@@ -156,19 +156,39 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--vscode
 .s-call.cut > .body, .s-call.empty > .body { stroke-dasharray: 3 2; }
 .s-call.may > .body, .s-boundary.may > .body { stroke-dasharray: 6 3; }
 .s-boundary > .body { stroke: color-mix(in srgb, var(--vscode-charts-red) 55%, var(--line)); }
-.s-if > .body, .s-switch > .body { fill: color-mix(in srgb, var(--vscode-charts-yellow) 8%, var(--box)); stroke: color-mix(in srgb, var(--vscode-charts-yellow) 60%, var(--line)); }
-.s-if .cond, .s-switch .cond { font-family: var(--vscode-editor-font-family); font-size: 11px; }
+.s-if > .body, .s-switch > .body { fill: color-mix(in srgb, var(--vscode-charts-yellow) 10%, var(--box)); stroke: color-mix(in srgb, var(--vscode-charts-yellow) 65%, var(--line)); stroke-width: 1.4; }
+.step .cond { font-family: var(--vscode-editor-font-family); font-size: 11.5px; }
+/* The keyword a decision or loop opens with: small, bold, in the shape's colour. */
+.step .kw { font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.s-if .kw, .s-switch .kw { fill: color-mix(in srgb, var(--vscode-charts-yellow) 80%, var(--vscode-editor-foreground)); }
+.s-loop .kw { fill: color-mix(in srgb, var(--vscode-charts-blue) 80%, var(--vscode-editor-foreground)); }
 .s-loop > .body { fill: color-mix(in srgb, var(--vscode-charts-blue) 8%, var(--box)); stroke: color-mix(in srgb, var(--vscode-charts-blue) 55%, var(--line)); }
+.s-call.leaf > .body { stroke: color-mix(in srgb, var(--vscode-editor-foreground) 22%, var(--line)); }
 .s-case > .body, .s-catch > .body { fill: var(--group); stroke: var(--line); }
 .s-case .tag, .s-catch .tag { font-size: 10.5px; fill: var(--muted); font-family: var(--vscode-editor-font-family); }
 .s-catch > .body { stroke-dasharray: 3 2; stroke: color-mix(in srgb, var(--vscode-charts-orange) 60%, var(--line)); }
 .s-end > .body { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+.s-jump { cursor: default; }
+.s-jump > .body { fill: var(--box); stroke: var(--muted); stroke-width: 1.4; }
 .s-end .dot { fill: var(--muted); }
 .step.flag-error > .body, .step.flag-warning > .body, .step.flag-info > .body { stroke: var(--fc); stroke-width: 2; stroke-dasharray: none; }
 .frame { fill: color-mix(in srgb, var(--vscode-editor-foreground) 2.5%, transparent); stroke: var(--line); stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
 .link { fill: none; stroke: color-mix(in srgb, var(--vscode-editor-foreground) 55%, transparent); stroke-width: 1.3px; vector-effect: non-scaling-stroke; }
 .link.back { stroke-dasharray: 4 3; stroke: color-mix(in srgb, var(--vscode-charts-blue) 70%, transparent); }
-.link-label { font-size: 10px; fill: var(--muted); paint-order: stroke; stroke: var(--vscode-editor-background); stroke-width: 3px; }
+.link-label { font-size: 10.5px; font-weight: 600; fill: var(--muted); paint-order: stroke; stroke: var(--vscode-editor-background); stroke-width: 3px; }
+.link-label.yes { fill: color-mix(in srgb, var(--vscode-charts-green) 70%, var(--vscode-editor-foreground)); }
+.link-label.no, .link-label.else { fill: color-mix(in srgb, var(--vscode-charts-orange) 70%, var(--vscode-editor-foreground)); }
+/* Phase bands: a narrative's grouping of the top-level steps, each with a title along its top. */
+.phase .band { fill: color-mix(in srgb, var(--accent) 4%, transparent); stroke: color-mix(in srgb, var(--accent) 22%, transparent); vector-effect: non-scaling-stroke; }
+.phase .rule { stroke: color-mix(in srgb, var(--accent) 22%, transparent); vector-effect: non-scaling-stroke; }
+.phase .title { font-size: 12px; font-weight: 600; fill: color-mix(in srgb, var(--accent) 60%, var(--vscode-editor-foreground)); }
+.phase.cont .title { opacity: .55; }
+.far-label.k-phase { --kc: var(--accent); }
+/* The narrative's summary, pinned above the chart at screen size. */
+#story { position: fixed; bottom: 10px; left: 10px; max-width: min(620px, calc(100% - 140px)); padding: 6px 10px; font-size: 12.5px; line-height: 1.45; color: var(--vscode-editor-foreground); background: color-mix(in srgb, var(--vscode-editorWidget-background) 92%, transparent); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 4px; box-shadow: 0 0 8px 2px var(--vscode-widget-shadow); pointer-events: none; }
+#story[hidden] { display: none; }
+/* Zoomed out: steps keep their shape and lose their text; far labels name them at screen size. */
+#view.far #scene .step text, #view.far #scene .phase .title { display: none; }
 .arrow.flow { fill: color-mix(in srgb, var(--vscode-editor-foreground) 70%, transparent); }
 .arrow.back { fill: color-mix(in srgb, var(--vscode-charts-blue) 80%, transparent); }
 .focus .step:not(.hl) { opacity: .35; }

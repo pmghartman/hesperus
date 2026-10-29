@@ -122,7 +122,10 @@ export async function headlessIndex(repo: string, fe: Frontend, files: readonly 
     if (!call) return [];
     const segs = callees(call.callee_text);
     if (!segs.length) return [];
-    const scopes = [d, ...(byDir.get(path.posix.dirname(p)) ?? []).filter((x) => x !== d)];
+    // A name the file imports means what the import says, never a namesake in the folder: `load` from
+    // "./service" is not the folder's engine.ts `load`. The file's own definitions still come first.
+    const bound = d.facts.imports.some((i) => i.local === segs[0]) && !SELF.has(segs[0]);
+    const scopes = bound ? [d] : [d, ...(byDir.get(path.posix.dirname(p)) ?? []).filter((x) => x !== d)];
     if (segs.length === 1) {
       // A type's name called is a constructor or conversion; the index says so and `build` drops it.
       for (const shape of ["method", "type"] as const) for (const x of scopes) for (const s of top(x, segs[0], shape)) return [ref(x, s)];

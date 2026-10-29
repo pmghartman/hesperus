@@ -28,8 +28,10 @@ function symbols(items: (vscode.DocumentSymbol | vscode.SymbolInformation)[]): B
   for (const it of items) {
     const s = SHAPES[it.kind];
     if (!s) continue;
-    if ("location" in it) out.push({ name: it.name, ...s, range: span(it.location.range), selection: span(it.location.range), children: [] });
-    else out.push({ name: it.name, ...s, range: span(it.range), selection: span(it.selectionRange), children: symbols(it.children) });
+    // The command's answers carry both shapes at once: a SymbolInformation's `location` and a
+    // DocumentSymbol's `children`. Only the tree form has the members of a class, so look for it first.
+    if ("selectionRange" in it && "children" in it) out.push({ name: it.name, ...s, range: span(it.range), selection: span(it.selectionRange), children: symbols(it.children ?? []) });
+    else if ("location" in it) out.push({ name: it.name, ...s, range: span(it.location.range), selection: span(it.location.range), children: [] });
   }
   return out;
 }

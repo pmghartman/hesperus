@@ -210,6 +210,7 @@ export async function flowInputs(repo: string, l: Loaded, r?: Report): Promise<F
   return {
     readSource: (p) => { try { return fs.readFileSync(path.join(repo, p), "utf8"); } catch { return undefined; } },
     syntaxFor: (p) => owner(p)?.syntax(p),
+    importsFor: (p) => owner(p)?.imports,
     extra: l.policy.boundaries,
     flags,
   };

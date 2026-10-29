@@ -10,11 +10,14 @@ import { Flag, layout, MAX_WIRES } from "./layout";
 import { FRONTENDS, genericFiles, ignored, index, isSource, LangResult, load, owner, pin, scan, Scan, sourceFiles, status } from "./engine";
 import { entries as flowEntries, Entry, Flow, flow as flowFrom, flowText } from "./core/flow";
 import { ask, choose, chosen, detected } from "./assist";
+import { connectClaudeCode, hasClaudeCode, registerWithEditor } from "./connect";
+import { Narrative, narrativeKey, narrativePrompt, parseNarrative, readNarrative, writeNarrative } from "./core/narrate";
+import { infer, route } from "./infer";
 import { BRIDGE_TOOL, type BridgeFile } from "./core/bridge";
 import { CACHE_DIR } from "./core/cache";
 import { sha256Hex } from "./core/hash";
 import type { Index } from "./core/scip";
-import { flowLayout } from "./flowchart";
+import { flowLayout, FlowLayout } from "./flowchart";
 import { flowInputs } from "./service";
 import { editorIndex, ensureExtension, installExtension, servedBy } from "./editor";
 import { LintSurface } from "./linter";
@@ -84,8 +87,15 @@ class Hesperus {
   /** Steps of the flow opened in place. */
   private openSteps = new Set<string>();
   private entryList?: Entry[];
-  /** The flow drawn last, for the Ask button. */
+  /** The flow drawn last, for the Explain and Ask buttons. */
   private lastFlow?: Flow;
+  /** The graph pane's size, so the flow takes as many columns as fit it. */
+  private viewport?: { width: number; height: number };
+  /** Narratives by the hash of the prompt that asked for them: a flow explained once stays explained. */
+  private narratives = new Map<string, Narrative>();
+  private explaining = false;
+  /** What the last Explain did, for the sidebar. */
+  private explained?: string;
   /** Each language's last index and the files it was built from: a change re-indexes only what changed. */
   private last = new Map<string, Last>();
   /** Paths changed while an index ran, for the run that follows it. */
@@ -105,6 +115,11 @@ class Hesperus {
 
   constructor(private ctx: vscode.ExtensionContext) {
     this.lintUi = new LintSurface(ctx);
+  }
+
+  /** A line in the Hesperus output channel. */
+  note(s: string) {
+    this.log.appendLine(s);
   }
 
   private get opts(): aggregate.ViewOptions {
@@ -435,7 +450,68 @@ class Hesperus {
       return;
     }
     this.panel.title = `Flow: ${f.entry.name}`;
-    this.panel.webview.postMessage({ type: "flow", layout: flowLayout(f), anchor });
+    this.panel.webview.postMessage({ type: "flow", layout: this.chart(f, repo), anchor });
+  }
+
+  private chart(f: Flow, repo: string): FlowLayout {
+    return flowLayout(f, { narrative: this.narrativeOf(f, repo), viewport: this.viewport });
+  }
+
+  /** The narrative written for this exact flow before, from this session or `.hesperus/narratives.json`. */
+  private narrativeOf(f: Flow, repo: string): Narrative | undefined {
+    const key = narrativeKey(narrativePrompt(f, this.folder?.name ?? path.basename(repo)));
+    let n = this.narratives.get(key);
+    if (!n) {
+      n = readNarrative(repo, key);
+      if (n) this.narratives.set(key, n);
+    }
+    return n;
+  }
+
+  /** Explain: a model reads the flow on screen and answers with a summary and phases, which are checked
+   *  against the flow (a phase naming a step that is not there is dropped) and drawn on it. The model
+   *  is whatever the machine has: the editor's own, or the Claude Code CLI; with neither, the prompt
+   *  goes to the chosen chat assistant instead. */
+  async explain() {
+    const folder = this.folder, f = this.lastFlow;
+    if (!folder || !f || this.mode !== "flow") return this.postSidebar("Open a flow first: Explain reads the chart on screen.");
+    if (this.explaining) return;
+    const repo = folder.uri.fsPath;
+    const prompt = narrativePrompt(f, folder.name), key = narrativeKey(prompt);
+    this.explaining = true;
+    this.explained = undefined;
+    this.postSidebar();
+    try {
+      const a = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Hesperus: explaining ${f.entry.name}…`, cancellable: true }, (_p, token) =>
+        route() === "chat" ? Promise.resolve(undefined) : infer(prompt, repo, token, (s) => this.log.appendLine(`explain: ${s}`)));
+      if (!a) {
+        // No model answered: the chat gets the same question, and the person reads the answer there.
+        const note = await ask(prompt + "\n\nAnswer in prose for a person as well as the JSON.");
+        this.explained = `No model answered here (${route() === "chat" ? "Explain is set to use the chat" : "none in the editor, and the Claude Code CLI did not answer"}). ${note}`;
+        return;
+      }
+      const n = parseNarrative(a.text, f, a.via);
+      if (!n) {
+        this.log.appendLine(`explain: unusable answer from ${a.via}:\n${a.text.slice(0, 2000)}`);
+        this.explained = `${a.via} answered, but not in a shape that fits the chart; nothing was drawn. The answer is in the Hesperus output channel.`;
+        return;
+      }
+      this.narratives.set(key, n);
+      try {
+        writeNarrative(repo, key, n);
+      } catch (e) {
+        this.log.appendLine(`explain: ${msg(e)}`);
+      }
+      const dropped = f.steps.length && !n.phases.length ? " No phase the model named matched the chart, so only the summary is shown." : "";
+      this.explained = `Explained by ${a.via}: ${n.phases.length} phases over ${f.steps.length} steps, each checked against the chart.${dropped}`;
+      if (this.lastFlow === f) await this.render();
+    } catch (e) {
+      this.explained = `Explain failed: ${msg(e)}`;
+      this.log.appendLine(`explain: ${msg(e)}`);
+    } finally {
+      this.explaining = false;
+      this.postSidebar();
+    }
   }
 
   private setStatus(s: Status) {
@@ -465,6 +541,9 @@ class Hesperus {
       languages: (this.scanned?.languages ?? []).map((l) => ({ ...l, installed: servedBy(l) !== undefined })),
       assistants: detected().map((a) => ({ id: a.id, label: a.label })),
       assistant: chosen() ?? null,
+      explaining: this.explaining,
+      explained: this.explained ?? null,
+      narrative: this.mode === "flow" && this.lastFlow && this.folder ? this.narrativeOf(this.lastFlow, this.folder.uri.fsPath) ?? null : null,
       found,
     });
   }
@@ -657,6 +736,7 @@ class Hesperus {
       await choose(m.id);
       this.postSidebar();
     } else if (m.type === "ask") this.postSidebar(await ask(this.prompt()));
+    else if (m.type === "explain") await this.explain();
   }
 
   /** True, with a note in the sidebar, when the open boxes would draw more than the layout can handle. */
@@ -675,9 +755,15 @@ class Hesperus {
     return false;
   }
 
-  private async onGraph(m: { type: string; id?: string; open?: string[]; close?: string[]; anchor?: string; seq?: number; path?: string; line?: number }) {
+  private async onGraph(m: { type: string; id?: string; open?: string[]; close?: string[]; anchor?: string; seq?: number; path?: string; line?: number; width?: number; height?: number }) {
     const folder = this.folder;
-    if (m.type === "ready") {
+    if (m.type === "viewport" && m.width && m.height) {
+      // The pane's size decides the flow's columns; a small change is not worth a redraw.
+      const was = this.viewport;
+      this.viewport = { width: m.width, height: m.height };
+      const moved = !was || Math.abs(was.width - m.width) / was.width > 0.12 || Math.abs(was.height - m.height) / was.height > 0.12;
+      if (was && moved && this.mode === "flow" && this.lastFlow && folder) this.panel?.webview.postMessage({ type: "flow", layout: this.chart(this.lastFlow, folder.uri.fsPath) });
+    } else if (m.type === "ready") {
       if (this.status.state === "ready") await this.render();
       else this.panel?.webview.postMessage({ type: "status", status: this.status });
     } else if (m.type === "flowToggle" && m.id) {
@@ -721,7 +807,21 @@ export function activate(ctx: vscode.ExtensionContext) {
     vscode.commands.registerCommand("hesperus.acceptKeys", (keys: string[]) => h.acceptKeys(keys)),
     vscode.commands.registerCommand("hesperus.showFinding", (f?: Finding) => h.showFinding(f)),
     vscode.commands.registerCommand("hesperus.policy", () => h.openPolicy()),
+    vscode.commands.registerCommand("hesperus.explain", () => h.explain()),
+    vscode.commands.registerCommand("hesperus.connectClaudeCode", async () => {
+      try {
+        const note = await connectClaudeCode(ctx, (s) => h.note(s), true);
+        void vscode.window.showInformationMessage(`Hesperus: ${note ?? "Claude Code is not set up on this machine (no ~/.claude.json), so there is nothing to register with."}`);
+      } catch (e) {
+        void vscode.window.showErrorMessage(`Hesperus: ${msg(e)}`);
+      }
+    }),
   );
+  // The MCP server, found without a hand-written config: by the editor's own registry, and by Claude
+  // Code at user scope (every repo it opens), refreshed whenever the installed CLI's path changes.
+  registerWithEditor(ctx, (s) => h.note(s));
+  if (vscode.workspace.getConfiguration("hesperus").get<boolean>("claudeCode", true) && hasClaudeCode())
+    connectClaudeCode(ctx, (s) => h.note(s)).then((r) => r && h.note(r), (e) => h.note(`claude code: ${msg(e)}`));
   // Agents write files without the editor saving them, so the watcher is on disk, not on documents.
   const w = vscode.workspace.createFileSystemWatcher("**/*");
   ctx.subscriptions.push(w, w.onDidChange((u) => h.onChange(u)), w.onDidCreate((u) => h.onChange(u)), w.onDidDelete((u) => h.onChange(u)));
@@ -752,13 +852,14 @@ function page(webview: vscode.Webview, media: vscode.Uri, name: string, body: st
 
 const GRAPH_BODY = `<svg id="view" xmlns="http://www.w3.org/2000/svg"><g id="scene"></g><g id="labels"></g></svg>
 <div id="tools"><button id="auto" title="Semantic Zoom: zooming in opens boxes" aria-pressed="true"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3M5 7h4M7 5v4"/></svg></button><span class="sep"></span><button id="out" title="Zoom Out"><svg viewBox="0 0 16 16"><path d="M3.5 8h9"/></svg></button><span id="zoom">100%</span><button id="in" title="Zoom In"><svg viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9"/></svg></button><button id="fit" title="Fit to Window"><svg viewBox="0 0 16 16"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg></button></div>
-<div id="msg">Loading…</div><div id="tip" hidden></div>`;
+<div id="msg">Loading…</div><div id="story" hidden></div><div id="tip" hidden></div>`;
 
 const SIDEBAR_BODY = `<header><div class="repo" id="repo"></div><div id="state" class="state"></div></header>
 <div id="detail" class="note" hidden></div>
 <ul id="missing" class="missing" hidden></ul>
 <div class="bar"><div class="switch" role="group" aria-label="View"><button id="flow" aria-pressed="true" title="What the program does, step by step from an entry point">Flow</button><button id="map" aria-pressed="false" title="What the repo reaches outside itself: databases, the network, models, files">Map</button></div><button id="reindex" class="secondary" title="Read the repo through the editor's language servers; the graph is kept in .hesperus/">Index</button></div>
-<div class="bar"><select id="assistant" title="The AI assistant the Ask button sends to; kept in your settings"></select><button id="ask" class="secondary" title="Send what is on screen (the flow, the findings, what the repo reaches) to the assistant; the prompt is copied to the clipboard too">Ask</button></div>
+<div class="bar"><button id="explain" title="A model reads the flow on screen and writes a plain-language summary and phases, checked against the chart and drawn on it">Explain</button><select id="assistant" title="The AI assistant the Ask button sends to; kept in your settings"></select><button id="ask" class="secondary" title="Send what is on screen (the flow, the findings, what the repo reaches) to the assistant's chat; the prompt is copied to the clipboard too">Ask</button></div>
+<div id="explained" class="note" hidden></div>
 <form id="find" role="search"><input id="q" type="search" placeholder="Find a function or file to chart" spellcheck="false" aria-label="Find"></form>
 <div id="found" hidden></div>
 <section id="sec-entries"><button class="head" aria-expanded="true"><span class="chev"></span><span class="label">Starts from</span><span id="entry-count" class="badge"></span></button>

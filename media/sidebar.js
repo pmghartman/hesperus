@@ -7,7 +7,7 @@
   const kept = vs.getState() ?? {};
   const remember = (patch) => vs.setState(Object.assign(kept, patch));
 
-  for (const id of ["flow", "map", "reindex", "accept", "policy", "ask"]) $(id).onclick = () => vs.postMessage({ type: id });
+  for (const id of ["flow", "map", "reindex", "accept", "policy", "ask", "explain"]) $(id).onclick = () => vs.postMessage({ type: id });
   $("assistant").onchange = () => vs.postMessage({ type: "assistant", id: $("assistant").value });
   $("watch").onchange = () => vs.postMessage({ type: "watch" });
   $("find").onsubmit = (e) => {
@@ -109,11 +109,24 @@
 
     $("found").hidden = !m.found;
     if (m.found !== undefined) $("found").textContent = m.found;
+    explained(m);
 
     entries(m);
     review(m, ready);
     reaches(m, ready);
   });
+
+  // What Explain wrote for the flow on screen (its summary, from this session or the cache), or what
+  // the last press did.
+  function explained(m) {
+    const b = $("explain"), box = $("explained");
+    b.disabled = !!m.explaining || m.mode !== "flow";
+    b.textContent = m.explaining ? "Explaining…" : "Explain";
+    const n = m.narrative;
+    const text = m.explained ? m.explained : n?.summary ? `${n.summary}${n.via ? `  — ${n.via}` : ""}` : "";
+    box.hidden = !text || m.mode !== "flow";
+    box.textContent = text;
+  }
 
   // The AI assistants the editor has; the chosen one is kept in the user's settings.
   function assistants(m) {

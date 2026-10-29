@@ -59,9 +59,11 @@ async function flowTest(repo) {
   const { indexHeadless } = require("../out/engine");
   const { entries, flow, flowText } = require("../out/core/flow");
   const { flowLayout } = require("../out/flowchart");
+  const { parseNarrative, narrativePrompt } = require("../out/core/narrate");
   const { flowInputs } = require("../out/service");
   const { defaultPolicy } = require("../out/core/lint");
   const APP = `const fs = require("fs");
+import { helper } from "./lib";
 /** Runs the job: reads, then saves each row. */
 function main(rows) {
   const data = read();
@@ -76,9 +78,15 @@ function main(rows) {
 function read() { return fs.readFileSync("in.txt", "utf8"); }
 /* Writes one row. */
 function save(r) { fs.writeFileSync("out.txt", r); }
-function skip() {}
+function skip() { helper(); }
+main([]);
+`;
+  // A file the script imports: its top-level code runs on import, so it is no entry of its own.
+  const LIB = `export function helper() { return 1; }
+helper();
 `;
   fs.writeFileSync(path.join(repo, "app.js"), APP);
+  fs.writeFileSync(path.join(repo, "lib.js"), LIB);
   fs.writeFileSync(path.join(repo, "package.json"), "{}");
   const { graph: g } = await indexHeadless(repo);
   const main = g.nodes.find((n) => n.name === "main" && n.kind === "function");
@@ -88,6 +96,9 @@ function skip() {}
   const inp = await flowInputs(repo, { graph: g, policy: defaultPolicy() });
   const es = entries(g, inp);
   assert.equal(es[0]?.name, "main", "entry drives the most");
+  assert.ok(!es.some((e) => e.name.startsWith("app.js")), "a script whose load is main() is entered as main, not twice: " + es.map((e) => e.name).join(", "));
+  assert.ok(!es.some((e) => e.name.startsWith("lib.js")), "an imported file is not an entry: " + es.map((e) => e.name).join(", "));
+  assert.ok(!es.some((e) => e.name === "helper"), "a function the script calls is not an entry");
   const f = flow(g, main.id, new Set(), inp);
   const kinds = f.steps.map((s) => s.kind);
   assert.deepEqual(kinds, ["call", "if"], "steps in order");
@@ -96,15 +107,35 @@ function skip() {}
   assert.equal(iff.yes[0]?.kind, "loop", "loop on the yes side");
   assert.equal(iff.yes[0].body[0]?.name, "save");
   assert.equal(iff.no[0]?.name, "skip", "else side");
+  assert.equal(f.steps[0].leaf, undefined, "read has a terminal inside, so it opens");
+  assert.equal(iff.yes[0].body[0].leaf, undefined, "save has a terminal inside");
   const opened = flow(g, main.id, new Set([f.steps[0].id]), inp);
   assert.equal(opened.steps[0].steps?.[0]?.kind, "boundary", "opened call shows its terminal");
   assert.equal(opened.steps[0].steps[0].boundary, "filesystem");
   const text = flowText(opened);
-  assert.ok(text.includes("▭ read") && text.includes("Reads the input file.") && text.includes("[Filesystem]") && text.includes("◇ rows.length > 1?"), text);
+  assert.ok(text.includes("▭ read") && text.includes("Reads the input file.") && text.includes("[Filesystem]") && text.includes("◇ if rows.length > 1"), text);
   const lay = flowLayout(opened);
+  assert.ok(lay.boxes.find((b) => b.kind === "if")?.keyword === "if", "decision carries its keyword");
   assert.ok(lay.boxes.some((b) => b.kind === "if") && lay.boxes.some((b) => b.kind === "loop") && lay.boxes.some((b) => b.kind === "boundary") && lay.boxes.some((b) => b.kind === "frame"), "chart shapes");
   assert.ok(lay.links.some((l) => l.label === "yes") && lay.links.some((l) => l.label === "no") && lay.links.some((l) => l.back), "chart links");
   assert.ok(lay.boxes.every((b) => b.x >= 0 && b.y >= 0), "chart in positive space");
+  // A narrative is checked against the flow: phases name steps by number, in order, without overlap.
+  const prompt = narrativePrompt(opened, "t");
+  assert.ok(prompt.includes("[S1]") && prompt.includes("[S2]") && !prompt.includes("[S3]"), "top-level steps tagged");
+  const n = parseNarrative('Sure: {"summary": "Reads, then saves.", "phases": [{"title": "Read", "from": 1, "to": 1}, {"title": "Save", "from": 2, "to": 9}, {"title": "Bad", "from": 1, "to": 2}]}', opened, "test");
+  assert.equal(n?.summary, "Reads, then saves.");
+  assert.deepEqual(n?.phases.map((p) => p.steps), [[opened.steps[0].id], [opened.steps[1].id]], "a phase past the end or out of order is dropped");
+  assert.equal(parseNarrative("no json here", opened), undefined);
+  const told = flowLayout(opened, { narrative: n });
+  assert.equal(told.boxes.filter((b) => b.kind === "phase").length, 2, "a band per phase");
+  assert.equal(told.summary, "Reads, then saves.");
+  // A long flow takes columns when the pane is wide, and stays one when it is tall.
+  const long = { entry: f.entry, flagged: 0, steps: Array.from({ length: 12 }, (_, i) => ({ kind: "call", id: `s${i}`, in: "app.js", target: "t", name: `step${i}`, line: i + 1, count: 1, may: false, leaf: true })) };
+  const wide = flowLayout(long, { viewport: { width: 2400, height: 400 } });
+  assert.ok(wide.columns > 1, "columns for a wide pane: " + wide.columns);
+  assert.ok(wide.boxes.filter((b) => b.kind === "jump").length === wide.columns - 1, "a connector between columns");
+  assert.ok(wide.boxes.every((b) => b.x >= 0 && b.y >= 0), "columns in positive space");
+  assert.equal(flowLayout(long, { viewport: { width: 300, height: 4000 } }).columns, 1, "one column for a tall pane");
 }
 
 async function player(repo) {
