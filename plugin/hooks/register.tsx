@@ -120,11 +120,12 @@ async function refresh($: EngineInterface, mode: 'index' | 'draw' = 'index'): Pr
   try {
     if (mode === 'index') {
       await update($, busy, () => 'indexing')
-      $.ui.status('hesperus: indexing…')
+      $.ui.status('indexing…')
       const next: HesperusReport = { at: Date.now(), ...(JSON.parse(await call($, 'hesperus_check', { index: true })) as Omit<HesperusReport, 'at'>) }
       await update($, report, () => next)
       const { errors, warnings } = next.summary
-      $.ui.status(errors || warnings ? `hesperus: ${errors} errors, ${warnings} new` : 'hesperus: clean')
+      // The engine heads the line with the plugin's name.
+      $.ui.status(errors || warnings ? `${errors} errors, ${warnings} new` : 'clean')
     }
     await update($, busy, () => 'drawing')
     try {
@@ -138,7 +139,7 @@ async function refresh($: EngineInterface, mode: 'index' | 'draw' = 'index'): Pr
     }
   } catch (e) {
     await update($, report, () => empty(e instanceof Error ? e.message : String(e)))
-    $.ui.status('hesperus: failed')
+    $.ui.status('failed')
   } finally {
     running = false
     await update($, busy, () => '')
@@ -337,7 +338,7 @@ export const register: Register = on => {
 
     // The map and the explorer as Client elements by their string tag, each naming its one module.
     if (e.surface === 'terminal' || e.surface === 'desktop') {
-      const map: HesperusMapProps = v ? { boxes: v.boxes, wires: v.wires, width: v.width, height: v.height, moves: mv, ...(a.focus ? { selected: a.focus } : {}) } : { boxes: [], wires: [], width: 0, height: 0, moves: {} }
+      const map: HesperusMapProps = v ? { boxes: v.boxes, wires: v.wires, width: v.width, height: v.height, moves: mv, columns: paneColumns, rows: mapRows, ...(a.focus ? { selected: a.focus } : {}) } : { boxes: [], wires: [], width: 0, height: 0, moves: {} }
       const omitted = v?.omitted ? <Text dimColor>{`${v.omitted} lighter wires left out`}</Text> : undefined
       return (
         <Box flexDirection="column">
@@ -345,7 +346,7 @@ export const register: Register = on => {
           {rows.length > 0 && tools}
           {mapRows > 0 && h('Client', { key: 'map', module: './map.tsx', props: map, height: mapRows, width: '100%' })}
           {omitted}
-          {rows.length > 0 && h('Client', { key: 'explorer', module: './explorer.tsx', props: explorer, height: listRows })}
+          {rows.length > 0 && h('Client', { key: 'explorer', module: './explorer.tsx', props: { ...explorer, room: listRows }, height: listRows })}
           {rows.length > 0 && hint}
           {source}
           {list}

@@ -12,7 +12,8 @@ const COLOR = { error: 'red', warning: 'yellow', info: 'blue' } as const
 const Explorer: ClientModule<HesperusExplorerProps, State> = (props, s) => {
   const { Box, Text } = s.elements
   const rows = props.rows
-  const room = Math.max(1, s.rows || rows.length)
+  // The region as the surface reports it, else as the pane laid it out: the desktop app reports one row.
+  const room = Math.max(1, s.rows > 1 ? s.rows : props.room || rows.length)
   // Follow the hooks' selection when it changes from outside (a redraw, a reset); else keep our own.
   const prior = s.state
   let sel = prior && prior.selected === props.selected ? prior.sel : Math.max(0, rows.findIndex(r => r.id === props.selected))
@@ -77,8 +78,9 @@ const Explorer: ClientModule<HesperusExplorerProps, State> = (props, s) => {
         const here = top + n === sel
         const chev = r.expandable ? (r.open ? '▾ ' : '▸ ') : '  '
         return (
-          <Text inverse={here} wrap="truncate-end" color={r.severity ? COLOR[r.severity] : undefined}>
-            {'  '.repeat(r.depth)}{chev}{r.name}
+          <Text wrap="truncate-end" mono>
+            {'  '.repeat(r.depth)}
+            <Text inverse={here} bold={here} color={r.severity ? COLOR[r.severity] : undefined}>{chev}{r.name}</Text>
             <Text dimColor> {r.kind}{r.at ? ` ${r.at}` : ''}</Text>
           </Text>
         )

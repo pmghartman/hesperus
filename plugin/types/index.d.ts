@@ -64,7 +64,9 @@ export type HesperusView = {
 export type HesperusMoves = Record<string, [number, number]>
 
 /** The map Client's props. */
-export type HesperusMapProps = { boxes: HesperusBox[]; wires: HesperusWire[]; width: number; height: number; moves: HesperusMoves; selected?: string }
+/** `columns` and `rows`: the region's size as the pane laid it out, for a surface that reports its region
+ *  smaller than it drew it (the desktop app's does). */
+export type HesperusMapProps = { boxes: HesperusBox[]; wires: HesperusWire[]; width: number; height: number; moves: HesperusMoves; selected?: string; columns?: number; rows?: number }
 
 /** What the map posts to the hooks module: the explorer's asks, and a box dragged somewhere. */
 export type HesperusMapPost = HesperusExplorerPost | { type: 'move'; id: string; dx: number; dy: number }
@@ -89,7 +91,7 @@ export type HesperusRow = {
 }
 
 /** The explorer Client's props. */
-export type HesperusExplorerProps = { rows: HesperusRow[]; selected?: string }
+export type HesperusExplorerProps = { rows: HesperusRow[]; selected?: string; /** The region's rows as the pane laid it out. */ room?: number }
 
 /** What the explorer posts to the hooks module. */
 export type HesperusExplorerPost = { type: 'select'; id: string } | { type: 'toggle'; id: string } | { type: 'open'; id: string };

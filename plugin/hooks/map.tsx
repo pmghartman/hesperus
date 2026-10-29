@@ -156,7 +156,8 @@ function raster(props: HesperusMapProps, moves: HesperusMoves, pan: [number, num
 
 const MapView: ClientModule<HesperusMapProps, State> = (props, s) => {
   const { Box, Text } = s.elements
-  const columns = Math.max(1, s.columns || 40), rows = Math.max(1, s.rows || 12)
+  // The region as the surface reports it, else as the pane laid it out: the desktop app reports one row.
+  const columns = Math.max(1, s.columns > 1 ? s.columns : props.columns || 40), rows = Math.max(1, s.rows > 1 ? s.rows : props.rows || 12)
   const st: State = s.state ?? { pan: [0, 0], moves: {} }
   // The hooks' moves are the record; our own lie over them from a drop until the hooks hand them back
   // (no snap back meanwhile), and are forgotten once the record changes (that, or Overview).
@@ -241,7 +242,7 @@ const MapView: ClientModule<HesperusMapProps, State> = (props, s) => {
           else runs.push({ cell: c, text: c.ch })
         }
         return (
-          <Text wrap="truncate-end">
+          <Text wrap="truncate-end" mono>
             {runs.map(r => (r.cell.color || r.cell.dim || r.cell.bold || r.cell.inverse
               ? <Text color={r.cell.color} dimColor={r.cell.dim} bold={r.cell.bold} inverse={r.cell.inverse}>{r.text}</Text>
               : r.text))}
