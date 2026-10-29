@@ -2,9 +2,15 @@
 
 # Hesperus
 
-A boundary linter and live map for repos that agents write, built by static analysis.
+A flow chart of what a program does, and a boundary linter, for repos that agents write. Built by static analysis.
 
-Hesperus compiles source "up" into a graph an engineer can question: packages, files, types, and functions, with the calls and data flow between them. It is made for the person overseeing an agent who no longer reads every diff: what reaches databases, the internet, model APIs and other outside systems, what changed since they last looked, and what their policy forbids, without trusting an agent-drawn diagram.
+Hesperus compiles source "up" into a graph an engineer can question: packages, files, types, and functions, with the calls and data flow between them. It is made for the person overseeing an agent who no longer reads every diff: what the program does from each entry point, step by step; what reaches databases, the internet, model APIs and other outside systems; what changed since they last looked; and what their policy forbids, without trusting an agent-drawn diagram.
+
+## The flow
+
+The first picture is a flow chart, top down, from an entry point: the steps the code takes in the order it runs them, each named by its function and the comment above it; the decisions between them, as diamonds carrying the condition as written; loops; and every call that leaves the repo as a terminal marked with its boundary. Click a step to open its own steps in place, ⌘/Ctrl-click to go to the source. Entry points are the callables nothing in the repo calls (and each file's own top-level code), ranked by how much of the program they drive; any function can be charted by name.
+
+Everything on it is read from the code: a call's site gives its order, the file's syntax gives the branches and the doc comments, the boundary table names the terminals. A function with no comment is labelled as the code names it; a call the index could not resolve is left out rather than guessed; a dynamic call is drawn dashed. `hesperus flow` prints the same chart as text, and `hesperus_flow` serves it to an agent.
 
 - **Analysis only.** Nodes and edges come from the editor's language servers and tree-sitter; a call the servers leave unresolved is resolved through the file's imports. No model creates, removes, or reweights anything.
 - **Honest about unknowns.** Every edge is `resolved`, `may` (dynamic dispatch, function values), or `unresolved` (reflection, injection). Unknowns are drawn, never dropped.
@@ -61,10 +67,11 @@ node plugin/dist/hesperus.js check . --index
 ```
 node plugin/dist/hesperus.js index .       # build .hesperus/ from source
 node plugin/dist/hesperus.js svg .         # draw .hesperus/view.svg: the repo with each boundary as a box (its boxes in view.json; --view to open others)
+node plugin/dist/hesperus.js flow .        # what the program does, top down, as text (--entry NAME, --depth N)
 node plugin/dist/hesperus.js mcp .         # serve the repo to an agent over MCP (stdio)
 ```
 
-**MCP.** `hesperus mcp` is an MCP server any agent can connect to. Tools: `hesperus_index`, `hesperus_check` (the lint), `hesperus_diff` (crossings and dependencies added or removed since the last accepted review, and anything the policy denies), `hesperus_boundaries` (every call that leaves the repo, by boundary and package, with file:line), `hesperus_calls` (callers and callees by name), `hesperus_accept`, `hesperus_svg`. Resources: `hesperus://report`, `hesperus://view.svg`. For Claude Code without the plugin:
+**MCP.** `hesperus mcp` is an MCP server any agent can connect to. Tools: `hesperus_index`, `hesperus_check` (the lint), `hesperus_diff` (crossings and dependencies added or removed since the last accepted review, and anything the policy denies), `hesperus_boundaries` (every call that leaves the repo, by boundary and package, with file:line), `hesperus_calls` (callers and callees by name), `hesperus_flow` (the flow chart as text from an entry point, with its entry points), `hesperus_accept`, `hesperus_svg`. Resources: `hesperus://report`, `hesperus://view.svg`. For Claude Code without the plugin:
 
 ```
 npm ci --prefix /path/to/hesperus/plugin      # once: elkjs, which draws the map
@@ -109,13 +116,11 @@ Other languages are counted and not analyzed.
 
 ## VS Code extension
 
-Click the Hesperus icon in the activity bar. On first use it detects languages, asks each language's editor extension for symbols and references (offering to install a missing one), builds the graph into `.hesperus/` (untracked, safe to delete), and opens the graph.
+Click the Hesperus icon in the activity bar. On first use it detects languages, asks each language's editor extension for symbols and references (offering to install a missing one), builds the graph into `.hesperus/` (untracked, safe to delete), and opens the flow chart.
 
-- Scroll to zoom, drag to pan. Click a box to expand it.
-- Cmd/Ctrl-click or double-click opens the source.
-- Hover to focus a box's connections or see the counts behind an edge.
-- The sidebar shows status, finds nodes by name, filters calls, data flow, overrides, and state transitions, lists the state machines found, and re-indexes.
-- Automaton view: the program as a state machine over its state variables, with external events and entry points as inputs.
+- **Flow**: what the program does from an entry point. Click a step to open its steps in place; click a decision, loop or terminal to see its code; ⌘/Ctrl-click a step to open its definition. Scroll to zoom, drag to pan.
+- **Map**: what the repo reaches outside itself, each boundary a box. Zoom in to open boxes; hover to trace a box's wires. Findings from the lint are drawn on both.
+- The sidebar shows status, the entry points (click one to chart it), a search that charts any function by name, what to review, and what the repo reaches.
 
 A stale cache (new commit, lockfile, or tool version) fails loudly, then re-indexes.
 
@@ -126,6 +131,7 @@ A stale cache (new commit, lockfile, or tool version) fails loudly, then re-inde
 | `vscode/src/core` | IR, graph building, aggregation, cache, canonical serialization; `boundary.ts` (classification, boundary view) and `lint.ts` (policy, baseline, findings) |
 | `vscode/src/linter.ts`, `review.ts` | Problems entries and quick fixes; policy, baseline and report files |
 | `vscode/src/headless.ts`, `service.ts`, `cli.ts`, `mcp.ts` | indexing without an editor; what the CLI, MCP server and plugin share; `hesperus index/check/svg/mcp`; the MCP server |
+| `vscode/src/core/flow.ts`, `vscode/src/flowchart.ts` | the flow: entry points and the step tree from one (calls in site order, branches from syntax, boundary terminals); its chart laid out top down |
 | `vscode/src/picture.ts`, `svg.ts`, `shelf.ts` | the boundary overview laid out and drawn as SVG; its layout in cells for a tall pane |
 | `plugin/` | the Claude Code plugin, the folder its marketplace (`.claude-plugin/marketplace.json`) and the plugin directory read: its manifest, the hooks module with the pane's map (`hooks/map.tsx`) and explorer (`hooks/explorer.tsx`), its state contract (`types/`), tests, and `dist/`; `.github/workflows/plugin-version.yml` raises its version |
 | `plugin/dist/` | the CLI bundled with its grammars (`vscode/scripts/bundle.js`), committed so the plugin needs no build |
@@ -133,7 +139,7 @@ A stale cache (new commit, lockfile, or tool version) fails loudly, then re-inde
 | `.mcp.json` | the MCP server for a Claude Code session in this repository |
 | `mcpb/manifest.json` | the Claude Desktop bundle's manifest; `vscode/scripts/mcpb.js` packs it with `plugin/dist/` |
 | `vscode/schema/policy.schema.json` | `hesperus.json` schema |
-| `vscode/src/lang` | tree-sitter syntax facts and editor extension per language |
+| `vscode/src/lang` | tree-sitter syntax facts and editor extension per language; `treesitter.ts` also reads doc comments and branches for every grammar alike |
 | `vscode/src/editor.ts` | reads symbols and references from the editor's language servers |
 | `vscode/src/extension.ts`, `layout.ts` | webview extension; deterministic ELK layout |
 | `vscode/schema/graph.schema.json` | versioned graph schema |

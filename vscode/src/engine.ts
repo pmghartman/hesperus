@@ -96,7 +96,8 @@ function lockfileHash(repo: string, explicit: readonly string[]): string {
 /** Rejects absolute and parent-escaping paths so only repo files are read. */
 const safeRel = (p: string) => !path.isAbsolute(p) && !p.split(/[\\/]/).includes("..");
 
-const owner = (p: string) => {
+/** The frontend whose files include `p`, by extension. */
+export const owner = (p: string) => {
   const e = extension(p);
   return e === undefined ? undefined : FRONTENDS.find((f) => f.extensions.includes(e));
 };

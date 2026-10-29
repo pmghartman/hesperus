@@ -53,6 +53,60 @@ function onMessage(m) {
 window.addEventListener("message", (e) => onMessage(e.data));
 `;
 
+// The flow from an entry: steps in call order, named by their doc comments; an if with both sides, a
+// loop, a call that leaves the repo as a terminal; opening a step inlines its own; the text form agrees.
+async function flowTest(repo) {
+  const { indexHeadless } = require("../out/engine");
+  const { entries, flow, flowText } = require("../out/core/flow");
+  const { flowLayout } = require("../out/flowchart");
+  const { flowInputs } = require("../out/service");
+  const { defaultPolicy } = require("../out/core/lint");
+  const APP = `const fs = require("fs");
+/** Runs the job: reads, then saves each row. */
+function main(rows) {
+  const data = read();
+  if (rows.length > 1) {
+    for (const r of rows) save(r);
+  } else {
+    skip();
+  }
+  return data;
+}
+// Reads the input file.
+function read() { return fs.readFileSync("in.txt", "utf8"); }
+/* Writes one row. */
+function save(r) { fs.writeFileSync("out.txt", r); }
+function skip() {}
+`;
+  fs.writeFileSync(path.join(repo, "app.js"), APP);
+  fs.writeFileSync(path.join(repo, "package.json"), "{}");
+  const { graph: g } = await indexHeadless(repo);
+  const main = g.nodes.find((n) => n.name === "main" && n.kind === "function");
+  assert.equal(main?.doc, "Runs the job: reads, then saves each row.", "doc comment");
+  assert.equal(g.nodes.find((n) => n.name === "read")?.doc, "Reads the input file.", "line comment");
+  assert.equal(g.nodes.find((n) => n.name === "save")?.doc, "Writes one row.", "block comment");
+  const inp = await flowInputs(repo, { graph: g, policy: defaultPolicy() });
+  const es = entries(g, inp);
+  assert.equal(es[0]?.name, "main", "entry drives the most");
+  const f = flow(g, main.id, new Set(), inp);
+  const kinds = f.steps.map((s) => s.kind);
+  assert.deepEqual(kinds, ["call", "if"], "steps in order");
+  const iff = f.steps[1];
+  assert.equal(iff.text, "rows.length > 1");
+  assert.equal(iff.yes[0]?.kind, "loop", "loop on the yes side");
+  assert.equal(iff.yes[0].body[0]?.name, "save");
+  assert.equal(iff.no[0]?.name, "skip", "else side");
+  const opened = flow(g, main.id, new Set([f.steps[0].id]), inp);
+  assert.equal(opened.steps[0].steps?.[0]?.kind, "boundary", "opened call shows its terminal");
+  assert.equal(opened.steps[0].steps[0].boundary, "filesystem");
+  const text = flowText(opened);
+  assert.ok(text.includes("▭ read") && text.includes("Reads the input file.") && text.includes("[Filesystem]") && text.includes("◇ rows.length > 1?"), text);
+  const lay = flowLayout(opened);
+  assert.ok(lay.boxes.some((b) => b.kind === "if") && lay.boxes.some((b) => b.kind === "loop") && lay.boxes.some((b) => b.kind === "boundary") && lay.boxes.some((b) => b.kind === "frame"), "chart shapes");
+  assert.ok(lay.links.some((l) => l.label === "yes") && lay.links.some((l) => l.label === "no") && lay.links.some((l) => l.back), "chart links");
+  assert.ok(lay.boxes.every((b) => b.x >= 0 && b.y >= 0), "chart in positive space");
+}
+
 async function player(repo) {
   const lines = PLAYER.split("\n");
   const at = (name) => lines.flatMap((l, i) => [...l.matchAll(new RegExp(`\\b${name}\\b`, "g"))].map((m) => sp(i, m.index, i, m.index + name.length)));
@@ -241,7 +295,7 @@ async function boundaries(repo) {
     assert.deepEqual(moves, ["#initial>false", "false>true", "true>false"], "flag machine");
     assert.equal(await make(), out);
     await player(repo);
-    for (const [name, test] of [["boundary", boundaries], ["imports", imports], ["headless", headless]]) {
+    for (const [name, test] of [["boundary", boundaries], ["imports", imports], ["headless", headless], ["flow", flowTest]]) {
       const other = fs.mkdtempSync(path.join(os.tmpdir(), `hesperus-${name}-`));
       try {
         await test(other);

@@ -5346,7 +5346,7 @@ function parseSymbol(s) {
 }
 
 // src/core/bridge.ts
-var BRIDGE_TOOL = { name: "editor-lsp", version: "3" };
+var BRIDGE_TOOL = { name: "editor-lsp", version: "4" };
 function byteCol(lines, p) {
   const l = lines[p.line] ?? "";
   return /[^\x00-\x7f]/.test(l) ? Buffer.byteLength(l.slice(0, p.character), "utf8") : p.character;
@@ -5703,7 +5703,7 @@ function states(inp) {
       }
     }
   }
-  const docOf = new Map(inp.docs.map((d) => [d.path, d]));
+  const docOf2 = new Map(inp.docs.map((d) => [d.path, d]));
   const values = /* @__PURE__ */ new Map();
   const note = (loc, v) => {
     if (!v) return;
@@ -5712,7 +5712,7 @@ function states(inp) {
     if (!old || cmpSite(v.site, old.site) < 0) m.set(v.key, v);
   };
   const moves = writes.map((w) => {
-    const d = docOf.get(w.path);
+    const d = docOf2.get(w.path);
     const here = { caller: w.caller, site: { path: w.path, range: w.site } };
     if (w.value.negates && locOf(d, d.symAt(w.value.negates)) === w.loc) return [{ value: void 0, flip: true, ...here }];
     const s = w.value.form === "name" ? d.symAt(w.value.name) : void 0;
@@ -5724,11 +5724,11 @@ function states(inp) {
       return r?.form === "literal" ? [r.text] : r?.form === "name" && d.symAt(r.name) !== void 0 ? [d.symAt(r.name)] : [];
     }));
     const ins = inp.argsTo(p[0], p[1]).filter((a) => {
-      const v = value(docOf.get(a.path), a.value, w.loc);
+      const v = value(docOf2.get(a.path), a.value, w.loc);
       return !v || !barred.has(v.key);
     });
     if (!ins.length) return [{ value: void 0, ...here }];
-    return ins.map((a) => ({ value: value(docOf.get(a.path), a.value, w.loc), caller: a.caller, site: { path: a.path, range: a.site } }));
+    return ins.map((a) => ({ value: value(docOf2.get(a.path), a.value, w.loc), caller: a.caller, site: { path: a.path, range: a.site } }));
   });
   const assigned = /* @__PURE__ */ new Map(), held = /* @__PURE__ */ new Map();
   const add = (m, loc, key) => (m.get(loc) ?? m.set(loc, /* @__PURE__ */ new Set()).get(loc)).add(key);
@@ -5799,7 +5799,7 @@ function states(inp) {
   });
   for (const t of checks) {
     if (!machines.has(t.loc) || !values.get(t.loc)?.has(t.value.key)) continue;
-    const d = docOf.get(t.path);
+    const d = docOf2.get(t.path);
     out2.edges.push({ from: d.callerAt(t.body), to: stateId(t.loc, t.value.key), kind: "guard", provenance: t.certain ? "resolved" : "may", label: t.equal ? "==" : "!=", site: { path: t.path, range: t.body } });
   }
   const dispatch = [];
@@ -5838,7 +5838,7 @@ function states(inp) {
 }
 
 // src/core/syntax.ts
-var noFacts = () => ({ calls: [], symbols: [], imports: [], params: [], decls: [], assigns: [], guards: [], consts: [], lambdas: [] });
+var noFacts = () => ({ calls: [], symbols: [], imports: [], params: [], decls: [], assigns: [], guards: [], consts: [], lambdas: [], branches: [] });
 
 // src/core/build.ts
 var fileId = (path11) => `file:${path11}`;
@@ -5910,13 +5910,16 @@ function build2(inp) {
         info2.set(sym, { ...i2, kind: 17 });
     }
     const callables = [];
+    const docAt = /* @__PURE__ */ new Map();
+    for (const s of facts.symbols) if (s.doc) docAt.set(rangeKey(s.selection), s.doc);
     for (const [sym, r, body2] of localDefs) {
       const ps = parseSymbol(sym);
       if (!ps) continue;
       const kind = classify2(ps, info2.get(sym));
       if (!kind) continue;
       const old = defs.get(sym);
-      if (!old || (cmpStr(old.path, path11) || cmpRange(old.ident, r)) > 0) defs.set(sym, { path: path11, ident: r });
+      const doc = docAt.get(rangeKey(r));
+      if (!old || (cmpStr(old.path, path11) || cmpRange(old.ident, r)) > 0) defs.set(sym, doc === void 0 ? { path: path11, ident: r } : { path: path11, ident: r, doc });
       if (isCallable(kind) && body2) callables.push({ symbol: sym, ident: r, body: body2 });
     }
     texts.set(path11, text);
@@ -5945,7 +5948,7 @@ function build2(inp) {
     const kind = classify2(ps, inf);
     const name2 = inf && inf.display_name !== "" ? inf.display_name : ps.descriptors[ps.descriptors.length - 1]?.name ?? "";
     const signature = inf?.signature_documentation?.text || void 0;
-    const doc = inf?.documentation.join("\n") || void 0;
+    const doc = inf?.documentation.join("\n") || def.doc || void 0;
     nodes.set(sym, { id: sym, kind, name: name2, path: def.path, range: def.ident, signature, doc, hash: hashOf(def.path) });
     const pkgs = filePkgs.get(def.path) ?? filePkgs.set(def.path, /* @__PURE__ */ new Set()).get(def.path);
     pkgs.add(pkgId(ps));
@@ -6356,6 +6359,19 @@ var Source = class {
   range(n) {
     return this.span(n, n);
   }
+  /** The character index where a range starts, to find the node that starts there. */
+  index(r) {
+    const s = this.starts[r.start_line] ?? this.text.length;
+    const end = r.start_line + 1 < this.starts.length ? this.starts[r.start_line + 1] : this.text.length;
+    if (!/[^\x00-\x7f]/.test(this.text.slice(s, end))) return s + r.start_col;
+    let bytes = 0, i2 = s;
+    while (bytes < r.start_col && i2 < end) {
+      const c = this.text.codePointAt(i2);
+      bytes += c < 128 ? 1 : c < 2048 ? 2 : c < 65536 ? 3 : 4;
+      i2 += c >= 65536 ? 2 : 1;
+    }
+    return i2;
+  }
   /** From the start of `a` to the end of `b`. */
   span(a, b) {
     const s = a.startPosition, e = b.endPosition;
@@ -6440,6 +6456,109 @@ function guardIf(n, cond, body2, ops, operand12, out2, src) {
   const alt = n.childForFieldName("alternative");
   branches(cond, src.range(body2), alt ? src.range(alt) : rest(n, body2, src), ops, operand12, out2);
 }
+var SKIP_BACK = /decorator|attribute|annotation|modifier|visibility/;
+var PRAGMA = /^(eslint|prettier|ts-|noqa|type:|pylint|nolint|go:|#!|-\*-|@ts|biome|istanbul|c8 |v8 |SPDX|Copyright|License|coding[:=])/i;
+var ROOT = /* @__PURE__ */ new Set(["program", "module", "source_file", "translation_unit", "compilation_unit"]);
+function docOf(n) {
+  let top = n;
+  while (top.parent && top.parent.startIndex === top.startIndex && !ROOT.has(top.parent.type)) top = top.parent;
+  const lines = [];
+  let row2 = top.startPosition.row;
+  for (let p = top.previousSibling; p !== null; p = p.previousSibling) {
+    if (/comment/.test(p.type)) {
+      if (p.endPosition.row < row2 - 1) break;
+      lines.unshift(...p.text.split("\n"));
+      row2 = p.startPosition.row;
+      continue;
+    }
+    if (!lines.length && SKIP_BACK.test(p.type)) {
+      row2 = p.startPosition.row;
+      continue;
+    }
+    break;
+  }
+  if (!lines.length) {
+    const body2 = n.childForFieldName("body") ?? n.childForFieldName("definition")?.childForFieldName("body") ?? namedChildren(n).find((c) => /definition|declaration/.test(c.type))?.childForFieldName("body");
+    const first2 = body2 && namedChildren(body2).find((c) => !/comment/.test(c.type));
+    const str2 = first2?.type === "expression_statement" ? namedChildren(first2)[0] : void 0;
+    if (str2 && /string/.test(str2.type)) lines.push(...str2.text.split("\n"));
+  }
+  return clean(lines);
+}
+var MARK_START = /^\s*(\/\*\*<?|\/\*!?|\*\/|\/\/[/!]?|#+|--|r?"""|r?'''|\*)\s?/;
+var MARK_END = /\s*(\*\/|"""|''')\s*$/;
+function clean(lines) {
+  const out2 = [];
+  for (const raw of lines) {
+    let l = raw.replace(MARK_END, "");
+    for (let i2 = 0; i2 < 2; i2++) l = l.replace(MARK_START, "");
+    l = l.trim();
+    if (!l) {
+      if (out2.length) break;
+      continue;
+    }
+    if (!out2.length && PRAGMA.test(l)) return void 0;
+    out2.push(l);
+  }
+  const text = out2.join(" ").replace(/\s+/g, " ").trim();
+  return text ? text.length > 400 ? text.slice(0, 399) + "\u2026" : text : void 0;
+}
+var IF = /^(if_statement|if_expression|if_let_expression|elif_clause|else_if_clause|elsif|elseif_clause|else_if)$/;
+var ELSE = /^(else_clause|else_statement|else)$/;
+var LOOP = /^(for|while|do|loop|for_in|foreach|for_each|enhanced_for|for_range|repeat|until|for_numeric|for_generic|do_while)_?(statement|expression|loop)?$/;
+var SWITCH = /^(switch_statement|switch_expression|match_statement|match_expression|when_expression|select_statement|expression_switch_statement|type_switch_statement|switch)$/;
+var CASE = /^(switch_case|switch_default|case_clause|default_clause|match_arm|when_entry|case|communication_case|default_case|expression_case|type_case|switch_section|case_pattern|match_case|switch_rule|switch_block_statement_group)$/;
+var CATCH = /^(catch_clause|except_clause|except_group_clause|rescue|rescue_clause|catch_block|catch|finally_clause|on_part|catch_part)$/;
+var BLOCK = /block|body|statement_list|compound_statement|suite|consequence|statements|control_structure_body/;
+var squash = (s, n = 60) => {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > n ? t.slice(0, n - 1) + "\u2026" : t;
+};
+var unparen = (s) => s.replace(/^\((.*)\)$/s, "$1");
+function branch(n, src, out2) {
+  if (!n.isNamed) return;
+  const t = n.type;
+  const field = (...names) => {
+    for (const f of names) {
+      const c = n.childForFieldName(f);
+      if (c) return c;
+    }
+    return void 0;
+  };
+  const named = namedChildren(n);
+  const blockLike = (c) => BLOCK.test(c.type);
+  const comment = (c) => /comment/.test(c.type);
+  if (IF.test(t)) {
+    const cond = field("condition", "value") ?? named.find((c) => !blockLike(c) && !comment(c));
+    if (!cond) return;
+    const body2 = field("consequence", "body", "block") ?? named.find((c) => c.id !== cond.id && blockLike(c));
+    if (!body2) return;
+    out2.push({ kind: "if", text: squash(unparen(cond.text)), range: src.range(n), body: src.range(body2) });
+    const alt = field("alternative");
+    if (alt && !IF.test(alt.type)) {
+      const inner = ELSE.test(alt.type) ? namedChildren(alt).find((c) => !comment(c)) : alt;
+      if (inner && !IF.test(inner.type)) out2.push({ kind: "else", text: "", range: src.range(alt), body: src.range(alt) });
+    }
+  } else if (ELSE.test(t) && n.parent && n.parent.childForFieldName("alternative")?.id !== n.id) {
+    const inner = named.find((c) => !comment(c));
+    if (inner && !IF.test(inner.type) && /if|match|switch|try|for|while/.test(n.parent.type) && !/for|while|try/.test(n.parent.type)) out2.push({ kind: "else", text: "", range: src.range(n), body: src.range(n) });
+  } else if (LOOP.test(t)) {
+    const body2 = field("body", "block") ?? [...named].reverse().find(blockLike);
+    if (!body2) return;
+    const head = n.text.slice(0, body2.startIndex - n.startIndex).replace(/[{:]\s*$/, "").trim();
+    out2.push({ kind: "loop", text: squash(head || t.replace(/_.*$/, "")), range: src.range(n), body: src.range(body2) });
+  } else if (SWITCH.test(t)) {
+    const value = field("value", "condition", "subject") ?? named.find((c) => !blockLike(c) && !CASE.test(c.type) && !comment(c));
+    out2.push({ kind: "switch", text: squash(value ? unparen(value.text) : t.replace(/_.*$/, "")), range: src.range(n), body: src.range(n) });
+  } else if (CASE.test(t)) {
+    const v = field("pattern", "value", "condition") ?? named.find((c) => !blockLike(c) && !comment(c) && c.startPosition.row === n.startPosition.row);
+    const isDefault = /default/.test(t) || v?.text === "_" || v?.text === "default";
+    out2.push({ kind: "case", text: isDefault || !v ? "otherwise" : squash(v.text, 40), range: src.range(n), body: src.range(n) });
+  } else if (CATCH.test(t)) {
+    const what = field("parameter", "pattern", "type", "name", "value", "exception");
+    out2.push({ kind: "catch", text: /finally/.test(t) ? "finally" : `on error${what ? ` ${squash(what.text, 30)}` : ""}`, range: src.range(n), body: src.range(n) });
+  }
+}
 function symbol(f, src, decl, name2, shape, kind) {
   if (name2) f.symbols.push({ name: name2.text, shape, kind, range: src.range(decl), selection: src.range(name2) });
 }
@@ -6481,10 +6600,18 @@ var Grammar = class {
     const tree = p.parse(source);
     if (tree) {
       const src = new Source(source);
+      const starts = /* @__PURE__ */ new Map();
       walk2(tree.rootNode, (n) => {
+        if (!starts.has(n.startIndex)) starts.set(n.startIndex, n);
         this.visit(n, src, f);
         if (LAMBDAS.has(n.type)) f.lambdas.push(src.range(n));
+        branch(n, src, f.branches);
       });
+      for (const sym of f.symbols) {
+        const at = starts.get(src.index(sym.range));
+        const doc = at && docOf(at);
+        if (doc) sym.doc = doc;
+      }
       tree.delete();
     }
     p.delete();
@@ -8233,13 +8360,13 @@ function listFiles(repo) {
   }
   const out2 = [];
   const walk3 = (d) => {
-    let entries;
+    let entries2;
     try {
-      entries = fs7.readdirSync(d, { withFileTypes: true });
+      entries2 = fs7.readdirSync(d, { withFileTypes: true });
     } catch {
       return;
     }
-    for (const e of entries) {
+    for (const e of entries2) {
       if (e.name.startsWith(".") || e.name === "node_modules") continue;
       const p = path6.join(d, e.name);
       if (fs7.statSync(p, { throwIfNoEntry: false })?.isDirectory()) walk3(p);
@@ -8323,6 +8450,200 @@ function makeGraph(repo, index2, unindexed = []) {
     importsFor: (_lang, p) => owner(p)?.imports,
     unindexed
   });
+}
+
+// src/core/flow.ts
+function outgoing(g) {
+  const out2 = /* @__PURE__ */ new Map();
+  for (const e of g.edges) {
+    if (e.kind !== "call" || !e.site) continue;
+    (out2.get(e.from) ?? out2.set(e.from, []).get(e.from)).push(e);
+  }
+  for (const list of out2.values()) list.sort((a, b) => a.site.range.start_line - b.site.range.start_line || a.site.range.start_col - b.site.range.start_col);
+  return out2;
+}
+var MAX_DEPTH = 6;
+function entries(g, inp) {
+  const byId = new Map(g.nodes.map((n) => [n.id, n]));
+  const out2 = outgoing(g);
+  const called = /* @__PURE__ */ new Set();
+  for (const e of g.edges) if (e.kind === "call" && isCallable(byId.get(e.from)?.kind ?? "repo")) called.add(e.to);
+  const reach = (id) => {
+    const seen = /* @__PURE__ */ new Set([id]);
+    const stack = [id];
+    while (stack.length) {
+      for (const e of out2.get(stack.pop()) ?? []) {
+        const t = byId.get(e.to);
+        if (t && isCallable(t.kind) && t.path && !seen.has(e.to)) seen.add(e.to), stack.push(e.to);
+      }
+    }
+    return seen.size - 1;
+  };
+  const cls = classifyGraph(g, inp.extra);
+  const shown = (e) => {
+    const t = byId.get(e.to);
+    return !!t && (isCallable(t.kind) && !!t.path || cls.has(e.to));
+  };
+  const list = [];
+  for (const n of g.nodes) {
+    if (!n.path) continue;
+    const calls2 = out2.get(n.id) ?? [];
+    if (isCallable(n.kind)) {
+      if (called.has(n.id) || !calls2.some(shown)) continue;
+      list.push({ id: n.id, name: n.name, doc: n.doc, path: n.path, line: (n.range?.start_line ?? 0) + 1, kind: n.kind, reach: reach(n.id), steps: calls2.filter(shown).length });
+    } else if (n.kind === "file" && calls2.some(shown)) {
+      list.push({ id: n.id, name: `${n.name} (on load)`, path: n.path, line: 1, kind: "file", reach: reach(n.id), steps: calls2.filter(shown).length });
+    }
+  }
+  const built = (p) => GENERATED.test(p) ? 1 : 0;
+  return list.sort((a, b) => built(a.path) - built(b.path) || b.reach - a.reach || cmpStr(a.path, b.path) || a.line - b.line);
+}
+var GENERATED = /(^|\/)(dist|build|out|target|vendor|node_modules|__pycache__|\.generated)\/|\.min\.[cm]?js$|\.bundle\.[cm]?js$|\.pb\.go$|_pb2\.py$/;
+function flow(g, entryId, open, inp) {
+  const byId = new Map(g.nodes.map((n) => [n.id, n]));
+  const root = byId.get(entryId);
+  if (!root?.path) return void 0;
+  const out2 = outgoing(g);
+  const cls = classifyGraph(g, inp.extra);
+  const cache = /* @__PURE__ */ new Map();
+  const factsOf = (path11) => {
+    if (!cache.has(path11)) {
+      const text = inp.readSource(path11), syn = inp.syntaxFor(path11);
+      cache.set(path11, text !== void 0 && syn ? syn.facts(text) : void 0);
+    }
+    return cache.get(path11);
+  };
+  const branchesIn = (path11, ident) => {
+    const f = factsOf(path11);
+    if (!f) return [];
+    if (!ident) return f.branches;
+    let body2;
+    for (const d of [...f.decls, ...f.lambdas]) if (contains(d, ident) && (!body2 || contains(body2, d))) body2 = d;
+    return body2 ? f.branches.filter((b) => contains(body2, b.range)) : [];
+  };
+  let flagged = 0;
+  const stepsOf = (fn, prefix2, depth, chain2) => {
+    const calls2 = out2.get(fn.id) ?? [];
+    const branches2 = fn.path ? branchesIn(fn.path, fn.range) : [];
+    const items = [];
+    for (const e of calls2) {
+      const t = byId.get(e.to);
+      if (!t || e.to === fn.id) continue;
+      if (isCallable(t.kind) && t.path || cls.has(e.to)) items.push({ at: e.site.range, call: e });
+    }
+    if (!items.length) return [];
+    for (const b of branches2) items.push({ at: b.range, branch: b });
+    const before2 = (a, b) => a.start_line - b.start_line || a.start_col - b.start_col || b.end_line - a.end_line || b.end_col - a.end_col;
+    items.sort((a, b) => before2(a.at, b.at));
+    const kids = /* @__PURE__ */ new Map();
+    const stack = [];
+    for (const it of items) {
+      while (stack.length && !contains(stack[stack.length - 1].at, it.at)) stack.pop();
+      const parent = stack[stack.length - 1];
+      (kids.get(parent) ?? kids.set(parent, []).get(parent)).push(it);
+      if (it.branch) stack.push(it);
+    }
+    const line = (r) => r.start_line + 1;
+    const build3 = (list) => {
+      const steps2 = [];
+      for (const it of list) {
+        if (it.call) {
+          const e = it.call, t = byId.get(e.to);
+          const last = steps2[steps2.length - 1];
+          if (last && (last.kind === "call" || last.kind === "boundary") && last.target === e.to) {
+            last.count++;
+            last.may = last.may && e.provenance !== "resolved";
+            continue;
+          }
+          const may = e.provenance !== "resolved";
+          const id = `${prefix2}${e.site.range.start_line}:${e.site.range.start_col}`;
+          const c = cls.get(e.to);
+          if (c) {
+            const f = inp.flags?.get(`${fn.id}\0${e.to}`);
+            if (f) flagged++;
+            const name2 = t.name.startsWith(c.module) || !c.module ? t.name : `${c.module} ${t.name}`;
+            steps2.push({ kind: "boundary", id, in: fn.path, target: e.to, boundary: c.boundary, name: name2, line: line(e.site.range), count: 1, may, ...f ? { flag: f.severity, notes: f.notes } : {} });
+          } else {
+            const step = { kind: "call", id, in: fn.path, target: e.to, name: t.name, doc: t.doc, path: t.path, line: line(e.site.range), count: 1, may };
+            if (open.has(id)) {
+              if (depth >= MAX_DEPTH || chain2.has(e.to)) step.cut = true;
+              else {
+                const inner = stepsOf(t, `${id}/`, depth + 1, /* @__PURE__ */ new Set([...chain2, e.to]));
+                if (inner.length) step.steps = inner;
+                else step.empty = true;
+              }
+            }
+            steps2.push(step);
+          }
+        } else if (it.branch) {
+          const b = it.branch, inner = kids.get(it) ?? [];
+          const id = `${prefix2}@${b.range.start_line}:${b.range.start_col}`;
+          if (b.kind === "if") {
+            const yes = build3(inner.filter((x) => contains(b.body, x.at)));
+            const no = build3(inner.filter((x) => !contains(b.body, x.at)).flatMap((x) => x.branch?.kind === "else" ? kids.get(x) ?? [] : [x]));
+            if (yes.length || no.length) steps2.push({ kind: "if", id, in: fn.path, text: b.text, line: line(b.range), yes, no });
+          } else if (b.kind === "else") {
+            steps2.push(...build3(inner));
+          } else if (b.kind === "loop") {
+            const body2 = build3(inner);
+            if (body2.length) steps2.push({ kind: "loop", id, in: fn.path, text: b.text, line: line(b.range), body: body2 });
+          } else if (b.kind === "switch") {
+            const cases = [];
+            const loose = [];
+            for (const x of inner) {
+              if (x.branch?.kind === "case") {
+                const body2 = build3(kids.get(x) ?? []);
+                if (body2.length) cases.push({ text: x.branch.text, line: line(x.at), body: body2 });
+              } else loose.push(x);
+            }
+            if (cases.length) steps2.push({ kind: "switch", id, in: fn.path, text: b.text, line: line(b.range), cases });
+            steps2.push(...build3(loose));
+          } else if (b.kind === "case") {
+            steps2.push(...build3(inner));
+          } else if (b.kind === "catch") {
+            const body2 = build3(inner);
+            if (body2.length) steps2.push({ kind: "catch", id, in: fn.path, text: b.text, line: line(b.range), body: body2 });
+          }
+        }
+      }
+      return steps2;
+    };
+    return build3(kids.get(void 0) ?? []);
+  };
+  const steps = stepsOf(root, "", 0, /* @__PURE__ */ new Set([root.id]));
+  const entry = root.kind === "file" ? { id: root.id, name: `${root.name} (on load)`, path: root.path, line: 1, kind: "file", reach: 0, steps: steps.length } : { id: root.id, name: root.name, doc: root.doc, path: root.path, line: (root.range?.start_line ?? 0) + 1, kind: isCallable(root.kind) ? root.kind : "function", reach: 0, steps: steps.length };
+  return { entry, steps, flagged };
+}
+function firstSentence(doc, max = 90) {
+  if (!doc) return void 0;
+  const m = /^(.*?[.!?])(\s|$)/.exec(doc);
+  const s = (m ? m[1] : doc).trim();
+  return s.length > max ? s.slice(0, max - 1) + "\u2026" : s;
+}
+function flowText(f) {
+  const lines = [`\u25B6 ${f.entry.name}${f.entry.doc ? `  \u2014 ${firstSentence(f.entry.doc)}` : ""}  (${f.entry.path}:${f.entry.line})`];
+  const times = (n) => n > 1 ? ` \xD7${n}` : "";
+  const walk3 = (steps, pad) => {
+    for (const s of steps) {
+      if (s.kind === "call") {
+        lines.push(`${pad}\u25AD ${s.name}${times(s.count)}${s.may ? " (may)" : ""}${s.doc ? `  \u2014 ${firstSentence(s.doc)}` : ""}  ${s.path ?? ""}`);
+        if (s.steps) walk3(s.steps, pad + "   ");
+        else if (s.empty) lines.push(`${pad}   (nothing further the chart shows)`);
+        else if (s.cut) lines.push(`${pad}   (deeper than the chart follows)`);
+      } else if (s.kind === "boundary") lines.push(`${pad}\u2B1A ${s.name}${times(s.count)}  [${BOUNDARY_INFO[s.boundary].label}]${s.flag ? `  ${s.flag.toUpperCase()}: ${(s.notes ?? []).join("; ")}` : ""}`);
+      else if (s.kind === "if") {
+        lines.push(`${pad}\u25C7 ${s.text}?`);
+        if (s.yes.length) lines.push(`${pad}\u2502 yes:`), walk3(s.yes, pad + "\u2502  ");
+        if (s.no.length) lines.push(`${pad}\u2502 no:`), walk3(s.no, pad + "\u2502  ");
+      } else if (s.kind === "loop") lines.push(`${pad}\u21BB ${s.text}`), walk3(s.body, pad + "\u2502  ");
+      else if (s.kind === "switch") {
+        lines.push(`${pad}\u25C7 ${s.text}`);
+        for (const c of s.cases) lines.push(`${pad}\u2502 ${c.text}:`), walk3(c.body, pad + "\u2502  ");
+      } else if (s.kind === "catch") lines.push(`${pad}\u26A0 ${s.text}`), walk3(s.body, pad + "\u2502  ");
+    }
+  };
+  walk3(f.steps, "   ");
+  return lines.join("\n") + "\n";
 }
 
 // src/shelf.ts
@@ -8671,6 +8992,79 @@ async function drawSvg(repo, l, r, ask) {
   fs9.writeFileSync(path8.join(repo, CACHE_DIR, BOXES_FILE), JSON.stringify(json));
   return svg;
 }
+async function flowInputs(repo, l, r) {
+  const langs = /* @__PURE__ */ new Set();
+  for (const n of l.graph.nodes) if (n.path && (n.kind === "function" || n.kind === "method" || n.kind === "file")) {
+    const f = owner(n.path);
+    if (f) langs.add(f.id);
+  }
+  await init2([...langs]);
+  const flags2 = /* @__PURE__ */ new Map();
+  for (const f of r?.findings ?? []) {
+    const k = `${f.local}\0${f.external}`;
+    const x = flags2.get(k);
+    if (x) x.notes.push(f.message);
+    else flags2.set(k, { severity: f.severity, notes: [f.message] });
+  }
+  return {
+    readSource: (p) => {
+      try {
+        return fs9.readFileSync(path8.join(repo, p), "utf8");
+      } catch {
+        return void 0;
+      }
+    },
+    syntaxFor: (p) => owner(p)?.syntax(p),
+    extra: l.policy.boundaries,
+    flags: flags2
+  };
+}
+async function flowOf(repo, l, r, pick, open = []) {
+  const inp = await flowInputs(repo, l, r);
+  const all = entries(l.graph, inp);
+  let entry = pick === void 0 ? all[0] : all.find((e) => e.id === pick);
+  if (!entry && pick !== void 0) {
+    const q = pick.toLowerCase();
+    entry = all.find((e) => e.name.toLowerCase() === q) ?? all.find((e) => e.name.toLowerCase().includes(q) || e.path.toLowerCase().includes(q));
+    if (!entry) {
+      const n = l.graph.nodes.find((x) => x.id === pick) ?? l.graph.nodes.find((x) => x.path && (x.kind === "function" || x.kind === "method") && x.name.toLowerCase() === q);
+      if (n) return { entries: all, flow: flow(l.graph, n.id, new Set(open), inp) };
+    }
+  }
+  return { entries: all, flow: entry ? flow(l.graph, entry.id, new Set(open), inp) : void 0 };
+}
+async function flowTextOf(repo, l, r, pick, open, depth = 0) {
+  const { entries: all, flow: f } = await flowOf(repo, l, r, pick, open);
+  if (!f) return pick === void 0 ? "No entry point found: nothing in the repo calls into it, or nothing is indexed.\n" : `No entry or function matches "${pick}". Entries: ${all.slice(0, 20).map((e) => e.name).join(", ")}
+`;
+  const opened = depth > 0 ? deepen(l, r, f, depth, repo, open) : Promise.resolve(f);
+  const out2 = await opened;
+  const head = pick === void 0 && all.length > 1 ? `Entry points (${all.length}): ${all.slice(0, 12).map((e) => `${e.name} [${e.reach}]`).join(", ")}${all.length > 12 ? ", \u2026" : ""}
+
+` : "";
+  return head + flowText(out2);
+}
+async function deepen(l, r, f, depth, repo, open = []) {
+  const ids = new Set(open);
+  let cur = f;
+  for (let d = 0; d < depth; d++) {
+    let more = false;
+    const walk3 = (steps) => {
+      for (const s of steps) {
+        if (s.kind === "call") {
+          if (!ids.has(s.id)) ids.add(s.id), more = true;
+          if (s.steps) walk3(s.steps);
+        } else if (s.kind === "if") walk3(s.yes), walk3(s.no);
+        else if (s.kind === "loop" || s.kind === "catch") walk3(s.body);
+        else if (s.kind === "switch") for (const c of s.cases) walk3(c.body);
+      }
+    };
+    walk3(cur.steps);
+    if (!more) break;
+    cur = (await flowOf(repo, l, r, f.entry.id, ids)).flow ?? cur;
+  }
+  return cur;
+}
 var isBoundary = (s) => BOUNDARIES.includes(s);
 
 // src/mcp.ts
@@ -8741,6 +9135,22 @@ async function serve(repo) {
       description: "Callers and callees of the functions or types whose name contains the query, with file:line and how sure each edge is.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX, name: { type: "string" } }, required: ["name"] },
       run: async (a) => callsJson((await get(a))[1], String(a.name ?? ""))
+    },
+    {
+      name: "hesperus_flow",
+      title: "What the program does, top down",
+      annotations: READS,
+      description: "The program as a flow chart in text: from an entry point (the one that drives the most code, or `entry`), the steps it takes in order, each named by its function and the comment above it, the decisions between them with their conditions, loops, and every call that leaves the repo as a terminal with its boundary. Resolved from the code, nothing inferred. Without `entry`, also lists the entry points.",
+      inputSchema: { type: "object", properties: {
+        ...DIR,
+        ...INDEX,
+        entry: { type: "string", description: "A function or file to start from, by name or graph id." },
+        depth: { type: "number", description: "Open calls this many levels down (default 1, at most 6)." }
+      } },
+      run: async (a) => {
+        const [d, l] = await get(a);
+        return flowTextOf(d, l, check(d, l), typeof a.entry === "string" ? a.entry : void 0, [], Math.min(6, Math.max(0, typeof a.depth === "number" ? a.depth : 1)));
+      }
     },
     {
       name: "hesperus_accept",
@@ -8854,7 +9264,7 @@ async function serve(repo) {
             protocolVersion: typeof params2.protocolVersion === "string" ? params2.protocolVersion : "2025-03-26",
             capabilities: { tools: {}, resources: {} },
             serverInfo: { name: "hesperus", version: VERSION },
-            instructions: "Hesperus maps what this repo reaches outside itself. Call hesperus_index after editing, then hesperus_diff to see what your changes added; hesperus_check for the full lint; hesperus_calls to see who calls a function."
+            instructions: "Hesperus maps what this repo reaches outside itself. Call hesperus_index after editing, then hesperus_diff to see what your changes added; hesperus_check for the full lint; hesperus_calls to see who calls a function; hesperus_flow for what the program does, step by step from an entry point."
           });
         case "ping":
           return reply(id, {});
@@ -8914,15 +9324,20 @@ var USAGE = `usage: hesperus <command> [dir] [options]
   svg [dir]              draw the boundary overview to <dir>/${CACHE_DIR}/${VIEW_FILE}, its boxes to ${BOXES_FILE}
     --view FILE          draw the boxes FILE (- for stdin) opens instead, {"open": [ids], "focus": id}; also check --svg
     --portrait [N]       lay the boxes of ${BOXES_FILE} out for a tall pane N columns wide (default 60); also check --svg
+  flow [dir]             what the program does, top down: the steps from an entry point, with its decisions and what it reaches
+    --entry NAME         start from this function or file (default: the entry that drives the most code)
+    --depth N            open calls N levels down (default 1)
   mcp [dir]              serve the repo to an agent over MCP on stdin/stdout
 
 Boundaries: database, network, AI, cloud, queues, filesystem, processes, environment.
 Exit status: 0 clean, 1 findings over the limit or any error, 2 no graph or bad input.`;
 async function main(argv) {
   const flags2 = /* @__PURE__ */ new Set(), args2 = [];
-  let maxWarnings = Infinity, viewFile, columns;
+  let maxWarnings = Infinity, viewFile, columns, entry, depth = 1;
   for (let i2 = 0; i2 < argv.length; i2++) {
     if (argv[i2] === "--max-warnings") maxWarnings = Number(argv[++i2]);
+    else if (argv[i2] === "--entry") entry = argv[++i2];
+    else if (argv[i2] === "--depth") depth = Number(argv[++i2]);
     else if (argv[i2] === "--view") viewFile = argv[++i2];
     else if (argv[i2] === "--portrait") {
       flags2.add("--portrait");
@@ -8932,7 +9347,7 @@ async function main(argv) {
   }
   const flag = (f) => flags2.has(f);
   const cmd = args2[0];
-  if (!["index", "check", "svg", "mcp"].includes(cmd) || args2.length > 2 || flag("--help") || Number.isNaN(maxWarnings) || argv.includes("--view") && !viewFile) {
+  if (!["index", "check", "svg", "flow", "mcp"].includes(cmd) || Number.isNaN(depth) || args2.length > 2 || flag("--help") || Number.isNaN(maxWarnings) || argv.includes("--view") && !viewFile) {
     console.error(USAGE);
     return 2;
   }
@@ -8953,6 +9368,10 @@ async function main(argv) {
       return 0;
     }
     const r = check(repo, l);
+    if (cmd === "flow") {
+      process.stdout.write(await flowTextOf(repo, l, r, entry, [], depth));
+      return 0;
+    }
     if (cmd === "svg" || flag("--svg")) {
       const ask = viewFile === void 0 ? {} : JSON.parse(fs10.readFileSync(viewFile === "-" ? 0 : path10.resolve(viewFile), "utf8"));
       if (flag("--portrait")) {

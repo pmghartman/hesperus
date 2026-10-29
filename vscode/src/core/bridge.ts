@@ -3,7 +3,7 @@
 import { cmpStr } from "./ir";
 import { esc, externalSymbol, Index, Occurrence, ROLE_DEFINITION, SymbolInformation } from "./scip";
 
-export const BRIDGE_TOOL = { name: "editor-lsp", version: "3" };
+export const BRIDGE_TOOL = { name: "editor-lsp", version: "4" };
 
 /** Line and UTF-16 character, as language servers report them. */
 export interface Pos { line: number; character: number }

@@ -8,7 +8,7 @@ import { CACHE_DIR } from "./core/cache";
 import { BOUNDARY_INFO } from "./core/boundary";
 import { POLICY_FILE } from "./core/lint";
 import { serve } from "./mcp";
-import { acceptKeys, BOXES_FILE, check, checkJson, drawSvg, load, VIEW_FILE, ViewAsk } from "./service";
+import { acceptKeys, BOXES_FILE, check, checkJson, drawSvg, flowTextOf, load, VIEW_FILE, ViewAsk } from "./service";
 
 const USAGE = `usage: hesperus <command> [dir] [options]
 
@@ -22,6 +22,9 @@ const USAGE = `usage: hesperus <command> [dir] [options]
   svg [dir]              draw the boundary overview to <dir>/${CACHE_DIR}/${VIEW_FILE}, its boxes to ${BOXES_FILE}
     --view FILE          draw the boxes FILE (- for stdin) opens instead, {"open": [ids], "focus": id}; also check --svg
     --portrait [N]       lay the boxes of ${BOXES_FILE} out for a tall pane N columns wide (default 60); also check --svg
+  flow [dir]             what the program does, top down: the steps from an entry point, with its decisions and what it reaches
+    --entry NAME         start from this function or file (default: the entry that drives the most code)
+    --depth N            open calls N levels down (default 1)
   mcp [dir]              serve the repo to an agent over MCP on stdin/stdout
 
 Boundaries: database, network, AI, cloud, queues, filesystem, processes, environment.
@@ -29,9 +32,11 @@ Exit status: 0 clean, 1 findings over the limit or any error, 2 no graph or bad 
 
 async function main(argv: string[]): Promise<number> {
   const flags = new Set<string>(), args: string[] = [];
-  let maxWarnings = Infinity, viewFile: string | undefined, columns: number | undefined;
+  let maxWarnings = Infinity, viewFile: string | undefined, columns: number | undefined, entry: string | undefined, depth = 1;
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--max-warnings") maxWarnings = Number(argv[++i]);
+    else if (argv[i] === "--entry") entry = argv[++i];
+    else if (argv[i] === "--depth") depth = Number(argv[++i]);
     else if (argv[i] === "--view") viewFile = argv[++i];
     else if (argv[i] === "--portrait") {
       flags.add("--portrait");
@@ -42,7 +47,7 @@ async function main(argv: string[]): Promise<number> {
   }
   const flag = (f: string) => flags.has(f);
   const cmd = args[0];
-  if (!["index", "check", "svg", "mcp"].includes(cmd) || args.length > 2 || flag("--help") || Number.isNaN(maxWarnings) || (argv.includes("--view") && !viewFile)) {
+  if (!["index", "check", "svg", "flow", "mcp"].includes(cmd) || Number.isNaN(depth) || args.length > 2 || flag("--help") || Number.isNaN(maxWarnings) || (argv.includes("--view") && !viewFile)) {
     console.error(USAGE);
     return 2;
   }
@@ -63,6 +68,10 @@ async function main(argv: string[]): Promise<number> {
       return 0;
     }
     const r = check(repo, l);
+    if (cmd === "flow") {
+      process.stdout.write(await flowTextOf(repo, l, r, entry, [], depth));
+      return 0;
+    }
     if (cmd === "svg" || flag("--svg")) {
       const ask: ViewAsk = viewFile === undefined ? {} : (JSON.parse(fs.readFileSync(viewFile === "-" ? 0 : path.resolve(viewFile), "utf8")) as ViewAsk);
       if (flag("--portrait")) {

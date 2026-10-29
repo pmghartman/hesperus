@@ -6,9 +6,11 @@ import * as aggregate from "./core/aggregate";
 import { BOUNDARIES, BOUNDARY_INFO, boundaryGraph, boundaryId, libraryNodes } from "./core/boundary";
 import { EdgeKind, Graph, GraphNode } from "./core/ir";
 import { accept, defaultPolicy, Finding, lint, Policy, POLICY_FILE, Report, Severity, snapshot } from "./core/lint";
-import { automaton } from "./core/automaton";
-import { automatonLayout, Flag, layout, MAX_WIRES } from "./layout";
-import { FRONTENDS, genericFiles, ignored, index, isSource, LangResult, load, scan, Scan, sourceFiles, status, unindexedLanguages } from "./engine";
+import { Flag, layout, MAX_WIRES } from "./layout";
+import { FRONTENDS, genericFiles, ignored, index, isSource, LangResult, load, scan, Scan, sourceFiles, status } from "./engine";
+import { entries as flowEntries, Entry, flow as flowFrom } from "./core/flow";
+import { flowLayout } from "./flowchart";
+import { flowInputs } from "./service";
 import { editorIndex, ensureExtension, hasExtension, installExtension } from "./editor";
 import { LintSurface } from "./linter";
 import { gitHead, readBaseline, readPolicy, STARTER_POLICY, writeBaseline, writeReport } from "./review";
@@ -36,8 +38,9 @@ const WORSE: Record<Severity, number> = { error: 0, warning: 1, info: 2 };
 /** Folders whose changes never touch the graph, before asking git. */
 const NOISE = /(^|\/)(\.git|\.hesperus|node_modules|out|dist|build|target|\.next|__pycache__|\.venv|venv)\//;
 
-// One graph tab per window; the sidebar is its control panel (status, findings, view options). While an
-// agent edits the repo, changed files re-index, findings land in Problems, and the graph marks what is new.
+// One tab per window, showing either the flow chart (what the program does from an entry point) or the
+// boundary map; the sidebar holds status, what to review, and where the program starts. While an agent
+// edits the repo, changed files re-index, findings land in Problems, and both views mark what is new.
 class Hesperus {
   private status: Status = STATUS.idle;
   private scanned?: Scan;
@@ -55,8 +58,14 @@ class Hesperus {
   private changed = new Set<string>();
   /** A change arrived mid-index; index again once it finishes. */
   private again = false;
-  private machines: aggregate.Machine[] = [];
   private expanded = new Set<string>();
+  /** The flow chart, or the boundary map. */
+  private mode: "flow" | "map" = "flow";
+  /** The entry point the flow starts from; the one that drives the most code when unset. */
+  private entry?: string;
+  /** Steps of the flow opened in place. */
+  private openSteps = new Set<string>();
+  private entryList?: Entry[];
   // Guards tie code to the states it runs in; the automaton view is their picture, so boxes leave them out.
   private hidden = new Set<EdgeKind>(["guard"]);
   /** Outside libraries no boundary claims. Off by default: every box calls the standard library. */
@@ -65,8 +74,6 @@ class Hesperus {
   private flow = true;
   private isolated = 0;
   private unindexed = true;
-  /** Draw the program as an automaton of its state machines instead of the structure graph. */
-  private automaton = false;
   private panel?: vscode.WebviewPanel;
   private sidebar?: vscode.WebviewView;
   private busy?: Promise<void>;
@@ -176,7 +183,7 @@ class Hesperus {
       }
       if (!this.graph) {
         this.graph = load(repo);
-        this.machines = aggregate.machines(this.graph);
+        this.entryList = undefined;
         this.relint(keep && this.expanded.size > 0);
       }
       this.setStatus({ state: "ready", label: "Ready", nodes: this.graph.nodes.length, edges: this.graph.edges.length });
@@ -237,12 +244,8 @@ class Hesperus {
     const folder = this.folder;
     if (!this.panel || !this.graph || !folder) return;
     try {
-      if (this.automaton) {
-        const a = await automatonLayout(automaton(this.graph));
-        this.postSidebar();
-        this.panel.webview.postMessage({ type: "automaton", layout: a, ...extra });
-        return;
-      }
+      if (this.mode === "flow") return await this.renderFlow(folder.uri.fsPath, extra.anchor);
+      this.panel.title = `Map: ${folder.name}`;
       const g = this.shown ?? this.graph;
       const all = aggregate.view(g, this.expanded, this.opts);
       const ext = this.external ? all : this.boundaries ? aggregate.withoutNodes(all, libraryNodes(g)) : aggregate.withoutExternal(g, all);
@@ -269,6 +272,30 @@ class Hesperus {
     }
   }
 
+  /** The entry points, computed once per graph. */
+  private async entriesOf(repo: string): Promise<Entry[]> {
+    if (!this.entryList && this.graph) this.entryList = flowEntries(this.graph, await flowInputs(repo, { graph: this.graph, policy: this.policy }, this.report));
+    return this.entryList ?? [];
+  }
+
+  /** The flow chart from the chosen entry (or the one that drives the most code), its opened steps inlined. */
+  private async renderFlow(repo: string, anchor?: string) {
+    if (!this.panel || !this.graph) return;
+    const all = await this.entriesOf(repo);
+    const ids = new Set(this.graph.nodes.map((n) => n.id));
+    if (this.entry && !ids.has(this.entry)) this.entry = undefined;
+    const id = this.entry ?? all[0]?.id;
+    const inp = await flowInputs(repo, { graph: this.graph, policy: this.policy }, this.report);
+    const f = id ? flowFrom(this.graph, id, this.openSteps, inp) : undefined;
+    this.postSidebar();
+    if (!f) {
+      this.panel.webview.postMessage({ type: "status", status: { state: "error", label: "Error", detail: "No entry point found: nothing in the repo is called from outside it, or nothing is indexed yet. Find a function by name to chart it." } });
+      return;
+    }
+    this.panel.title = `Flow: ${f.entry.name}`;
+    this.panel.webview.postMessage({ type: "flow", layout: flowLayout(f), anchor });
+  }
+
   private setStatus(s: Status) {
     this.status = s;
     this.postSidebar();
@@ -278,29 +305,22 @@ class Hesperus {
   }
 
   private postSidebar(found?: string) {
+    const entries = this.entryList ?? [];
     this.sidebar?.webview.postMessage({
       type: "state",
       status: this.status,
-      hidden: [...this.hidden],
-      external: this.external,
-      boundaries: this.boundaries,
+      mode: this.mode,
+      entry: this.entry ?? entries[0]?.id ?? null,
+      entries: entries.slice(0, 40).map((e) => ({ id: e.id, name: e.name, doc: e.doc ?? null, path: e.path, line: e.line, reach: e.reach })),
+      moreEntries: Math.max(0, entries.length - 40),
       watch: this.watching,
       policy: { exists: !!this.folder && fs.existsSync(vscode.Uri.joinPath(this.folder.uri, POLICY_FILE).fsPath), error: this.policyError ?? null },
       findings: (this.report?.findings ?? []).slice(0, 200).map((f, i) => ({ i, rule: f.rule, severity: f.severity, message: f.message, path: f.path ?? null, line: (f.range?.start_line ?? 0) + 1 })),
       totalFindings: this.report?.findings.length ?? 0,
       removed: this.report?.removed.length ?? 0,
       crossings: BOUNDARIES.filter((b) => this.report?.counts[b]).map((b) => ({ id: b, label: BOUNDARY_INFO[b].label, doc: BOUNDARY_INFO[b].doc, ...this.report!.counts[b]! })),
-      files: this.files,
-      flow: this.flow,
-      isolated: this.isolated,
-      unindexed: this.unindexed,
-      automaton: this.automaton,
       repo: this.folder?.name ?? null,
       languages: (this.scanned?.languages ?? []).map((l) => ({ ...l, installed: hasExtension(l.editor.id) })),
-      generic: this.scanned?.generic ?? [],
-      other: this.scanned?.other_files ?? 0,
-      missing: this.graph ? unindexedLanguages(this.graph).map((m) => ({ ...m, installed: hasExtension(m.editor.id) })) : [],
-      machines: this.machines,
       found,
     });
   }
@@ -321,6 +341,14 @@ class Hesperus {
       if (k && (!bestKey || k < bestKey)) [best, bestKey] = [n, k];
     }
     if (!best) return this.postSidebar(`No node matches “${query}”.`);
+    if (this.mode === "flow" && (best.kind === "function" || best.kind === "method" || best.kind === "file") && best.path) {
+      this.entry = best.id;
+      this.openSteps.clear();
+      this.postSidebar(`${best.name} · ${best.kind}`);
+      if (!this.panel) await this.open();
+      await this.render();
+      return;
+    }
     this.postSidebar(`${best.name} · ${best.kind.replace("_", " ")}`);
     await this.reveal(best.id);
   }
@@ -330,7 +358,7 @@ class Hesperus {
     const g = this.shown ?? this.graph;
     if (!g) return;
     if (open) this.expanded.add(id);
-    this.automaton = false;
+    this.mode = "map";
     const chain = new Set<string>([id]);
     for (let p = this.parent.get(id); p && this.parent.has(p); p = this.parent.get(p)) (this.expanded.add(p), chain.add(p));
     // Open any layer the target or its ancestors sit in; layers can nest.
@@ -418,7 +446,7 @@ class Hesperus {
     }, delay);
   }
 
-  private async onSidebar(m: { type: string; kind?: EdgeKind; query?: string; id?: string; index?: number }) {
+  private async onSidebar(m: { type: string; query?: string; id?: string; index?: number }) {
     if (m.type === "ready") this.postSidebar();
     else if (m.type === "accept") await this.acceptKeys();
     else if (m.type === "finding" && m.index !== undefined) await this.showFinding(this.report?.findings[m.index]);
@@ -430,56 +458,27 @@ class Hesperus {
     } else if (m.type === "boundary" && m.id) {
       if (!this.boundaries) (this.boundaries = true, this.reshape());
       await this.reveal(boundaryId(m.id as (typeof BOUNDARIES)[number]), true);
-    } else if (m.type === "boundaries" && this.graph) {
-      this.boundaries = !this.boundaries;
-      this.reshape();
-      this.postSidebar();
-      await this.render();
+    } else if (m.type === "flow" || m.type === "map") {
+      this.mode = m.type;
+      if (!this.panel) await this.open();
+      else await this.render();
       this.panel?.webview.postMessage({ type: "fit" });
-    }
-    else if (m.type === "open") await this.open();
-    else if (m.type === "reindex") {
+    } else if (m.type === "entry" && m.id) {
+      this.mode = "flow";
+      this.entry = m.id;
+      this.openSteps.clear();
+      if (!this.panel) await this.open();
+      else await this.render();
+      this.panel?.webview.postMessage({ type: "fit" });
+    } else if (m.type === "reindex") {
       if (!this.panel) this.open();
       await this.load(true);
-    } else if (m.type === "collapse") {
-      this.expanded = this.shown && this.flow ? aggregate.overview(this.shown, aggregate.OVERVIEW_NODES, this.opts) : new Set();
-      await this.render();
-      this.panel?.webview.postMessage({ type: "fit" });
-    } else if (m.type === "fit") this.panel?.webview.postMessage({ type: "fit" });
-    else if (m.type === "flow" && this.shown) {
-      this.flow = !this.flow;
-      this.expanded = aggregate.overview(this.shown, aggregate.OVERVIEW_NODES, this.opts);
-      await this.render();
-      this.panel?.webview.postMessage({ type: "fit" });
-    } else if (m.type === "files") {
-      this.files = !this.files;
-      this.postSidebar();
-      await this.render();
-    } else if (m.type === "automaton") {
-      this.automaton = !this.automaton;
-      this.postSidebar();
-      await this.render();
-      this.panel?.webview.postMessage({ type: "fit" });
-    } else if (m.type === "unindexed") {
-      this.unindexed = !this.unindexed;
-      this.postSidebar();
-      await this.render();
     } else if (m.type === "install" && m.id) {
       if (!this.panel) this.open();
       this.setStatus({ state: "installing", label: "Installing extension…", reason: m.id });
       await installExtension(m.id);
       await this.load(true);
-    } else if (m.type === "external") {
-      this.external = !this.external;
-      this.postSidebar();
-      await this.render();
     } else if (m.type === "find" && m.query) await this.find(m.query);
-    else if (m.type === "machine" && m.id) await this.reveal(m.id, true);
-    else if (m.type === "kind" && m.kind) {
-      this.hidden.has(m.kind) ? this.hidden.delete(m.kind) : this.hidden.add(m.kind);
-      this.postSidebar();
-      this.panel?.webview.postMessage({ type: "hidden", hidden: [...this.hidden] });
-    }
   }
 
   /** True, with a note in the sidebar, when the open boxes would draw more than the layout can handle. */
@@ -498,11 +497,17 @@ class Hesperus {
     return false;
   }
 
-  private async onGraph(m: { type: string; id?: string; open?: string[]; close?: string[]; anchor?: string; seq?: number }) {
+  private async onGraph(m: { type: string; id?: string; open?: string[]; close?: string[]; anchor?: string; seq?: number; path?: string; line?: number }) {
     const folder = this.folder;
     if (m.type === "ready") {
       if (this.status.state === "ready") await this.render();
       else this.panel?.webview.postMessage({ type: "status", status: this.status });
+    } else if (m.type === "flowToggle" && m.id) {
+      this.openSteps.has(m.id) ? this.openSteps.delete(m.id) : this.openSteps.add(m.id);
+      await this.render({ anchor: m.id });
+    } else if (m.type === "openAt" && folder && m.path) {
+      const line = Math.max(0, (m.line ?? 1) - 1);
+      await vscode.window.showTextDocument(vscode.Uri.joinPath(folder.uri, m.path), { selection: new vscode.Range(line, 0, line, 0), viewColumn: vscode.ViewColumn.Beside, preserveFocus: false });
     } else if (m.type === "toggle" && m.id) {
       const before = new Set(this.expanded);
       this.expanded.has(m.id) ? this.expanded.delete(m.id) : this.expanded.add(m.id);
@@ -573,27 +578,11 @@ const GRAPH_BODY = `<svg id="view" xmlns="http://www.w3.org/2000/svg"><g id="sce
 
 const SIDEBAR_BODY = `<header><div id="repo" class="repo"></div><div id="state" class="state"></div></header>
 <pre id="detail" hidden></pre>
-<div class="actions"><button id="open">Open Graph</button><button id="reindex" class="secondary" title="Read the repo again through the editor's language servers">Re-index</button></div>
+<ul id="missing" class="missing" hidden></ul>
+<div class="actions"><button id="flow" title="What the program does, step by step from an entry point">Flow</button><button id="map" class="secondary" title="What the repo reaches outside itself: databases, the network, models, files">Map</button><button id="reindex" class="secondary" title="Read the repo again">Re-index</button></div>
+<form id="find"><input id="q" type="search" placeholder="Find a function or file to chart" spellcheck="false" aria-label="Find"></form><div id="found" class="muted"></div>
+<section><h3>Starts from</h3><ul id="entries" class="entries"></ul><div id="more" class="muted" hidden></div></section>
 <section id="review"><h3>Review<span class="tools"><button id="policy" class="link" title="Rules for what each part of the repo may reach">Policy</button><button id="accept" class="link" title="Mark every new crossing and dependency as reviewed">Accept All</button></span></h3>
 <div id="summary" class="summary"></div><pre id="policy-error" class="err" hidden></pre><ul id="findings" class="findings"></ul></section>
-<section><h3>Boundaries</h3><ul id="crossings" class="langs"></ul></section>
-<form id="find"><input id="q" type="search" placeholder="Find a function, type, or package" spellcheck="false" aria-label="Find"></form><div id="found" class="muted"></div>
-<section><h3>Show<span class="tools"><button id="fit" class="link" title="Fit the graph to the window">Fit</button><button id="collapse" class="link" title="Collapse every container">Collapse All</button></span></h3>
-<label><input type="checkbox" data-kind="call"><span class="swatch call"></span>Calls</label>
-<label><input type="checkbox" data-kind="flow"><span class="swatch flow"></span>Data flow</label>
-<label><input type="checkbox" data-kind="override"><span class="swatch override"></span>Overrides</label>
-<label><input type="checkbox" data-kind="transition"><span class="swatch transition"></span>State transitions</label>
-<label title="Code that runs only in a state, or only for an event"><input type="checkbox" data-kind="guard"><span class="swatch transition"></span>Guards</label>
-<label title="The program as an automaton: states are the values of its state machines, inputs are what comes in from outside (callbacks, dispatched events, entry points)"><input type="checkbox" id="automaton"><span class="swatch transition"></span>Automaton</label>
-<label title="Calls leaving the repo grouped by what they reach: databases, the network, model APIs, cloud services, queues, files, processes, the environment"><input type="checkbox" id="boundaries"><span class="swatch boundary"></span>Boundaries</label>
-<label title="Units are folders, packages and files, drawn flat with entries on the left and outside libraries on the right. Open one to see what is inside. Off: nested boxes."><input type="checkbox" id="flow"><span class="swatch files"></span>Stage flow</label>
-<div id="isolated" class="muted" hidden></div>
-<label title="Packages outside the repo that cross no boundary, such as the standard library"><input type="checkbox" id="external"><span class="swatch external"></span>Other libraries</label>
-<label title="Re-index when files change on disk, so edits an agent makes show up as findings"><input type="checkbox" id="watch"><span class="swatch flag"></span>Watch for changes</label>
-<label title="Files in a language the editor could not resolve, drawn with no definitions or edges"><input type="checkbox" id="unindexed"><span class="swatch unindexed"></span>Unindexed files</label>
-<label title="Off: packages and folders are boundaries around their types and functions. On: files sit between them."><input type="checkbox" id="files"><span class="swatch files"></span>Files</label>
-<div class="legend"><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l"/></svg>resolved</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l may"/></svg>may</span><span><svg width="20" height="6"><line x1="0" y1="3" x2="20" y2="3" class="l unresolved"/></svg>unresolved</span></div></section>
-<section><h3>State machines</h3><ul id="machines" class="machines"></ul></section>
-<section id="missing-section" hidden><h3>Not indexed</h3><ul id="missing" class="langs"></ul></section>
-<section><h3>Languages</h3><ul id="langs" class="langs"></ul></section>
-<p class="hint">Marked wires are new since the last accept (amber) or denied by policy (red). Zoom in to open boxes, or click a box to toggle it. ⌘/Ctrl-click or double-click opens its source. Hover to trace edges; click a wire or shift-click a box to pin it, Esc to clear.</p>`;
+<section><h3>Reaches</h3><ul id="crossings" class="langs"></ul></section>
+<label title="Re-index when files change on disk, so edits an agent makes show up as findings"><input type="checkbox" id="watch">Watch for changes</label>`;

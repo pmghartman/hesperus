@@ -155,7 +155,7 @@
     net = 0;
     // A reply that never comes (host error) must not wedge zooming.
     if (pending && performance.now() - pending.at > 5000) pending = null;
-    if (!auto || !L || pending || moving || Math.abs(dir) < 1e-3) return;
+    if (!auto || !L || F || pending || moving || Math.abs(dir) < 1e-3) return;
     const W = svg.clientWidth;
     const all = L.boxes.map((b) => ({ b, s: onScreen(b) }));
     if (dir <= 0) return;
@@ -550,6 +550,140 @@
     if (state) stateEls.get(state)?.classList.add("hl");
   }
 
+  // ---- flow chart ----
+  // What the program does from one entry point: steps top to bottom, decisions as diamonds with their
+  // branches indented beneath, loops with a line back up, calls that leave the repo as terminals. A
+  // click on a step opens its own steps in place; ⌘/Ctrl-click or double-click opens the source.
+  const LANG = { go: "Go", javascript: "JavaScript / TypeScript", rust: "Rust", csharp: "C#", cpp: "C / C++", dart: "Dart / Flutter", python: "Python", java: "Java", kotlin: "Kotlin", php: "PHP", ruby: "Ruby" };
+  const EXT = { go: "go", js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript", ts: "javascript", tsx: "javascript", mts: "javascript", cts: "javascript", rs: "rust", cs: "csharp", c: "cpp", cc: "cpp", cpp: "cpp", h: "cpp", hpp: "cpp", dart: "dart", py: "python", java: "java", kt: "kotlin", kts: "kotlin", php: "php", rb: "ruby" };
+  const langOf = (p) => LANG[EXT[(p ?? "").slice((p ?? "").lastIndexOf(".") + 1).toLowerCase()]];
+  const BOUNDARY_LABEL = { database: "Database", network: "Network", ai: "AI models", cloud: "Cloud & SaaS", messaging: "Queues", filesystem: "Filesystem", process: "Processes", environment: "Environment" };
+  const fitText = (s, w) => {
+    const n = Math.max(3, Math.floor(w / CHAR));
+    return s.length > n ? s.slice(0, n - 1) + "…" : s;
+  };
+  let F = null;
+  function drawFlow(m) {
+    const prevBoxes = F ? new Map(F.boxes.map((b) => [b.id, b])) : null;
+    F = m.layout;
+    const first = !L;
+    L = { width: F.width, height: F.height, boxes: [], wires: [] };
+    boxes = new Map();
+    scene._wires = [];
+    scene._nodes = new Map();
+    scene.replaceChildren();
+    labels.replaceChildren();
+    const defs = el("defs", {}, scene);
+    for (const k of ["flow", "back", "flag-error", "flag-warning", "flag-info"]) {
+      const mk = el("marker", { id: "arrow-" + k, viewBox: "0 0 10 10", refX: "9", refY: "5", markerWidth: "8", markerHeight: "8", markerUnits: "userSpaceOnUse", orient: "auto" }, defs);
+      el("path", { d: "M0,1L9,5L0,9z", class: "arrow " + k }, mk);
+    }
+    const frameLayer = el("g", {}, scene), linkLayer = el("g", { class: "links" }, scene), stepLayer = el("g", {}, scene);
+    for (const b of F.boxes) if (b.kind === "frame") el("rect", { class: "frame", x: b.x, y: b.y, width: b.w, height: b.h, rx: 8 }, frameLayer);
+    const stepEls = new Map(), linkEls = [];
+    for (const l of F.links) {
+      const d = pathOf(l.points);
+      const path = el("path", { class: "link" + (l.back ? " back" : ""), d, "marker-end": "url(#arrow-" + (l.back ? "back" : "flow") + ")" }, linkLayer);
+      if (l.label) {
+        const p = l.points[0], q = l.points[1] ?? p;
+        const horizontal = Math.abs(q.y - p.y) < 1;
+        el("text", { class: "link-label", x: horizontal ? p.x + 6 : p.x + 5, y: horizontal ? p.y - 4 : p.y + 8 }, linkLayer).textContent = l.label;
+      }
+      linkEls.push({ l, path });
+    }
+    for (const b of F.boxes) {
+      if (b.kind === "frame") continue;
+      const g = el("g", { class: `step s-${b.kind}` + (b.state ? ` ${b.state}` : "") + (b.may ? " may" : "") + (b.flag ? ` flag-${b.flag}` : ""), "data-id": b.id }, stepLayer);
+      const mid = b.y + b.h / 2;
+      if (b.kind === "if" || b.kind === "switch") {
+        el("polygon", { class: "body", points: `${b.x + b.w / 2},${b.y} ${b.x + b.w},${mid} ${b.x + b.w / 2},${b.y + b.h} ${b.x},${mid}` }, g);
+        el("text", { class: "name cond", x: b.x + b.w / 2, y: mid + 4, "text-anchor": "middle" }, g).textContent = fitText(b.text + (b.kind === "if" ? "?" : ""), b.w - 44);
+      } else if (b.kind === "loop") {
+        const c = 10;
+        el("polygon", { class: "body", points: `${b.x + c},${b.y} ${b.x + b.w - c},${b.y} ${b.x + b.w},${mid} ${b.x + b.w - c},${b.y + b.h} ${b.x + c},${b.y + b.h} ${b.x},${mid}` }, g);
+        el("text", { class: "name", x: b.x + 16, y: mid + 4 }, g).textContent = "↻ " + fitText(b.text, b.w - 40);
+      } else if (b.kind === "end") {
+        el("circle", { class: "body", cx: b.x + b.w / 2, cy: mid, r: b.w / 2 }, g);
+        el("circle", { class: "dot", cx: b.x + b.w / 2, cy: mid, r: b.w / 4 }, g);
+      } else if (b.kind === "case" || b.kind === "catch") {
+        el("rect", { class: "body", x: b.x, y: b.y, width: b.w, height: b.h, rx: 11 }, g);
+        el("text", { class: "name tag", x: b.x + 10, y: mid + 4 }, g).textContent = fitText((b.kind === "catch" ? "⚠ " : "") + b.text, b.w - 20);
+      } else {
+        el("rect", { class: "body", x: b.x, y: b.y, width: b.w, height: b.h, rx: b.kind === "entry" ? b.h / 2 : 5 }, g);
+        let x = b.x + 10;
+        const top = b.sub ? b.y + 18 : mid + 4;
+        if (b.kind === "call" && b.state !== "empty") {
+          // Chevron: right when closed, down when open, a dot when the chart stops here.
+          el("path", { class: "chev", d: b.state === "open" ? `M${x},${top - 7}l4,4l4,-4` : b.state === "cut" ? `M${x + 2},${top - 5}h4` : `M${x + 2},${top - 9}l4,4l-4,4` }, g);
+          x += 14;
+        }
+        if (b.kind === "boundary") {
+          el("path", { class: "glyph", d: ICON["boundary:" + b.boundary] ?? "", transform: `translate(${x + 6},${mid})` }, g);
+          x += 18;
+        }
+        if (b.kind === "entry") {
+          el("path", { class: "entry-mark", d: `M${x},${top}h10m-3,-3l3,3l-3,3`, transform: "translate(0,-4)" }, g);
+          x += 16;
+        }
+        const label = BOUNDARY_LABEL[b.boundary];
+        const tail = b.kind === "boundary" ? label : b.count > 1 ? `×${b.count}` : "";
+        const tailW = tail ? tail.length * CHAR + 10 : 0;
+        el("text", { class: "name" + (b.kind === "entry" ? " title" : ""), x, y: top }, g).textContent = fitText(b.text, b.w - (x - b.x) - tailW - 8);
+        if (tail) el("text", { class: b.kind === "boundary" ? "where" : "count", x: b.x + b.w - 8, y: top, "text-anchor": "end" }, g).textContent = tail;
+        (b.sub ?? []).forEach((line, i) => (el("text", { class: "sub", x: b.x + 10, y: b.y + 34 + i * 14 }, g).textContent = fitText(line, b.w - 20)));
+        if (b.kind === "entry") {
+          const lang = langOf(b.path);
+          el("text", { class: "sub where", x: b.x + 10, y: b.y + b.h - 8 }, g).textContent = fitText(b.path + (lang ? " · " + lang : ""), b.w - 20);
+        }
+      }
+      stepEls.set(b.id, g);
+      boxes.set(b.id, { ...b, node: { name: b.text, kind: b.kind } });
+      g.addEventListener("click", (e) => {
+        if (drag?.moved) return;
+        e.stopPropagation();
+        const source = e.metaKey || e.ctrlKey;
+        if (b.kind === "call" && !source && b.state !== "empty" && b.state !== "cut") return vs.postMessage({ type: "flowToggle", id: b.id });
+        if (b.kind === "call" || b.kind === "entry") return vs.postMessage(source || b.kind === "entry" ? { type: "open", id: b.target } : { type: "openAt", path: b.path, line: b.line });
+        if (b.path) vs.postMessage({ type: "openAt", path: b.path, line: b.line });
+      });
+      g.addEventListener("dblclick", (e) => (e.stopPropagation(), vs.postMessage(b.kind === "call" || b.kind === "entry" ? { type: "open", id: b.target } : { type: "openAt", path: b.path, line: b.line })));
+      g.addEventListener("mouseenter", (e) => {
+        if (moving || drag?.moved) return;
+        scene.classList.add("focus");
+        g.classList.add("hl");
+        for (const x of linkEls) if (x.l.from === b.id || x.l.to === b.id) { x.path.classList.add("hl"); stepEls.get(x.l.from)?.classList.add("hl"); stepEls.get(x.l.to)?.classList.add("hl"); }
+        showTip(e, flowTip(b));
+      });
+      g.addEventListener("mouseleave", unfocus);
+    }
+    scene._flow = { stepEls, linkEls };
+    const anchor = m.anchor && boxes.get(m.anchor), was = m.anchor && prevBoxes?.get(m.anchor);
+    if (first || (!userMoved && !m.anchor)) fit();
+    else if (anchor && was) {
+      // Keep the clicked step where it was on screen.
+      t.x += (was.x - anchor.x) * t.k;
+      t.y += (was.y - anchor.y) * t.k;
+      cam++;
+      apply();
+    } else apply();
+  }
+  function flowTip(b) {
+    const lines = [];
+    if (b.kind === "if") lines.push(`<b>if</b> ${esc(b.text)}`);
+    else if (b.kind === "switch") lines.push(`<b>switch on</b> ${esc(b.text)}`);
+    else if (b.kind === "loop") lines.push(`<b>loop</b> ${esc(b.text)}`);
+    else if (b.kind === "end") return "The entry's steps end here.";
+    else lines.push(`<b>${esc(b.text)}</b>${b.count > 1 ? `  ×${b.count}` : ""}${b.may ? '  <span class="dim">may run (dynamic call)</span>' : ""}`);
+    if (b.doc) lines.push(esc(b.doc));
+    if (b.boundary) lines.push(`<span class="dim">${BOUNDARY_LABEL[b.boundary]}: this call leaves the repo</span>`);
+    for (const n of b.notes ?? []) lines.push(`<span class="sev-${b.flag}">● ${esc(n)}</span>`);
+    if (b.path) lines.push(`<span class="dim">${esc(b.path)}${b.line ? ":" + b.line : ""}</span>`);
+    if (b.kind === "call") lines.push(`<span class="dim">${b.state === "open" ? "Click to close" : b.state === "cut" ? "Deeper than the chart follows" : b.state === "empty" ? "Nothing further the chart shows" : "Click to open its steps"} · ⌘/Ctrl-click opens the source</span>`);
+    else if (b.kind === "entry") lines.push('<span class="dim">Click opens the source</span>');
+    else if (b.path) lines.push('<span class="dim">Click opens the code</span>');
+    return lines.join("\n");
+  }
+
   addEventListener("message", ({ data: m }) => {
     if (m.type === "hidden") {
       hidden = m.hidden;
@@ -566,8 +700,17 @@
     }
     if (m.type === "focus") return centerOn(m.id);
     if (m.type === "fit") return fit();
+    if (m.type === "flow") {
+      msg.hidden = true;
+      pending = null;
+      pinned = null;
+      svg.classList.add("flowing");
+      $("auto").hidden = true;
+      return drawFlow(m);
+    }
     if (m.type === "automaton") {
       msg.hidden = true;
+      F = null;
       pending = null;
       pinned = null;
       return drawAutomaton(m.layout);
@@ -575,6 +718,9 @@
     if (m.type === "layout") {
       msg.hidden = true;
       hidden = m.hidden;
+      if (F) (F = null, (L = null), (userMoved = false));
+      svg.classList.remove("flowing");
+      $("auto").hidden = false;
       const zoom = pending && m.seq === pending.seq ? pending : null;
       if (zoom) pending = null;
       L = m.layout;

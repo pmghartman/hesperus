@@ -102,6 +102,19 @@ export interface SymbolDecl {
   range: Range;
   /** The name token. */
   selection: Range;
+  /** The comment above the declaration, or its docstring: first paragraph, comment marks stripped. */
+  doc?: string;
+}
+
+/** A place the code branches: `if`/`else`, a loop, a `switch` and each of its cases, a `catch`. `range` is
+ *  the whole construct (an `if` with its `else`), `body` the code that runs when it is taken. For `if`,
+ *  what lies in `range` outside `body` is the else side (another `if` when chained). `text` is the
+ *  condition, loop header, switched value or case value as written, whitespace collapsed. */
+export interface Branch {
+  kind: "if" | "else" | "loop" | "switch" | "case" | "catch";
+  text: string;
+  range: Range;
+  body: Range;
 }
 
 export interface Facts {
@@ -120,9 +133,11 @@ export interface Facts {
   consts: Range[];
   /** Function literals (`() => …`, `lambda`, closures). One passed to a call runs when the callee calls it. */
   lambdas: Range[];
+  /** Where control branches, in source order; found for every grammar by its node and field names. */
+  branches: Branch[];
 }
 
-export const noFacts = (): Facts => ({ calls: [], symbols: [], imports: [], params: [], decls: [], assigns: [], guards: [], consts: [], lambdas: [] });
+export const noFacts = (): Facts => ({ calls: [], symbols: [], imports: [], params: [], decls: [], assigns: [], guards: [], consts: [], lambdas: [], branches: [] });
 
 export interface Syntax {
   facts(source: string): Facts;

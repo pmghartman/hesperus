@@ -7,7 +7,7 @@ import * as path from "node:path";
 import { isGroup, parents } from "./core/aggregate";
 import { MAP_CSP, MAP_MIME, MAP_URI, mapHtml } from "./mapapp";
 import { boundaryPicture } from "./picture";
-import { acceptKeys, boundariesJson, callsJson, check, checkJson, diffJson, drawSvg, isBoundary, load, Loaded, ViewAsk } from "./service";
+import { acceptKeys, boundariesJson, callsJson, check, checkJson, diffJson, drawSvg, flowTextOf, isBoundary, load, Loaded, ViewAsk } from "./service";
 import { VERSION } from "./engine";
 
 /** A tool's answer: text, or text for the model with data for an MCP App's page. */
@@ -70,6 +70,16 @@ export async function serve(repo: string): Promise<void> {
       name: "hesperus_calls", title: "Find callers and callees", annotations: READS, description: "Callers and callees of the functions or types whose name contains the query, with file:line and how sure each edge is.",
       inputSchema: { type: "object", properties: { ...DIR, ...INDEX, name: { type: "string" } }, required: ["name"] },
       run: async (a) => callsJson((await get(a))[1], String(a.name ?? "")),
+    },
+    {
+      name: "hesperus_flow", title: "What the program does, top down", annotations: READS, description: "The program as a flow chart in text: from an entry point (the one that drives the most code, or `entry`), the steps it takes in order, each named by its function and the comment above it, the decisions between them with their conditions, loops, and every call that leaves the repo as a terminal with its boundary. Resolved from the code, nothing inferred. Without `entry`, also lists the entry points.",
+      inputSchema: { type: "object", properties: { ...DIR, ...INDEX,
+        entry: { type: "string", description: "A function or file to start from, by name or graph id." },
+        depth: { type: "number", description: "Open calls this many levels down (default 1, at most 6)." } } },
+      run: async (a) => {
+        const [d, l] = await get(a);
+        return flowTextOf(d, l, check(d, l), typeof a.entry === "string" ? a.entry : undefined, [], Math.min(6, Math.max(0, typeof a.depth === "number" ? a.depth : 1)));
+      },
     },
     {
       name: "hesperus_accept", title: "Accept crossings as reviewed", annotations: WRITES, description: "Mark crossings as reviewed so they stop being reported as new: the given finding keys, or all current crossings when none are given. Use only when the person has reviewed them.",
@@ -160,7 +170,7 @@ export async function serve(repo: string): Promise<void> {
             protocolVersion: typeof params.protocolVersion === "string" ? params.protocolVersion : "2025-03-26",
             capabilities: { tools: {}, resources: {} },
             serverInfo: { name: "hesperus", version: VERSION },
-            instructions: "Hesperus maps what this repo reaches outside itself. Call hesperus_index after editing, then hesperus_diff to see what your changes added; hesperus_check for the full lint; hesperus_calls to see who calls a function.",
+            instructions: "Hesperus maps what this repo reaches outside itself. Call hesperus_index after editing, then hesperus_diff to see what your changes added; hesperus_check for the full lint; hesperus_calls to see who calls a function; hesperus_flow for what the program does, step by step from an entry point.",
           });
         case "ping":
           return reply(id, {});

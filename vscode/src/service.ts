@@ -6,7 +6,9 @@ import { BOUNDARIES, Boundary, BOUNDARY_INFO, Crossing } from "./core/boundary";
 import { CACHE_DIR, readHeader, readShards } from "./core/cache";
 import { Graph, pretty } from "./core/ir";
 import { accept, Baseline, lint, Policy, Report, reportToJson, snapshot } from "./core/lint";
-import { HeadlessOutcome, headlessLanguages, indexHeadless, sourcesStamp } from "./engine";
+import { HeadlessOutcome, headlessLanguages, indexHeadless, init, owner, sourcesStamp } from "./engine";
+import { entries, Entry, flow, Flow, FlowInputs, flowText } from "./core/flow";
+import { Severity } from "./core/lint";
 import { isGroup, parents } from "./core/aggregate";
 import { boundaryPicture } from "./picture";
 import { shelf } from "./shelf";
@@ -190,6 +192,76 @@ export async function drawSvg(repo: string, l: Loaded, r: Report, ask?: ViewAsk)
   fs.writeFileSync(path.join(repo, CACHE_DIR, VIEW_FILE), svg);
   fs.writeFileSync(path.join(repo, CACHE_DIR, BOXES_FILE), JSON.stringify(json));
   return svg;
+}
+
+/** What the flow needs from a repo: its files' syntax (grammars loaded on demand), the policy's extra
+ *  boundary packages, and the lint's findings per crossing. */
+export async function flowInputs(repo: string, l: Loaded, r?: Report): Promise<FlowInputs> {
+  const langs = new Set<string>();
+  for (const n of l.graph.nodes) if (n.path && (n.kind === "function" || n.kind === "method" || n.kind === "file")) { const f = owner(n.path); if (f) langs.add(f.id); }
+  await init([...langs]);
+  const flags = new Map<string, { severity: Severity; notes: string[] }>();
+  for (const f of r?.findings ?? []) {
+    const k = `${f.local}\0${f.external}`;
+    const x = flags.get(k);
+    if (x) x.notes.push(f.message);
+    else flags.set(k, { severity: f.severity, notes: [f.message] });
+  }
+  return {
+    readSource: (p) => { try { return fs.readFileSync(path.join(repo, p), "utf8"); } catch { return undefined; } },
+    syntaxFor: (p) => owner(p)?.syntax(p),
+    extra: l.policy.boundaries,
+    flags,
+  };
+}
+
+/** The entry points, and the flow from one of them: the first, or the one `pick` names (a graph id, or a
+ *  name to match). Step ids in `open` are inlined. */
+export async function flowOf(repo: string, l: Loaded, r: Report, pick?: string, open: Iterable<string> = []): Promise<{ entries: Entry[]; flow?: Flow }> {
+  const inp = await flowInputs(repo, l, r);
+  const all = entries(l.graph, inp);
+  let entry = pick === undefined ? all[0] : all.find((e) => e.id === pick);
+  if (!entry && pick !== undefined) {
+    const q = pick.toLowerCase();
+    entry = all.find((e) => e.name.toLowerCase() === q) ?? all.find((e) => e.name.toLowerCase().includes(q) || e.path.toLowerCase().includes(q));
+    // Any callable, entry or not: a flow can start anywhere.
+    if (!entry) {
+      const n = l.graph.nodes.find((x) => x.id === pick) ?? l.graph.nodes.find((x) => x.path && (x.kind === "function" || x.kind === "method") && x.name.toLowerCase() === q);
+      if (n) return { entries: all, flow: flow(l.graph, n.id, new Set(open), inp) };
+    }
+  }
+  return { entries: all, flow: entry ? flow(l.graph, entry.id, new Set(open), inp) : undefined };
+}
+
+/** The flow as text: the entry points when none is picked and there are several, else the steps. */
+export async function flowTextOf(repo: string, l: Loaded, r: Report, pick?: string, open?: Iterable<string>, depth = 0): Promise<string> {
+  const { entries: all, flow: f } = await flowOf(repo, l, r, pick, open);
+  if (!f) return pick === undefined ? "No entry point found: nothing in the repo calls into it, or nothing is indexed.\n" : `No entry or function matches "${pick}". Entries: ${all.slice(0, 20).map((e) => e.name).join(", ")}\n`;
+  const opened = depth > 0 ? deepen(l, r, f, depth, repo, open) : Promise.resolve(f);
+  const out = await opened;
+  const head = pick === undefined && all.length > 1 ? `Entry points (${all.length}): ${all.slice(0, 12).map((e) => `${e.name} [${e.reach}]`).join(", ")}${all.length > 12 ? ", …" : ""}\n\n` : "";
+  return head + flowText(out);
+}
+
+/** Opens every call `depth` levels down, so a terminal sees the whole tree at once. */
+async function deepen(l: Loaded, r: Report, f: Flow, depth: number, repo: string, open: Iterable<string> = []): Promise<Flow> {
+  const ids = new Set(open);
+  let cur = f;
+  for (let d = 0; d < depth; d++) {
+    let more = false;
+    const walk = (steps: typeof cur.steps) => {
+      for (const s of steps) {
+        if (s.kind === "call") { if (!ids.has(s.id)) (ids.add(s.id), (more = true)); if (s.steps) walk(s.steps); }
+        else if (s.kind === "if") (walk(s.yes), walk(s.no));
+        else if (s.kind === "loop" || s.kind === "catch") walk(s.body);
+        else if (s.kind === "switch") for (const c of s.cases) walk(c.body);
+      }
+    };
+    walk(cur.steps);
+    if (!more) break;
+    cur = (await flowOf(repo, l, r, f.entry.id, ids)).flow ?? cur;
+  }
+  return cur;
 }
 
 export const isBoundary = (s: string): s is Boundary => (BOUNDARIES as readonly string[]).includes(s);

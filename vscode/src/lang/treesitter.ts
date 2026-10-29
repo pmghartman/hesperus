@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { Language, Node, Parser } from "web-tree-sitter";
 import { Range } from "../core/ir";
-import { Facts, Guard, noFacts, Operand, SymbolDecl, Syntax } from "../core/syntax";
+import { Branch, Facts, Guard, noFacts, Operand, SymbolDecl, Syntax } from "../core/syntax";
 import { PKG_ROOT } from "../root";
 
 let runtime: Promise<void> | undefined;
@@ -44,6 +44,19 @@ export class Source {
   }
   range(n: Node): Range {
     return this.span(n, n);
+  }
+  /** The character index where a range starts, to find the node that starts there. */
+  index(r: Range): number {
+    const s = this.starts[r.start_line] ?? this.text.length;
+    const end = r.start_line + 1 < this.starts.length ? this.starts[r.start_line + 1] : this.text.length;
+    if (!/[^\x00-\x7f]/.test(this.text.slice(s, end))) return s + r.start_col;
+    let bytes = 0, i = s;
+    while (bytes < r.start_col && i < end) {
+      const c = this.text.codePointAt(i)!;
+      bytes += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
+      i += c >= 0x10000 ? 2 : 1;
+    }
+    return i;
   }
   /** From the start of `a` to the end of `b`. */
   span(a: Node, b: Node): Range {
@@ -158,6 +171,128 @@ export function guardIf(n: Node, cond: Node, body: Node, ops: Ops, operand: (n: 
   branches(cond, src.range(body), alt ? src.range(alt) : rest(n, body, src), ops, operand, out);
 }
 
+// ---- doc comments ----
+// Found for every grammar alike: the comments directly above a declaration (over its decorators,
+// attributes and annotations), or the string that opens its body (a Python docstring).
+const SKIP_BACK = /decorator|attribute|annotation|modifier|visibility/;
+const PRAGMA = /^(eslint|prettier|ts-|noqa|type:|pylint|nolint|go:|#!|-\*-|@ts|biome|istanbul|c8 |v8 |SPDX|Copyright|License|coding[:=])/i;
+const ROOT = new Set(["program", "module", "source_file", "translation_unit", "compilation_unit"]);
+
+/** The paragraph of comment text above `n`, cleaned of comment marks; undefined when there is none. */
+function docOf(n: Node): string | undefined {
+  // The outermost node that starts where the symbol does: `export function f` is an export statement.
+  let top = n;
+  while (top.parent && top.parent.startIndex === top.startIndex && !ROOT.has(top.parent.type)) top = top.parent;
+  const lines: string[] = [];
+  let row = top.startPosition.row;
+  for (let p = top.previousSibling; p !== null; p = p!.previousSibling) {
+    if (/comment/.test(p.type)) {
+      if (p.endPosition.row < row - 1) break;
+      lines.unshift(...p.text.split("\n"));
+      row = p.startPosition.row;
+      continue;
+    }
+    if (!lines.length && SKIP_BACK.test(p.type)) {
+      row = p.startPosition.row;
+      continue;
+    }
+    break;
+  }
+  if (!lines.length) {
+    // A docstring: the string that is the first statement of the body.
+    const body = n.childForFieldName("body") ?? n.childForFieldName("definition")?.childForFieldName("body") ?? namedChildren(n).find((c) => /definition|declaration/.test(c.type))?.childForFieldName("body");
+    const first = body && namedChildren(body).find((c) => !/comment/.test(c.type));
+    const str = first?.type === "expression_statement" ? namedChildren(first)[0] : undefined;
+    if (str && /string/.test(str.type)) lines.push(...str.text.split("\n"));
+  }
+  return clean(lines);
+}
+
+const MARK_START = /^\s*(\/\*\*<?|\/\*!?|\*\/|\/\/[/!]?|#+|--|r?"""|r?'''|\*)\s?/;
+const MARK_END = /\s*(\*\/|"""|''')\s*$/;
+
+/** Comment lines to one paragraph: marks stripped, the first blank line ends it, pragmas dropped. */
+export function clean(lines: string[]): string | undefined {
+  const out: string[] = [];
+  for (const raw of lines) {
+    let l = raw.replace(MARK_END, "");
+    for (let i = 0; i < 2; i++) l = l.replace(MARK_START, "");
+    l = l.trim();
+    if (!l) {
+      if (out.length) break;
+      continue;
+    }
+    if (!out.length && PRAGMA.test(l)) return undefined;
+    out.push(l);
+  }
+  const text = out.join(" ").replace(/\s+/g, " ").trim();
+  return text ? (text.length > 400 ? text.slice(0, 399) + "…" : text) : undefined;
+}
+
+// ---- branches ----
+// Control structures by the names grammars share: an `if` has a condition and a consequence, a loop
+// a body, a switch a value and cases, a catch a body. Fields are read by name, then by shape.
+const IF = /^(if_statement|if_expression|if_let_expression|elif_clause|else_if_clause|elsif|elseif_clause|else_if)$/;
+const ELSE = /^(else_clause|else_statement|else)$/;
+const LOOP = /^(for|while|do|loop|for_in|foreach|for_each|enhanced_for|for_range|repeat|until|for_numeric|for_generic|do_while)_?(statement|expression|loop)?$/;
+const SWITCH = /^(switch_statement|switch_expression|match_statement|match_expression|when_expression|select_statement|expression_switch_statement|type_switch_statement|switch)$/;
+const CASE = /^(switch_case|switch_default|case_clause|default_clause|match_arm|when_entry|case|communication_case|default_case|expression_case|type_case|switch_section|case_pattern|match_case|switch_rule|switch_block_statement_group)$/;
+const CATCH = /^(catch_clause|except_clause|except_group_clause|rescue|rescue_clause|catch_block|catch|finally_clause|on_part|catch_part)$/;
+const BLOCK = /block|body|statement_list|compound_statement|suite|consequence|statements|control_structure_body/;
+const squash = (s: string, n = 60) => {
+  const t = s.replace(/\s+/g, " ").trim();
+  return t.length > n ? t.slice(0, n - 1) + "…" : t;
+};
+const unparen = (s: string) => s.replace(/^\((.*)\)$/s, "$1");
+
+function branch(n: Node, src: Source, out: Branch[]) {
+  // Keyword tokens (`switch`, `case`, `else`) share names with the constructs; only named nodes count.
+  if (!n.isNamed) return;
+  const t = n.type;
+  const field = (...names: string[]) => {
+    for (const f of names) {
+      const c = n.childForFieldName(f);
+      if (c) return c;
+    }
+    return undefined;
+  };
+  const named = namedChildren(n);
+  const blockLike = (c: Node) => BLOCK.test(c.type);
+  const comment = (c: Node) => /comment/.test(c.type);
+  if (IF.test(t)) {
+    const cond = field("condition", "value") ?? named.find((c) => !blockLike(c) && !comment(c));
+    if (!cond) return;
+    const body = field("consequence", "body", "block") ?? named.find((c) => c.id !== cond.id && blockLike(c));
+    if (!body) return;
+    out.push({ kind: "if", text: squash(unparen(cond.text)), range: src.range(n), body: src.range(body) });
+    // A plain else block is the no side; a chained `else if` registers itself when visited.
+    const alt = field("alternative");
+    if (alt && !IF.test(alt.type)) {
+      const inner = ELSE.test(alt.type) ? namedChildren(alt).find((c) => !comment(c)) : alt;
+      if (inner && !IF.test(inner.type)) out.push({ kind: "else", text: "", range: src.range(alt), body: src.range(alt) });
+    }
+  } else if (ELSE.test(t) && n.parent && n.parent.childForFieldName("alternative")?.id !== n.id) {
+    // Grammars without an `alternative` field (Python's else_clause): the clause itself.
+    const inner = named.find((c) => !comment(c));
+    if (inner && !IF.test(inner.type) && /if|match|switch|try|for|while/.test(n.parent.type) && !/for|while|try/.test(n.parent.type)) out.push({ kind: "else", text: "", range: src.range(n), body: src.range(n) });
+  } else if (LOOP.test(t)) {
+    const body = field("body", "block") ?? [...named].reverse().find(blockLike);
+    if (!body) return;
+    const head = n.text.slice(0, body.startIndex - n.startIndex).replace(/[{:]\s*$/, "").trim();
+    out.push({ kind: "loop", text: squash(head || t.replace(/_.*$/, "")), range: src.range(n), body: src.range(body) });
+  } else if (SWITCH.test(t)) {
+    const value = field("value", "condition", "subject") ?? named.find((c) => !blockLike(c) && !CASE.test(c.type) && !comment(c));
+    out.push({ kind: "switch", text: squash(value ? unparen(value.text) : t.replace(/_.*$/, "")), range: src.range(n), body: src.range(n) });
+  } else if (CASE.test(t)) {
+    const v = field("pattern", "value", "condition") ?? named.find((c) => !blockLike(c) && !comment(c) && c.startPosition.row === n.startPosition.row);
+    const isDefault = /default/.test(t) || v?.text === "_" || v?.text === "default";
+    out.push({ kind: "case", text: isDefault || !v ? "otherwise" : squash(v.text, 40), range: src.range(n), body: src.range(n) });
+  } else if (CATCH.test(t)) {
+    const what = field("parameter", "pattern", "type", "name", "value", "exception");
+    out.push({ kind: "catch", text: /finally/.test(t) ? "finally" : `on error${what ? ` ${squash(what.text, 30)}` : ""}`, range: src.range(n), body: src.range(n) });
+  }
+}
+
 /** Records a definition for the headless outline: `decl` is the whole declaration, `name` its name token. */
 export function symbol(f: Facts, src: Source, decl: Node, name: Node | null | undefined, shape: SymbolDecl["shape"], kind: number) {
   if (name) f.symbols.push({ name: name.text, shape, kind, range: src.range(decl), selection: src.range(name) });
@@ -192,10 +327,19 @@ export class Grammar implements Syntax {
     const tree = p.parse(source);
     if (tree) {
       const src = new Source(source);
+      // Nodes by where they start, outermost first, so a symbol finds its declaration node.
+      const starts = new Map<number, Node>();
       walk(tree.rootNode, (n) => {
+        if (!starts.has(n.startIndex)) starts.set(n.startIndex, n);
         this.visit(n, src, f);
         if (LAMBDAS.has(n.type)) f.lambdas.push(src.range(n));
+        branch(n, src, f.branches);
       });
+      for (const sym of f.symbols) {
+        const at = starts.get(src.index(sym.range));
+        const doc = at && docOf(at);
+        if (doc) sym.doc = doc;
+      }
       tree.delete();
     }
     p.delete();

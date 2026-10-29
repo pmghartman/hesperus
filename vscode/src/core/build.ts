@@ -27,7 +27,7 @@ export interface Inputs {
   unindexed?: { path: string; reason: string }[];
 }
 
-interface Def { path: string; ident: Range }
+interface Def { path: string; ident: Range; /** From the comment above it, when the index says nothing. */ doc?: string }
 interface Callable { symbol: string; ident: Range; body: Range }
 interface Doc {
   doc: Document;
@@ -132,13 +132,16 @@ export function build(inp: Inputs): Graph {
         info.set(sym, { ...i, kind: 17 });
     }
     const callables: Callable[] = [];
+    const docAt = new Map<string, string>();
+    for (const s of facts.symbols) if (s.doc) docAt.set(rangeKey(s.selection), s.doc);
     for (const [sym, r, body] of localDefs) {
       const ps = parseSymbol(sym);
       if (!ps) continue;
       const kind = classify(ps, info.get(sym));
       if (!kind) continue;
       const old = defs.get(sym);
-      if (!old || (cmpStr(old.path, path) || cmpRange(old.ident, r)) > 0) defs.set(sym, { path, ident: r });
+      const doc = docAt.get(rangeKey(r));
+      if (!old || (cmpStr(old.path, path) || cmpRange(old.ident, r)) > 0) defs.set(sym, doc === undefined ? { path, ident: r } : { path, ident: r, doc });
       if (isCallable(kind) && body) callables.push({ symbol: sym, ident: r, body });
     }
     texts.set(path, text);
@@ -171,7 +174,7 @@ export function build(inp: Inputs): Graph {
     const kind = classify(ps, inf)!;
     const name = inf && inf.display_name !== "" ? inf.display_name : ps.descriptors[ps.descriptors.length - 1]?.name ?? "";
     const signature = inf?.signature_documentation?.text || undefined;
-    const doc = inf?.documentation.join("\n") || undefined;
+    const doc = inf?.documentation.join("\n") || def.doc || undefined;
     nodes.set(sym, { id: sym, kind, name, path: def.path, range: def.ident, signature, doc, hash: hashOf(def.path) });
     const pkgs = filePkgs.get(def.path) ?? filePkgs.set(def.path, new Set()).get(def.path)!;
     pkgs.add(pkgId(ps));

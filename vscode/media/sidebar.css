@@ -9,7 +9,22 @@ header { margin-bottom: 8px; }
 pre { white-space: pre-wrap; word-break: break-word; font-family: var(--vscode-editor-font-family); font-size: 11px; margin: 0 0 8px; padding: 6px 8px; border-radius: 2px; background: var(--vscode-textBlockQuote-background); border-left: 2px solid var(--vscode-textBlockQuote-border); max-height: 200px; overflow: auto; }
 pre.err { border-left-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
 .actions { display: flex; gap: 6px; margin-bottom: 10px; }
-.actions button:first-child { flex: 1; }
+.actions button { flex: 1; }
+.actions button.current { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
+.actions button.secondary.current { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+.missing { list-style: none; padding: 0; margin: 0 0 8px; color: var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground)); font-size: 11px; }
+.missing[hidden] { display: none; }
+label { display: flex; align-items: center; gap: 8px; height: 22px; cursor: pointer; font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 6px; }
+input[type=checkbox] { appearance: none; margin: 0; width: 14px; height: 14px; flex: none; border-radius: 3px; display: grid; place-items: center; cursor: pointer;
+  background: var(--vscode-checkbox-background); border: 1px solid var(--vscode-checkbox-border, var(--vscode-input-border, transparent)); }
+input[type=checkbox]:checked::after { content: ""; width: 7px; height: 4px; margin-top: -2px; border: solid var(--vscode-checkbox-foreground, var(--vscode-foreground)); border-width: 0 0 1.5px 1.5px; transform: rotate(-45deg); }
+.entries { list-style: none; padding: 0; margin: 2px 0 0; max-height: 50vh; overflow: auto; }
+.entries li { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; padding: 4px 0 4px 6px; border-left: 2px solid transparent; }
+.entries li.current { border-left-color: var(--vscode-focusBorder); background: color-mix(in srgb, var(--vscode-focusBorder) 8%, transparent); }
+.entries .name { text-align: left; font-size: 12px; color: var(--vscode-foreground); font-family: var(--vscode-editor-font-family); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entries .at { font-size: 10.5px; color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+.entries .doc { grid-column: 1 / -1; font-size: 11px; color: var(--vscode-descriptionForeground); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.entries .none { display: block; color: var(--vscode-descriptionForeground); font-size: 11px; border: none; }
 button { height: 26px; padding: 0 12px; border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; cursor: pointer; font: inherit; line-height: 24px;
   background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
 button:hover { background: var(--vscode-button-hoverBackground); }
@@ -26,35 +41,11 @@ input[type=search]::placeholder { color: var(--vscode-input-placeholderForegroun
 section { margin-top: 8px; }
 h3 { display: flex; align-items: baseline; justify-content: space-between; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--vscode-sideBarSectionHeader-foreground, var(--vscode-foreground)); margin: 0 0 4px; }
 h3 .tools { display: flex; gap: 10px; }
-label { display: flex; align-items: center; gap: 8px; height: 22px; cursor: pointer; }
-input[type=checkbox] { appearance: none; margin: 0; width: 14px; height: 14px; flex: none; border-radius: 3px; display: grid; place-items: center; cursor: pointer;
   background: var(--vscode-checkbox-background); border: 1px solid var(--vscode-checkbox-border, var(--vscode-input-border, transparent)); }
-input[type=checkbox]:checked::after { content: ""; width: 7px; height: 4px; margin-top: -2px; border: solid var(--vscode-checkbox-foreground, var(--vscode-foreground)); border-width: 0 0 1.5px 1.5px; transform: rotate(-45deg); }
-.swatch { width: 14px; height: 2px; border-radius: 1px; flex: none; }
-.swatch.call { background: var(--vscode-editor-foreground); opacity: .7; }
-.swatch.flow { background: var(--vscode-charts-blue); }
-.swatch.override { background: var(--vscode-charts-orange); }
-.swatch.transition { background: var(--vscode-symbolIcon-enumeratorMemberForeground, var(--vscode-charts-yellow)); }
-.swatch.files { background: transparent; border: 1px solid var(--vscode-charts-blue); height: 6px; width: 12px; }
-.swatch.external { background: transparent; border-top: 2px dashed var(--vscode-descriptionForeground); height: 0; }
-.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 4px; font-size: 11px; color: var(--vscode-descriptionForeground); }
-.legend span { display: flex; align-items: center; gap: 5px; }
-.legend .l { stroke: var(--vscode-editor-foreground); stroke-opacity: .7; stroke-width: 1.5; }
-.legend .l.may { stroke-dasharray: 5 3; }
-.legend .l.unresolved { stroke: var(--vscode-errorForeground); stroke-opacity: 1; stroke-dasharray: 2 2; }
-.machines { list-style: none; padding: 0; margin: 0; max-height: 180px; overflow: auto; }
-.machines li { display: flex; align-items: baseline; gap: 6px; min-height: 22px; }
-.machines .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; font-size: inherit; font-family: var(--vscode-editor-font-family); }
-.machines .count { color: var(--vscode-descriptionForeground); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.machines .none { display: block; color: var(--vscode-descriptionForeground); font-size: 11px; }
 .langs { list-style: none; padding: 0; margin: 0; }
 .langs li { display: flex; align-items: baseline; gap: 6px; min-height: 22px; }
 .langs .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .langs .count { color: var(--vscode-descriptionForeground); font-size: 12px; font-variant-numeric: tabular-nums; }
-.langs .tool { display: block; min-height: 0; color: var(--vscode-descriptionForeground); font-size: 11px; margin: -4px 0 4px; }
-.langs .tool.missing { color: var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground)); }
-.hint { margin: 14px 0 0; font-size: 11px; color: var(--vscode-descriptionForeground); }
-.swatch.unindexed { background: transparent; border: 1px dashed var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground)); height: 6px; width: 12px; }
 .summary { font-size: 12px; color: var(--vscode-descriptionForeground); min-height: 18px; }
 .findings { list-style: none; padding: 0; margin: 2px 0 0; max-height: 260px; overflow: auto; }
 .findings li { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; padding: 3px 0 3px 6px; border-left: 2px solid var(--sev); }
@@ -66,5 +57,3 @@ input[type=checkbox]:checked::after { content: ""; width: 7px; height: 4px; marg
 .sev-info { --sev: var(--vscode-editorInfo-foreground, var(--vscode-charts-blue)); }
 .langs .none { display: block; color: var(--vscode-descriptionForeground); font-size: 11px; }
 .langs .boundary { font-size: inherit; text-align: left; color: var(--vscode-foreground); }
-.swatch.boundary { background: var(--vscode-charts-red); height: 6px; width: 6px; border-radius: 50%; margin: 0 4px; }
-.swatch.flag { background: var(--vscode-editorWarning-foreground, var(--vscode-charts-yellow)); height: 3px; }
