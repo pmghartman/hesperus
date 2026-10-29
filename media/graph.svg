@@ -2,7 +2,7 @@
   <!-- the activity bar's template of icon.svg: one color, its alpha the shape, the weave shown by
        gaps (the arch over the stem at the shoulder, the leg over the arch) -->
   <defs>
-    <polygon id="stem" points="240,176 424,176 424,668 314,668 314,248 240,248"/>
+    <polygon id="stem" points="270,232 424,226 424,668 314,668 314,282 270,282"/>
     <path id="arch" d="M314,446 A235,250 0 0,1 784,446 L674,446 A125,145 0 0,0 424,446 Z"/>
     <path id="leg" d="M674,234.3 A235,250 0 0,1 784,446 L784,848 L674,848 Z"/>
     <mask id="m-stem" maskUnits="userSpaceOnUse" x="0" y="0" width="1024" height="1024">
