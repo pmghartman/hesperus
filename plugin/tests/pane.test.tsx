@@ -24,9 +24,12 @@ test('after an edit the pane shows the lint, on every surface', async ($, on) =>
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/repo' }))
   on('mcp.connect', () => ({ value: { isConnected: true, server: 'plugin:hesperus:hesperus' } }))
-  on('mcp.call', (_, e) => ({ value: { content: [{ type: 'text', text: e.tool === 'hesperus_check' ? REPORT : '/repo/.hesperus/view.svg' }], isError: false } }))
   on('fs.read', () => ({ value: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><title>Network</title></svg>' }))
-  on('tool.call', () => ({ result: {} }))
+  // The pane's calls into its server are tool calls; the one edit the test makes is answered too.
+  on('tool.call', (_, e) => {
+    if (!e.tool.startsWith('mcp__')) return { result: {} }
+    return { result: { content: [{ type: 'text', text: e.tool.endsWith('__hesperus_check') ? REPORT : '/repo/.hesperus/view.svg' }] } }
+  })
 
   await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
   await $.tool.call({ tool: 'Edit', file_path: 'src/y.ts', old_string: 'a', new_string: 'b' })
@@ -66,9 +69,12 @@ test('the explorer selects, opens boxes and goes to source', async ($, on) => {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/repo' }))
   on('mcp.connect', () => ({ value: { isConnected: true, server: 'plugin:hesperus:hesperus' } }))
-  on('mcp.call', (_, e) => {
-    calls.push({ tool: e.tool, args: e.args })
-    return { value: { content: [{ type: 'text', text: e.tool === 'hesperus_check' ? REPORT : 'done' }], isError: false } }
+  on('tool.call', (_, e, next) => {
+    if (!e.tool.startsWith('mcp__')) return next(e)
+    const { tool, tool_use_id: _id, ...args } = e as { tool: string; tool_use_id?: string } & Record<string, unknown>
+    const name = tool.replace(/^mcp__.*__/, '')
+    calls.push({ tool: name, args })
+    return { result: { content: [{ type: 'text', text: name === 'hesperus_check' ? REPORT : 'done' }] } }
   })
   on('fs.read', (_, e) => ({ value: e.path.endsWith('view.json') ? VIEW : e.path === '/repo/src/a.ts' ? 'one\ntwo\nexport const a = 1\nfour\n' : '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>' }))
 
@@ -120,9 +126,12 @@ test('the map draws the boxes and their wires, selects on a click, and keeps a d
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/repo' }))
   on('mcp.connect', () => ({ value: { isConnected: true, server: 'plugin:hesperus:hesperus' } }))
-  on('mcp.call', (_, e) => {
-    calls.push({ tool: e.tool, args: e.args })
-    return { value: { content: [{ type: 'text', text: e.tool === 'hesperus_check' ? REPORT : 'done' }], isError: false } }
+  on('tool.call', (_, e, next) => {
+    if (!e.tool.startsWith('mcp__')) return next(e)
+    const { tool, tool_use_id: _id, ...args } = e as { tool: string; tool_use_id?: string } & Record<string, unknown>
+    const name = tool.replace(/^mcp__.*__/, '')
+    calls.push({ tool: name, args })
+    return { result: { content: [{ type: 'text', text: name === 'hesperus_check' ? REPORT : 'done' }] } }
   })
   on('fs.read', (_, e) => ({ value: e.path.endsWith('view.json') ? VIEW : e.path === '/repo/src/a.ts' ? 'one\ntwo\nexport const a = 1\nfour\n' : '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>' }))
 
@@ -171,9 +180,12 @@ test('where the map is a picture, selecting a row draws it again with the box ou
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: '/repo' }))
   on('mcp.connect', () => ({ value: { isConnected: true, server: 'plugin:hesperus:hesperus' } }))
-  on('mcp.call', (_, e) => {
-    calls.push({ tool: e.tool, args: e.args })
-    return { value: { content: [{ type: 'text', text: e.tool === 'hesperus_check' ? REPORT : 'done' }], isError: false } }
+  on('tool.call', (_, e, next) => {
+    if (!e.tool.startsWith('mcp__')) return next(e)
+    const { tool, tool_use_id: _id, ...args } = e as { tool: string; tool_use_id?: string } & Record<string, unknown>
+    const name = tool.replace(/^mcp__.*__/, '')
+    calls.push({ tool: name, args })
+    return { result: { content: [{ type: 'text', text: name === 'hesperus_check' ? REPORT : 'done' }] } }
   })
   on('fs.read', (_, e) => ({ value: e.path.endsWith('view.json') ? VIEW : e.path === '/repo/src/a.ts' ? 'one\ntwo\nexport const a = 1\nfour\n' : '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>' }))
 

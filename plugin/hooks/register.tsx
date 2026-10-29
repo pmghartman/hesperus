@@ -37,15 +37,37 @@ let again: 'index' | 'draw' | undefined
 
 /** The MCP server's key in plugin.json. */
 const SERVER = 'hesperus'
+/** The plugin's name in plugin.json, as `next.origin` names it. */
+const PLUGIN = 'hesperus'
+/** The server's tools as the model names them, under whichever name the session runs the server. */
+const OWN_TOOL = /^mcp__.+__hesperus_[a-z]+$/
+/** The person's latest press on the pane or its command, in their own words, which the permission path
+ *  reads as the request behind the pane's next calls; empty when the pane runs by itself, after an edit,
+ *  since nobody pressed anything then. */
+let press = ''
 
-/** Calls one of the MCP server's tools on the session's repo: its text, or an error saying why not. */
+/** Calls one of the MCP server's tools on the session's repo, as a tool call of the session's own, so the
+ *  permission path decides it and the plugin's `tool.check` hook can allow the pane's own calls. (A call
+ *  straight to the server, `$.mcp.call`, is judged by the host's auto-mode classifier alone, which
+ *  refuses a call no request raised.) Its text, or an error saying why not. */
 async function call($: EngineInterface, tool: string, args: Record<string, unknown> = {}): Promise<string> {
   const c = await $.mcp.connect(SERVER)
   if (!c.isConnected) throw new Error(c.message)
-  const r = await $.mcp.call(c.server, tool, { dir: await $.session.cwd(), ...args })
-  const text = r.content.map(b => (b.type === 'text' ? b.text : '')).join('')
+  const name = `mcp__${c.server.replace(/[^A-Za-z0-9_]/g, '_')}__${tool}`
+  // The tool's name is only known at run time, under whichever name the session runs the server.
+  const input = { tool: name, ...(press ? { consent: press } : {}), dir: await $.session.cwd(), ...args } as unknown as Parameters<EngineInterface['tool']['call']>[0]
+  const r = await $.tool.call(input)
+  if (r.deny !== undefined) throw new Error(r.deny)
+  const text = r.text ?? textOf(r.result)
   if (r.isError) throw new Error(text.replace(/^hesperus: /, '') || `${tool} failed`)
   return text
+}
+
+/** The text of an MCP result a hook answered with (`{ content }`), where core set no `text`. */
+function textOf(v: unknown): string {
+  const content = (v as { content?: { type: string; text?: string }[] } | null)?.content
+  if (Array.isArray(content)) return content.map(b => (b.type === 'text' ? b.text ?? '' : '')).join('')
+  return typeof v === 'string' ? v : ''
 }
 
 /** The pane's width in cells as last drawn, for the layout; and the width the picture was laid out at. */
@@ -226,6 +248,7 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'hesperus' }, async ($, e) => {
+    press = `The user ran /hesperus${e.args.trim() ? ` ${e.args.trim()}` : ''}.`
     if (e.args.trim() === 'accept') {
       const text = await call($, 'hesperus_accept').catch(e => `hesperus: ${e instanceof Error ? e.message : String(e)}`)
       schedule($, 100)
@@ -238,13 +261,26 @@ export const register: Register = on => {
 
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
-    if (EDITS.has(String(e.tool)) && ran.deny === undefined) schedule($, e.tool === 'Bash' ? 3000 : 1500)
+    if (EDITS.has(String(e.tool)) && ran.deny === undefined) {
+      press = ''
+      schedule($, e.tool === 'Bash' ? 3000 : 1500)
+    }
     return ran
   })
+
+  // The pane's own calls into the plugin's server are the plugin's to allow: auto mode's classifier judges
+  // a call by the request behind it, and the pane's has none, so it would refuse them. The model's calls
+  // are decided as before.
+  on('tool.check', { tool: OWN_TOOL }, async ($, e, next) => {
+    if (next.origin.plugin === PLUGIN) return { decision: 'allow', reason: 'The Hesperus pane asked its own server.' }
+    return next(e)
+  }).catch(($, e, next) => next(e))
 
   on('ui.message', { requestId: PANE }, async ($, e) => {
     if (e.element !== 'explorer' && e.element !== 'map') return {}
     const m = e.data as HesperusMapPost
+    const did = { select: 'clicked a box', toggle: 'opened or closed a box', open: 'pressed Go to source', move: 'dragged a box' }[m?.type as string]
+    if (did) press = `The user ${did} in the Hesperus pane.`
     if (m?.type === 'select') await select($, m.id)
     else if (m?.type === 'toggle') await toggle($, m.id)
     else if (m?.type === 'open') await reveal($, m.id)
