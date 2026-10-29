@@ -1,4 +1,4 @@
-<p align="center"><img src="media/icon.png" alt="Hesperus" width="120"></p>
+<img src="media/icon.png" alt="Hesperus" width="160">
 
 # Hesperus
 
