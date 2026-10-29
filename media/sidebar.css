@@ -12,14 +12,15 @@ header { padding: 6px var(--pad) 4px; }
 .spin { width: 9px; height: 9px; flex: none; border: 1.5px solid var(--vscode-progressBar-background); border-right-color: transparent; border-radius: 50%; animation: r 1s linear infinite; }
 @keyframes r { to { transform: rotate(360deg); } }
 
-/* Notes: why it is indexing, what went wrong, a malformed policy. */
-.note { margin: 0 var(--pad) 6px; padding: 5px 8px; font-size: 12px; border-radius: 2px; background: var(--vscode-textBlockQuote-background); border-left: 2px solid var(--vscode-textBlockQuote-border); color: var(--vscode-descriptionForeground); white-space: pre-wrap; word-break: break-word; max-height: 160px; overflow: auto; -webkit-user-select: text; user-select: text; }
-.note.err { border-left-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); font-family: var(--vscode-editor-font-family); font-size: 11px; }
+/* The note: a few words on why it is indexing or what failed; the whole message is the tooltip. */
+.note { margin: 0 var(--pad) 6px; padding: 3px 8px; font-size: 12px; border-radius: 2px; background: var(--vscode-textBlockQuote-background); border-left: 2px solid var(--vscode-textBlockQuote-border); color: var(--vscode-descriptionForeground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: help; }
+.note.err { border-left-color: var(--vscode-errorForeground); color: var(--vscode-errorForeground); }
 .note[hidden] { display: none; }
 .missing { list-style: none; margin: 0 var(--pad) 6px; padding: 0; font-size: 12px; color: var(--vscode-editorWarning-foreground, var(--vscode-descriptionForeground)); }
+.missing li { display: flex; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .missing[hidden] { display: none; }
 
-/* Tool row: which picture is up, and Index. */
+/* Tool row: which view is up, and Index. */
 .bar { display: flex; gap: 6px; margin: 2px var(--pad) 6px; }
 .switch { display: flex; flex: 1; min-width: 0; }
 .switch button { flex: 1; min-width: 0; border-radius: 0; }
@@ -29,11 +30,7 @@ header { padding: 6px var(--pad) 4px; }
 .switch button:hover { background: var(--vscode-button-secondaryHoverBackground); }
 .switch button[aria-pressed="true"] { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
 .switch button[aria-pressed="true"]:hover { background: var(--vscode-button-hoverBackground); }
-#reindex, #ask, #explain { flex: 0 0 auto; }
-#explain:disabled { opacity: .6; cursor: default; }
-select { flex: 1; min-width: 0; height: 24px; padding: 0 4px; border-radius: 2px; cursor: pointer; color: var(--vscode-dropdown-foreground); background: var(--vscode-dropdown-background); border: 1px solid var(--vscode-dropdown-border, transparent); }
-select:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: -1px; }
-select:disabled { opacity: .6; cursor: default; }
+#reindex { flex: 0 0 auto; }
 
 button { height: 24px; padding: 0 10px; border: 1px solid var(--vscode-button-border, transparent); border-radius: 2px; cursor: pointer; line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
@@ -75,8 +72,9 @@ section { margin-top: 2px; }
 .rows li.current { background: var(--vscode-list-inactiveSelectionBackground); color: var(--vscode-list-inactiveSelectionForeground, inherit); }
 .rows li.current::before { content: ""; position: absolute; left: 0; width: 2px; height: var(--row); background: var(--vscode-focusBorder); }
 .rows li { position: relative; }
-.rows .name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rows .desc { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--vscode-descriptionForeground); }
+/* The name in full (up to most of the row); the path takes what is left, cut at its start so the file name shows. */
+.rows .name { flex: 0 0 auto; max-width: 72%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rows .desc { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; font-size: 12px; color: var(--vscode-descriptionForeground); }
 .rows li:hover .desc, .rows li.current .desc { color: inherit; opacity: .75; }
 .rows .count { flex: none; font-size: 12px; color: var(--vscode-descriptionForeground); font-variant-numeric: tabular-nums; }
 .rows .none { height: auto; min-height: var(--row); line-height: 1.4; padding-top: 3px; padding-bottom: 3px; cursor: default; font-size: 12px; color: var(--vscode-descriptionForeground); white-space: normal; }
@@ -91,13 +89,10 @@ section { margin-top: 2px; }
 .foot { display: flex; gap: 6px; align-items: baseline; padding: 2px var(--pad) 0 20px; font-size: 12px; color: var(--vscode-descriptionForeground); }
 .foot[hidden] { display: none; }
 
-/* Review's own line: the tally, and what to do about it. */
-.tools { display: flex; align-items: center; gap: 10px; min-height: var(--row); padding: 0 var(--pad) 0 20px; font-size: 12px; color: var(--vscode-descriptionForeground); }
-.tools .summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tools .actions { display: flex; gap: 10px; flex: none; }
-
-/* Footer: the watch toggle. */
+/* Footer: the test filter and the watch toggle. */
 footer { margin-top: 6px; padding: 0 var(--pad); }
+footer .check[hidden] { display: none; }
+footer .badge { margin-left: -4px; }
 .check { display: flex; align-items: center; gap: 8px; height: var(--row); cursor: pointer; font-size: 12px; color: var(--vscode-descriptionForeground); }
 input[type=checkbox] { appearance: none; margin: 0; width: 14px; height: 14px; flex: none; border-radius: 3px; display: grid; place-items: center; cursor: pointer;
   background: var(--vscode-checkbox-background); border: 1px solid var(--vscode-checkbox-border, var(--vscode-input-border, transparent)); }

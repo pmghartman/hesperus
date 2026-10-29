@@ -70,10 +70,14 @@
       }
     });
   }
+  const FLOW_MIN_K = 0.85, FLOW_MAX_K = 1.25;
   const fitted = () => {
-    // The summary, when shown, is pinned along the bottom: fit above it.
-    const W = svg.clientWidth, m = 32, below = story && !story.hidden ? story.offsetHeight + 16 : 0, H = svg.clientHeight - below;
-    const k = Math.min((W - 2 * m) / Math.max(L.width, 1), (H - 2 * m) / Math.max(L.height, 1), 1.5);
+    // The summary, when shown, is pinned along the bottom: fit above it. The map fits the pane, up to
+    // 1.5× so its boxes keep a sensible size. A flow chart is never shrunk below a readable size: it
+    // fits the pane's width and, when it is taller than the pane, starts at the top and scrolls.
+    const W = svg.clientWidth, m = 24, below = story && !story.hidden ? story.offsetHeight + 16 : 0, H = svg.clientHeight - below;
+    const kw = (W - 2 * m) / Math.max(L.width, 1), kh = (H - 2 * m) / Math.max(L.height, 1);
+    const k = F ? Math.min(kw, Math.max(kh, FLOW_MIN_K), FLOW_MAX_K) : Math.min(kw, kh, 1.5);
     return { k, x: (W - L.width * k) / 2, y: Math.max(m, (H - L.height * k) / 2) };
   };
   const fit = () => {
@@ -128,7 +132,9 @@
     // Let the click handler see whether this was a pan.
     setTimeout(() => (drag = null), 0);
   });
-  new ResizeObserver(() => (userMoved ? apply() : fit())).observe(svg);
+  // A resize refits the view; the flow chart, laid out for the pane, is also laid out again by the
+  // host (see `viewport` below) and refits when that arrives.
+  new ResizeObserver(() => (userMoved && !F ? apply() : fit())).observe(svg);
   $("fit").onclick = fit;
   const step = (f) => {
     cursor.x = svg.clientWidth / 2;
@@ -551,12 +557,12 @@
     if (state) stateEls.get(state)?.classList.add("hl");
   }
 
-  // ---- flow chart ----
-  // What the program does from one entry point: steps top to bottom, decisions as pointed boxes that
-  // say "if" and the condition, their branches indented beneath, loops with a line back up, calls that
-  // leave the repo as terminals. A click on a step opens its own steps in place (a leaf opens its code
-  // instead); ⌘/Ctrl-click or double-click opens the source. With a narrative, the top-level steps sit
-  // in titled phase bands and the summary is pinned above the chart.
+  // ---- control flow chart ----
+  // The control flow from one entry point: calls top to bottom, branches as pointed boxes that say "if"
+  // and the condition, their sides indented beneath, loops with a line back up, calls that leave the
+  // repo as terminals. A click on a call expands its callees in place (a leaf opens its source);
+  // ⌘/Ctrl-click or double-click opens the source. With a narrative, the top-level steps sit in titled
+  // phase bands and the summary is pinned above the chart.
   const LANG = { go: "Go", javascript: "JavaScript / TypeScript", rust: "Rust", csharp: "C#", cpp: "C / C++", dart: "Dart / Flutter", python: "Python", java: "Java", kotlin: "Kotlin", php: "PHP", ruby: "Ruby" };
   const EXT = { go: "go", js: "javascript", jsx: "javascript", mjs: "javascript", cjs: "javascript", ts: "javascript", tsx: "javascript", mts: "javascript", cts: "javascript", rs: "rust", cs: "csharp", c: "cpp", cc: "cpp", cpp: "cpp", h: "cpp", hpp: "cpp", dart: "dart", py: "python", java: "java", kt: "kotlin", kts: "kotlin", php: "php", rb: "ruby" };
   const langOf = (p) => LANG[EXT[(p ?? "").slice((p ?? "").lastIndexOf(".") + 1).toLowerCase()]];
@@ -690,7 +696,11 @@
     }
     scene._flow = { stepEls, linkEls };
     const anchor = m.anchor && boxes.get(m.anchor), was = m.anchor && prevBoxes?.get(m.anchor);
-    if (first || (!userMoved && !m.anchor)) fit();
+    // Laid out again for a resized pane (`fit`): the whole chart is shown in it.
+    if (m.focus && boxes.get(m.focus)) {
+      scene._nodes = stepEls;
+      centerOn(m.focus);
+    } else if (first || m.fit || (!userMoved && !m.anchor)) fit();
     else if (anchor && was) {
       // Keep the clicked step where it was on screen.
       t.x += (was.x - anchor.x) * t.k;
@@ -704,16 +714,16 @@
     if (b.kind === "if") lines.push(`<b>if</b> ${esc(b.text)}`);
     else if (b.kind === "switch") lines.push(`<b>switch on</b> ${esc(b.text)}`);
     else if (b.kind === "loop") lines.push(`<b>loop</b> ${esc(b.text)}`);
-    else if (b.kind === "end") return "The entry's steps end here.";
-    else if (b.kind === "jump") return "Continues at the top of the next column.";
-    else lines.push(`<b>${esc(b.text)}</b>${b.count > 1 ? `  ×${b.count}` : ""}${b.may ? '  <span class="dim">may run (dynamic call)</span>' : ""}`);
+    else if (b.kind === "end") return "Return from the entry point.";
+    else if (b.kind === "jump") return "Continues in the next column.";
+    else lines.push(`<b>${esc(b.text)}</b>${b.count > 1 ? `  ×${b.count}` : ""}${b.may ? '  <span class="dim">may: unresolved call target</span>' : ""}`);
     if (b.doc) lines.push(esc(b.doc));
-    if (b.boundary) lines.push(`<span class="dim">${BOUNDARY_LABEL[b.boundary]}: this call leaves the repo</span>`);
+    if (b.boundary) lines.push(`<span class="dim">Boundary crossing: ${BOUNDARY_LABEL[b.boundary]}</span>`);
     for (const n of b.notes ?? []) lines.push(`<span class="sev-${b.flag}">● ${esc(n)}</span>`);
     if (b.path) lines.push(`<span class="dim">${esc(b.path)}${b.line ? ":" + b.line : ""}</span>`);
-    if (b.kind === "call") lines.push(`<span class="dim">${b.state === "open" ? "Click to close" : b.state === "cut" ? "Deeper than the chart follows" : b.state === "leaf" ? "Nothing further the chart shows · click opens its code" : b.state === "empty" ? "Nothing further the chart shows" : "Click to open its steps"} · ⌘/Ctrl-click opens the source</span>`);
-    else if (b.kind === "entry") lines.push('<span class="dim">Click opens the source</span>');
-    else if (b.path) lines.push('<span class="dim">Click opens the code</span>');
+    if (b.kind === "call") lines.push(`<span class="dim">${b.state === "open" ? "Click: collapse" : b.state === "cut" ? "Depth limit" : b.state === "leaf" ? "Leaf · click: source" : b.state === "empty" ? "No further calls" : "Click: expand callees"} · ⌘/Ctrl-click: source</span>`);
+    else if (b.kind === "entry") lines.push('<span class="dim">Click: source</span>');
+    else if (b.path) lines.push('<span class="dim">Click: source</span>');
     return lines.join("\n");
   }
 
@@ -726,7 +736,7 @@
       const s = m.status;
       msg.hidden = false;
       msg.className = (s.state === "error" ? "err" : "") + (L ? " over" : "");
-      msg.textContent = s.state === "error" ? s.detail : s.state === "ready" ? "" : s.state === "idle" ? `${s.label}.\nPress Index in the Hesperus sidebar to read the repo.` :(s.label || "Loading…") + "\nProgress is in the Hesperus sidebar.";
+      msg.textContent = s.state === "error" ? s.detail : s.state === "ready" ? "" : s.state === "idle" ? `${s.label}.\nRun Index in the Hesperus sidebar.` : (s.label || "Loading…");
       if (s.state === "error" || !L) (scene.replaceChildren(), labels.replaceChildren());
       pending = null;
       return;
@@ -762,10 +772,11 @@
       draw(m, zoom);
     }
   });
-  // The host lays the flow out in as many columns as fit the pane, so it is told the pane's size.
+  // The host lays the flow out in as many columns as fit the pane, so it is told the pane's size, once
+  // a resize has settled.
   const viewport = () => vs.postMessage({ type: "viewport", width: svg.clientWidth, height: svg.clientHeight });
   let resizeTimer = 0;
-  addEventListener("resize", () => (clearTimeout(resizeTimer), (resizeTimer = setTimeout(viewport, 250))));
+  addEventListener("resize", () => (clearTimeout(resizeTimer), (resizeTimer = setTimeout(viewport, 150))));
   viewport();
   vs.postMessage({ type: "ready" });
 })();

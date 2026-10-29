@@ -1,47 +1,17 @@
-// What the CLI and the MCP server do with a repo: index it headlessly, lint it,
-// say what changed since the baseline, accept, draw. One place, so every agent-facing surface agrees.
+// What the CLI and the MCP server do with a repo: index it headlessly, list what it reaches, trace
+// control flow, take an agent's narrative. One place, so every agent-facing surface agrees.
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { BOUNDARIES, Boundary, BOUNDARY_INFO, Crossing } from "./core/boundary";
 import { CACHE_DIR, readHeader, readShards } from "./core/cache";
 import { Graph, pretty } from "./core/ir";
-import { accept, Baseline, lint, Policy, Report, reportToJson, snapshot } from "./core/lint";
-import { HeadlessOutcome, headlessLanguages, indexHeadless, init, owner, sourcesStamp } from "./engine";
+import { defaultPolicy, lint, Policy, Report, snapshot } from "./core/lint";
+import { gitHead, HeadlessOutcome, headlessLanguages, indexHeadless, init, owner, sourcesStamp } from "./engine";
 import { entries, Entry, flow, Flow, FlowInputs, flowText } from "./core/flow";
 import { Severity } from "./core/lint";
-import { isGroup, parents } from "./core/aggregate";
-import { boundaryPicture } from "./picture";
-import { shelf } from "./shelf";
-import { gitHead, readBaseline, readPolicy, writeBaseline, writeReport } from "./review";
-import { toSvg } from "./svg";
+import { checkNarrative, narrativeKey, PhaseAsk, writeNarrative } from "./core/narrate";
 
-export const VIEW_FILE = "view.svg";
-/** The boxes of the last picture drawn, beside it, for a pane that lists them. */
-export const BOXES_FILE = "view.json";
-
-/** Which boxes to open and which to outline, as a pane asks for them. */
-export interface ViewAsk { open?: string[]; focus?: string;
-  /** Lay the boxes out for a tall narrow pane: layers top to bottom, each wrapped to `columns` (default 60). The SVG stays as it is. */
-  portrait?: boolean; columns?: number }
-/** One drawn box: what a list of the picture needs to show it, open it and go to its source, and where
- *  it sits, in character cells, so a pane can draw the picture itself. */
-export interface ViewBox { id: string; name: string; kind: string; parent?: string; /** The nearest open box it sits in. */ under?: string;
-  container: boolean; expandable: boolean; open: boolean; x: number; y: number; w: number; h: number;
-  path?: string; /** 1-based. */ line?: number; severity?: "error" | "warning" | "info"; notes?: string[] }
-/** An open box: drawn as a frame, or not at all where the flow view passes through it. */
-export interface ViewOpen { id: string; name: string; kind: string; under?: string }
-/** One wire, its bends in cells; `may` when no call beneath it is resolved. */
-export interface ViewWire { from: string; to: string; points: { x: number; y: number }[]; may: boolean; severity?: "error" | "warning" | "info" }
-export interface ViewJson { open: ViewOpen[]; focus?: string; boxes: ViewBox[]; wires: ViewWire[]; /** The picture's extent in cells. */ width: number; height: number; omitted: number }
-
-/** A character cell, as the layout's pixels map onto a pane's grid (CHAR wide, about two rows per leaf). */
-const CELL_W = 6.6, CELL_H = 13;
-const col = (x: number) => Math.round(x / CELL_W), row = (y: number) => Math.round(y / CELL_H);
-const PANE_COLUMNS = 60;
-/** A tall narrow pane holds fewer boxes before its wires tangle. */
-const PANE_NODES = 40;
-
-export interface Loaded { graph: Graph; policy: Policy; baseline?: Baseline; stale?: string; indexed?: HeadlessOutcome["languages"] }
+export interface Loaded { graph: Graph; policy: Policy; stale?: string; indexed?: HeadlessOutcome["languages"] }
 
 export function hasCache(repo: string): boolean {
   try {
@@ -73,38 +43,16 @@ export async function load(repo: string, index = false, report?: (s: string) => 
   }
   const h = readHeader(repo);
   const graph = readShards(repo);
-  const policy = readPolicy(repo);
+  const policy = defaultPolicy();
   const head = gitHead(repo);
-  const stale = h.commit !== head ? `graph built at ${h.commit.slice(0, 12)}, HEAD is ${head.slice(0, 12)}; run \`hesperus index\` or \`hesperus check --index\`` : undefined;
-  return { graph, policy, baseline: readBaseline(repo), stale, indexed };
+  const stale = h.commit !== head ? `graph built at ${h.commit.slice(0, 12)}, HEAD is ${head.slice(0, 12)}; run \`hesperus index\` or \`hesperus flow --index\`` : undefined;
+  return { graph, policy, stale, indexed };
 }
 
-/** Lints and writes the report; the first lint of a repo records the baseline, so later ones say what is new. */
-export function check(repo: string, l: Loaded): Report {
-  const r = lint(l.graph, l.policy, l.baseline);
-  if (!l.baseline) {
-    writeBaseline(repo, snapshot(l.graph, l.policy, gitHead(repo)));
-    l.baseline = readBaseline(repo);
-  }
-  writeReport(repo, l.graph, r, l.stale);
-  return r;
-}
-
-export const checkJson = (l: Loaded, r: Report) => reportToJson(l.graph, r, l.stale);
-
-/** What changed since the baseline: findings that are new, and crossings that are gone. */
-export function diffJson(l: Loaded, r: Report): string {
-  const byId = new Map(l.graph.nodes.map((n) => [n.id, n]));
-  const name = (id: string) => byId.get(id)?.name ?? id;
-  const fresh = r.findings.filter((f) => f.rule !== "boundary-denied");
-  return pretty({
-    ...(l.stale ? { stale: l.stale } : {}),
-    since: l.baseline?.commit ?? "unknown",
-    added: fresh.map((f) => ({ rule: f.rule, boundary: f.boundary, message: f.message, local: name(f.local), external: name(f.external), ...site(f), key: f.key })),
-    removed: r.removed,
-    denied: r.findings.filter((f) => f.rule === "boundary-denied").map((f) => ({ boundary: f.boundary, message: f.message, local: name(f.local), ...site(f) })),
-  });
-}
+/** Every call that leaves the repo, by boundary, as a report with no findings: the policy and the accepted
+ *  baseline are not in use for now, so nothing is new and nothing is denied, and nothing is written. */
+export const crossingsOf = (g: Graph, policy: Policy): Report => lint(g, policy, snapshot(g, policy, "none"));
+export const crossings = (l: Loaded): Report => crossingsOf(l.graph, l.policy);
 
 const site = (f: { path?: string; range?: { start_line: number; start_col: number } }) =>
   f.path ? { path: f.path, line: (f.range?.start_line ?? 0) + 1, column: (f.range?.start_col ?? 0) + 1 } : {};
@@ -128,15 +76,6 @@ export function boundariesJson(l: Loaded, r: Report, only?: string): string {
   return pretty(out);
 }
 
-/** Accepts the given crossing keys, or everything current. Returns how many are accepted now. */
-export function acceptKeys(repo: string, l: Loaded, keys?: readonly string[]): number {
-  const now = snapshot(l.graph, l.policy, gitHead(repo));
-  const b = keys?.length ? accept(l.baseline ? { ...l.baseline, commit: now.commit } : { ...now, crossings: [], packages: [] }, keys) : now;
-  writeBaseline(repo, b);
-  l.baseline = b;
-  return b.crossings.length;
-}
-
 /** Callers and callees of every function or type whose name matches. */
 export function callsJson(l: Loaded, query: string): string {
   const q = query.toLowerCase();
@@ -151,47 +90,6 @@ export function callsJson(l: Loaded, query: string): string {
     callers: l.graph.edges.filter((e) => e.kind === "call" && e.to === n.id).map((e) => `${describe(e.from)}${e.provenance === "resolved" ? "" : ` [${e.provenance}]`}`),
     callees: l.graph.edges.filter((e) => e.kind === "call" && e.from === n.id).map((e) => `${describe(e.to)}${e.provenance === "resolved" ? "" : ` [${e.provenance}]`}`),
   })));
-}
-
-/** Draws the boundary picture to `.hesperus/view.svg`, its boxes to `view.json`, and returns the markup.
- *  With no `ask`, the overview; with one, the boxes it opens, the rest shut. */
-export async function drawSvg(repo: string, l: Loaded, r: Report, ask?: ViewAsk): Promise<string> {
-  const laid = await boundaryPicture(l.graph, l.policy, r, ask?.portrait ? PANE_NODES : undefined, ask?.open);
-  const ids = new Set(laid.boxes.map((b) => b.id));
-  const focus = ask?.focus !== undefined && ids.has(ask.focus) ? ask.focus : undefined;
-  const svg = toSvg(laid, focus);
-  const open = new Set(laid.open);
-  const par = parents(laid.graph);
-  const byId = new Map(laid.graph.nodes.map((n) => [n.id, n]));
-  // Tier ids are `tier:<parent>#<key>`.
-  const up = (x: string) => (isGroup(x) ? x.slice(5, x.lastIndexOf("#")) : par.get(x));
-  const under = (id: string) => {
-    for (let p = up(id); p !== undefined; p = up(p)) if (open.has(p)) return { under: p };
-    return {};
-  };
-  const opened: ViewOpen[] = laid.open.map((id) => {
-    const n = byId.get(id);
-    return { id, name: n?.name ?? id.slice(id.lastIndexOf("#") + 1), kind: n?.kind ?? "group", ...under(id) };
-  });
-  // Cells: the picture's own geometry scaled, or laid out again for a tall narrow pane.
-  const tall = ask?.portrait ? shelf(laid, Math.max(20, ask.columns ?? PANE_COLUMNS)) : undefined;
-  const cell = (b: typeof laid.boxes[number]) => tall?.rects.get(b.id) ?? { x: col(b.x), y: row(b.y), w: Math.max(1, col(b.x + b.w) - col(b.x)), h: Math.max(1, row(b.y + b.h) - row(b.y)) };
-  const boxes: ViewBox[] = [...laid.boxes].map((b) => ({ b, c: cell(b) })).sort((a, b) => a.c.y - b.c.y || a.c.x - b.c.x).map(({ b, c }) => ({
-    id: b.id, name: b.node.name, kind: b.node.kind, ...(b.parent && ids.has(b.parent) ? { parent: b.parent } : {}), ...under(b.id),
-    container: b.container, expandable: b.expandable, open: open.has(b.id), ...c,
-    ...(b.node.path ? { path: b.node.path } : {}), ...(b.node.range ? { line: b.node.range.start_line + 1 } : {}),
-    ...(b.flag ? { severity: b.flag.severity, notes: b.flag.notes } : {}),
-  }));
-  // Tall: no bends, the pane routes each wire between its boxes.
-  const wires: ViewWire[] = laid.wires.map((w) => ({
-    from: w.from, to: w.to, points: tall ? [] : w.points.map((p) => ({ x: col(p.x), y: row(p.y) })), may: w.rollups.every((r) => r.resolved === 0), ...(w.flag ? { severity: w.flag.severity } : {}),
-  }));
-  const extent = tall ? { width: tall.width, height: tall.height } : { width: col(laid.width) + 1, height: row(laid.height) + 1 };
-  const json: ViewJson = { open: opened, ...(focus ? { focus } : {}), boxes, wires, ...extent, omitted: laid.omitted };
-  fs.mkdirSync(path.join(repo, CACHE_DIR), { recursive: true });
-  fs.writeFileSync(path.join(repo, CACHE_DIR, VIEW_FILE), svg);
-  fs.writeFileSync(path.join(repo, CACHE_DIR, BOXES_FILE), JSON.stringify(json));
-  return svg;
 }
 
 /** What the flow needs from a repo: its files' syntax (grammars loaded on demand), the policy's extra
@@ -237,11 +135,29 @@ export async function flowOf(repo: string, l: Loaded, r: Report, pick?: string, 
 /** The flow as text: the entry points when none is picked and there are several, else the steps. */
 export async function flowTextOf(repo: string, l: Loaded, r: Report, pick?: string, open?: Iterable<string>, depth = 0): Promise<string> {
   const { entries: all, flow: f } = await flowOf(repo, l, r, pick, open);
-  if (!f) return pick === undefined ? "No entry point found: nothing in the repo calls into it, or nothing is indexed.\n" : `No entry or function matches "${pick}". Entries: ${all.slice(0, 20).map((e) => e.name).join(", ")}\n`;
-  const opened = depth > 0 ? deepen(l, r, f, depth, repo, open) : Promise.resolve(f);
-  const out = await opened;
+  if (!f) return pick === undefined ? "No entry point: nothing in the repo is reached from outside it, or nothing is indexed.\n" : `No entry point or callable matches "${pick}". Entry points: ${all.slice(0, 20).map((e) => e.name).join(", ")}\n`;
+  const out = depth > 0 ? await deepen(l, r, f, depth, repo, open) : f;
   const head = pick === undefined && all.length > 1 ? `Entry points (${all.length}): ${all.slice(0, 12).map((e) => `${e.name} [${e.reach}]`).join(", ")}${all.length > 12 ? ", …" : ""}\n\n` : "";
   return head + flowText(out);
+}
+
+/** The flow `depth` levels deep, as text with its top-level steps tagged, for an agent to read; the entry
+ *  points when `pick` names none. */
+export async function flowFor(repo: string, l: Loaded, r: Report, pick?: string, depth = 2): Promise<{ entries: Entry[]; flow?: Flow }> {
+  const { entries: all, flow: f } = await flowOf(repo, l, r, pick);
+  return { entries: all, flow: f && depth > 0 ? await deepen(l, r, f, depth, repo) : f };
+}
+
+/** Takes an agent's narrative of an entry's control flow, checked against the flow, and keeps it under
+ *  `.hesperus/` for the editor to draw. Returns what was kept, or why nothing was. */
+export async function narrate(repo: string, l: Loaded, r: Report, pick: string | undefined, summary: unknown, phases: unknown, via?: string): Promise<string> {
+  const { entries: all, flow: f } = await flowOf(repo, l, r, pick);
+  if (!f) return `No entry point or callable matches "${pick ?? ""}". Entry points: ${all.slice(0, 20).map((e) => e.name).join(", ")}`;
+  const n = checkNarrative(summary, phases as PhaseAsk[], f, via);
+  if (!n) return `Nothing usable: give a summary string and phases as [{title, from, to}] over steps 1 to ${f.steps.length} of ${f.entry.name}.`;
+  writeNarrative(repo, narrativeKey(f), n);
+  const dropped = Array.isArray(phases) ? phases.length - n.phases.length : 0;
+  return `Kept for ${f.entry.name} (${f.entry.path}:${f.entry.line}): ${n.phases.length} phases over ${f.steps.length} top-level steps${dropped > 0 ? `; ${dropped} dropped (out of range or out of order)` : ""}. The editor draws it on the control flow chart.`;
 }
 
 /** Opens every call `depth` levels down, so a terminal sees the whole tree at once. */

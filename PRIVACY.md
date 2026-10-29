@@ -8,7 +8,7 @@ None. Hesperus has no telemetry, analytics, crash reporting or accounts, and the
 
 ## Usage and storage
 
-Hesperus reads the source of the repo you point it at, and only to build its graph. What it writes goes in that repo's `.hesperus/` folder (the graph, the outline of each file it indexed, the policy, the accepted baseline, the latest report, and the pictures it draws), on your machine. It never changes your source files. `hesperus_open` asks your editor or your system's opener to open a file, and nothing else.
+Hesperus reads the source of the repo you point it at, and only to build its graph. What it writes goes in that repo's `.hesperus/` folder (the graph, the outline of each file it indexed, and the narratives agents write for its charts), on your machine. It never changes your source files. `hesperus_open` asks your editor or your system's opener to open a file, and nothing else.
 
 ## Third-party sharing
 

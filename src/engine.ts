@@ -70,10 +70,10 @@ function readUtf8(p: string): string | undefined {
 }
 
 export function header(repo: string, lockfiles: readonly string[], indexer: string): Header {
-  return { tool: TOOL_NAME, tool_version: VERSION, schema_version: SCHEMA_VERSION, indexer, lockfile_hash: lockfileHash(repo, lockfiles), commit: commit(repo) };
+  return { tool: TOOL_NAME, tool_version: VERSION, schema_version: SCHEMA_VERSION, indexer, lockfile_hash: lockfileHash(repo, lockfiles), commit: gitHead(repo) };
 }
 
-function commit(repo: string): string {
+export function gitHead(repo: string): string {
   const r = spawnSync("git", ["-C", repo, "rev-parse", "HEAD"], { encoding: "utf8" });
   return r.status === 0 ? r.stdout.trim() : "unknown";
 }
@@ -250,7 +250,7 @@ export function headlessLanguages(repo: string): HeadlessOutcome["languages"] {
 /** What a headless index reads: every file's path, size and modification time, the lockfiles, HEAD
  *  and the tool's version. The same stamp later means indexing again would build the same graph. */
 export function sourcesStamp(repo: string): string {
-  const parts = [VERSION, commit(repo), lockfileHash(repo, [])];
+  const parts = [VERSION, gitHead(repo), lockfileHash(repo, [])];
   for (const p of listFiles(repo).sort(cmpStr)) {
     const st = fs.statSync(path.join(repo, p), { throwIfNoEntry: false });
     parts.push(`${p}\0${st?.size ?? -1}\0${st?.mtimeMs ?? -1}`);

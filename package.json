@@ -1,7 +1,7 @@
 {
   "name": "hesperus-vscode",
   "displayName": "Hesperus",
-  "description": "A boundary linter and live map for repos agents write: what calls databases, the network, model APIs and other outside systems, what changed since you last looked, and what your policy forbids. Built by static analysis; no model draws or guesses edges.",
+  "description": "Static analysis for repos agents write: control flow from each entry point, the call graph, and every call that leaves the repo (database, network, model APIs, cloud, queues, filesystem, processes, environment). Served to agents over MCP. No model draws or guesses an edge.",
   "version": "0.1.0",
   "publisher": "pmghartman",
   "license": "Apache-2.0",
@@ -16,14 +16,14 @@
     "url": "https://github.com/pmghartman/hesperus/issues"
   },
   "keywords": [
-    "architecture",
-    "linter",
-    "boundaries",
-    "ai agents",
-    "code review",
+    "static analysis",
+    "control flow",
     "call graph",
-    "data flow",
-    "language server"
+    "boundaries",
+    "linter",
+    "mcp",
+    "ai agents",
+    "architecture"
   ],
   "engines": {
     "vscode": "^1.90.0"
@@ -52,14 +52,14 @@
         {
           "type": "webview",
           "id": "hesperus.graph",
-          "name": "Graph"
+          "name": "Hesperus"
         }
       ]
     },
     "commands": [
       {
         "command": "hesperus.openGraph",
-        "title": "Hesperus: Open Graph"
+        "title": "Hesperus: Open View"
       },
       {
         "command": "hesperus.refresh",
@@ -67,28 +67,29 @@
         "icon": "$(refresh)"
       },
       {
-        "command": "hesperus.accept",
-        "title": "Hesperus: Accept All Changes as Reviewed"
-      },
-      {
-        "command": "hesperus.policy",
-        "title": "Hesperus: Open Boundary Policy"
-      },
-      {
-        "command": "hesperus.explain",
-        "title": "Hesperus: Explain the Flow"
+        "command": "hesperus.traceHere",
+        "title": "Hesperus: Trace From Here",
+        "icon": {
+          "light": "media/trace-light.svg",
+          "dark": "media/trace-dark.svg"
+        }
       },
       {
         "command": "hesperus.connectClaudeCode",
-        "title": "Hesperus: Connect Claude Code to the MCP Server"
+        "title": "Hesperus: Register the MCP Server with Claude Code"
       }
     ],
     "menus": {
       "editor/title": [
         {
+          "command": "hesperus.traceHere",
+          "when": "activeEditor == workbench.editors.files.textFileEditor && resourceScheme == file",
+          "group": "navigation@1"
+        },
+        {
           "command": "hesperus.refresh",
           "when": "activeWebviewPanelId == hesperus",
-          "group": "navigation"
+          "group": "navigation@1"
         }
       ]
     },
@@ -98,7 +99,7 @@
         "hesperus.watch": {
           "type": "boolean",
           "default": true,
-          "description": "Re-index and lint when source files change on disk, so an agent's edits show up as findings."
+          "description": "Re-index the files that change on disk and re-lint, so an agent's edits show up as findings. Only after the repo has been indexed once."
         },
         "hesperus.watchDelay": {
           "type": "number",
@@ -106,41 +107,13 @@
           "minimum": 200,
           "description": "Milliseconds of quiet after the last change before re-indexing."
         },
-        "hesperus.assistant": {
-          "type": "string",
-          "default": "",
-          "description": "The AI assistant extension the sidebar's Ask button sends to, by id: copilot, claude-code, cline, roo, continue or kilo. Chosen from the sidebar's menu; empty means the first one installed."
-        },
-        "hesperus.explainWith": {
-          "type": "string",
-          "enum": [
-            "auto",
-            "editor",
-            "claude-cli",
-            "chat"
-          ],
-          "default": "auto",
-          "enumDescriptions": [
-            "The editor's own language models (Copilot Chat, or any extension that registers one), then the Claude Code CLI, then the chat assistant.",
-            "Only the editor's language models.",
-            "Only the Claude Code CLI (`claude -p`).",
-            "Hand the question to the chat assistant and read the answer there; nothing is drawn."
-          ],
-          "description": "Where Explain sends the flow for a plain-language reading. The answer is checked against the chart before anything is drawn."
-        },
         "hesperus.claudeCode": {
           "type": "boolean",
           "default": true,
-          "description": "Register Hesperus's MCP server with Claude Code at user scope (claude mcp add -s user), so Claude Code can call hesperus_flow, hesperus_check and the rest in any repo it opens. Refreshed when the extension updates; nothing is written when Claude Code is not set up on the machine."
+          "description": "Register Hesperus's MCP server with Claude Code at user scope (claude mcp add -s user), so Claude Code has hesperus_flow, hesperus_boundaries, the explain/impact prompts and the rest in any repo it opens. Refreshed when the extension updates; nothing is written when Claude Code is not set up on the machine."
         }
       }
     },
-    "jsonValidation": [
-      {
-        "fileMatch": "**/.hesperus/hesperus.json",
-        "url": "./schema/policy.schema.json"
-      }
-    ],
     "mcpServerDefinitionProviders": [
       {
         "id": "hesperus.mcp",

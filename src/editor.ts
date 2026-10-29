@@ -81,11 +81,16 @@ export async function editorIndex(
   const fresh = prev ? files.filter((f) => prev.changed.has(f) || !prev.files.has(f)) : files;
   const ask = async (f: string) =>
     (await vscode.commands.executeCommand<(vscode.DocumentSymbol | vscode.SymbolInformation)[]>("vscode.executeDocumentSymbolProvider", docs.get(f)!)) ?? [];
+  const fe = opts.frontend;
   // Some servers (cpptools) answer only for documents the editor has opened, and an unparsed file
-  // answers empty at first: open it, then retry an empty answer a few times.
-  const outline = async (f: string) => {
+  // answers empty at first: open it, then retry an empty answer a few times. Only when the file has
+  // something to outline: syntax says so where there is a frontend; without one, a single retry.
+  const declares = (f: string, text: string) => (fe ? (fe.syntax(f)?.facts(text).symbols.length ?? 1) > 0 : undefined);
+  const outline = async (f: string, text: string) => {
     let s = await ask(f);
-    for (let i = 0; i < 4 && !s.length; i++) {
+    const d = declares(f, text);
+    const tries = d === false ? 0 : d === true ? 4 : 1;
+    for (let i = 0; i < tries && !s.length; i++) {
       if (i === 0) await Promise.resolve(vscode.workspace.openTextDocument(docs.get(f)!)).catch(() => {});
       await sleep(500 * (i + 1));
       s = await ask(f);
@@ -106,7 +111,8 @@ export async function editorIndex(
   const loaded: BridgeFile[] = await pool(files, 12, async (f) => {
     const kept = prev?.files.get(f);
     if (kept && !again.has(f)) return kept;
-    const [text, syms] = answered ? await Promise.all([fs.readFile(path.join(repo, f), "utf8"), outline(f)]) : ["", []];
+    const text = answered ? await fs.readFile(path.join(repo, f), "utf8") : "";
+    const syms = answered ? await outline(f, text) : [];
     if (++read % 20 === 0) report(`Reading symbols ${read}/${fresh.length}…`);
     return { path: f, language: lang, text, symbols: symbols(syms) };
   });
@@ -122,7 +128,6 @@ export async function editorIndex(
     return out;
   };
   await init();
-  const fe = opts.frontend;
   // Syntax columns are UTF-8 bytes; the editor counts UTF-16 units.
   const utf16 = (lines: string[], line: number, col: number) => Buffer.from(lines[line] ?? "", "utf8").subarray(0, col).toString("utf8").length;
   const sites = (f: BridgeFile): Span[] => {
@@ -181,6 +186,18 @@ function contributors(): Map<string, string[]> {
     for (const l of pkg.contributes?.languages ?? []) if (l.id) (out.get(l.id) ?? out.set(l.id, []).get(l.id)!).push(e.id);
   }
   return out;
+}
+
+/** Whether an installed extension with code of its own declares a language for files of this extension
+ *  (`.vue`, `.ps1`): without one, no server will ever outline them. */
+export function servesExtension(ext: string): boolean {
+  const dot = `.${ext.toLowerCase()}`;
+  for (const e of vscode.extensions.all) {
+    const pkg = e.packageJSON as { main?: string; browser?: string; contributes?: { languages?: { extensions?: string[] }[] } } | undefined;
+    if (!pkg?.main && !pkg?.browser) continue;
+    for (const l of pkg.contributes?.languages ?? []) if (l.extensions?.some((x) => x.toLowerCase() === dot)) return true;
+  }
+  return false;
 }
 
 /** The installed extension that serves the language: the one the frontend names when it is there, else

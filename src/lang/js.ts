@@ -29,8 +29,19 @@ function namingDecl(f: Node): Node | undefined {
     case "field_definition":
     case "pair":
       return holds("value") ? p : undefined;
-    case "assignment_expression":
-      return holds("right") ? p : undefined;
+    case "assignment_expression": {
+      if (!holds("right")) return undefined;
+      // `x = () => …`, `this.m = …`, `exports.f = …` declare something; a handler hung on the result of
+      // a call (`$("go").onclick = () => …`) or on a DOM-style `on…` property (`el.onclick`, `ws.onmessage`)
+      // declares nothing: it is a listener the enclosing code registers, as the editor's own outline has it.
+      const left = p.childForFieldName("left");
+      if (left?.type === "member_expression") {
+        const obj = left.childForFieldName("object");
+        if (obj && obj.type !== "identifier" && obj.type !== "this" && obj.type !== "member_expression") return undefined;
+        if (/^on[a-z]+$/.test(left.childForFieldName("property")?.text ?? "")) return undefined;
+      }
+      return p;
+    }
     default:
       return undefined;
   }

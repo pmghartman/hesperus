@@ -1,5 +1,6 @@
-// The flow laid out as a chart: steps top to bottom, a decision's branches in columns indented under
-// it, a loop's body indented with a line back up, an opened call's steps indented in a frame. Plain
+// The flow laid out as a chart: steps top to bottom, a decision's yes side indented under it and its
+// no side under that (an else-if ladder stays level with its first decision, read down the left), a
+// loop's body indented with a line back up, an opened call's steps indented in a frame. Plain
 // arithmetic, no layout library: the shape is a tree, and reading order is source order. A long flow
 // is broken into columns that read left to right, as many as make the chart fit the pane best; with a
 // narrative, the top-level steps sit in titled phase bands.
@@ -47,7 +48,7 @@ export interface FlowLayoutOptions {
 
 // Sizes in character cells, so the chart never depends on fonts. Must match media/graph.js.
 export const CHAR = 6.6;
-const PAD = 44, MIN_W = 150, MAX_W = 330, H1 = 30, LINE = 14, GAP = 18, IND = 32, COL = 28, FRAME = 12, SIDE = 14;
+const PAD = 44, MIN_W = 150, MAX_W = 330, H1 = 30, LINE = 14, GAP = 18, IND = 32, FRAME = 12, SIDE = 14;
 const COND_H = 36, COND_LINE = 14, TAG_H = 22, END = 14, PHASE_H = 24, PHASE_PAD = 8, JUMP = 16, COLGAP = 56;
 const MAX_COLUMNS = 6;
 /** Code is drawn in a monospace font a touch wider than the body text. */
@@ -76,8 +77,9 @@ const condLines = (text: string) => wrapTo(text.replace(/\s+/g, " "), Math.floor
 const condWidth = (keyword: string, lines: string[]) => Math.max(MIN_W, Math.min(MAX_W, Math.max(...lines.map((l) => l.length * CODE)) + keyword.length * CHAR + PAD + 30));
 
 /** Where the flow leaves a box: its bottom (the default), or its left side for a loop's exit and a
- *  decision's untaken side, so those lines never cross the branch beneath. */
-interface Exit { box: FlowBox; side?: boolean; label?: string }
+ *  decision's untaken side, so those lines never cross the branch beneath. `via`: lanes the line takes
+ *  on its way, outermost last: a yes side's exits pass right of the no side drawn beneath them. */
+interface Exit { box: FlowBox; side?: boolean; label?: string; via?: { x: number; y: number }[] }
 interface Placed { bottom: number; right: number; exits: Exit[] }
 
 interface Built { layout: FlowLayout; /** Height of each top-level step's block, gap included. */ heights: number[]; /** Width of the one column. */ colWidth: number }
@@ -113,6 +115,7 @@ function columns(one: Built, viewport?: { width: number; height: number }): Set<
     }
     tallest = Math.max(tallest, acc);
     if (breaks.size + 1 < n) continue; // the steps are too few or too tall to fill this many
+    if (tallest > budget * 1.5) continue; // one step dwarfs the rest: a column for the leftovers is only width
     const scale = Math.max(((one.colWidth + COLGAP) * n) / W, (tallest + head) / H);
     // Fewer columns on a near tie: a chart reads better down than across.
     if (scale < best.scale * 0.97) best = { n, scale, breaks };
@@ -131,20 +134,22 @@ function build(f: Flow, narrative: Narrative | undefined, breaks: ReadonlySet<nu
   };
   const cx = (b: FlowBox) => b.x + b.w / 2;
   let left = 0;
-  // Into the top of `to` from each exit: from a bottom, straight down or down, across and down; from a
-  // side, out to the left, down past whatever is beneath, then across and in.
+  // The line out of an exit as far as the lane just above its target: from a bottom, straight down;
+  // from a side, out to the left and down; then along each `via` lane, down to it and across.
+  const route = (e: Exit, laneY: number) => {
+    const b = e.box;
+    const pts = e.side ? [{ x: b.x, y: b.y + b.h / 2 }, { x: b.x - SIDE, y: b.y + b.h / 2 }] : [{ x: cx(b), y: b.y + b.h }];
+    if (e.side) left = Math.min(left, b.x - SIDE);
+    for (const v of e.via ?? []) pts.push({ x: pts[pts.length - 1].x, y: v.y }, { x: v.x, y: v.y });
+    pts.push({ x: pts[pts.length - 1].x, y: laneY });
+    return pts;
+  };
+  // Into the top of `to` from each exit, by the lane above it; a straight drop needs no lane.
   const join = (exits: Exit[], to: FlowBox, label?: string) => {
     for (const e of exits) {
       const b = e.box, x1 = cx(to), y1 = to.y, lbl = e.label ?? (e === exits[0] ? label : undefined);
-      if (e.side) {
-        const xl = b.x - SIDE, ym = b.y + b.h / 2;
-        left = Math.min(left, xl);
-        links.push({ from: b.id, to: to.id, points: [{ x: b.x, y: ym }, { x: xl, y: ym }, { x: xl, y: y1 - GAP / 2 }, { x: x1, y: y1 - GAP / 2 }, { x: x1, y: y1 }], ...(lbl ? { label: lbl } : {}) });
-        continue;
-      }
-      const x0 = cx(b), y0 = b.y + b.h;
-      // A branch's first step sits under its diamond's left half; bend early so the label has room.
-      const pts = Math.abs(x0 - x1) < 1 ? [{ x: x0, y: y0 }, { x: x1, y: y1 }] : [{ x: x0, y: y0 }, { x: x0, y: y0 + GAP / 2 }, { x: x1, y: y0 + GAP / 2 }, { x: x1, y: y1 }];
+      const straight = !e.side && !e.via?.length && Math.abs(cx(b) - x1) < 1;
+      const pts = straight ? [{ x: x1, y: b.y + b.h }, { x: x1, y: y1 }] : [...route(e, y1 - GAP / 2), { x: x1, y: y1 - GAP / 2 }, { x: x1, y: y1 }];
       links.push({ from: b.id, to: to.id, points: pts, ...(lbl ? { label: lbl } : {}) });
     }
   };
@@ -188,19 +193,18 @@ function build(f: Flow, narrative: Narrative | undefined, breaks: ReadonlySet<nu
         const d = add({ id: s.id, kind: "if", x, y: bottom, w: condWidth("if", lines), h: COND_H + (lines.length - 1) * COND_LINE, text: s.text, keyword: "if", lines, path: s.in, line: s.line });
         join(exits, d, lbl);
         const y1 = d.y + d.h + GAP;
-        // Yes goes down into the indented column; no leaves the left side and falls through, or, with
-        // steps of its own, goes into a second column to the right of the first.
+        // Yes goes down into the indented column. No leaves the left side: it falls through, or, with
+        // steps of its own, comes down the left into them beneath the yes side; an else-if ladder keeps
+        // each decision level with the first. The yes side's exits pass to the right of the no side.
         const yes = place(s.yes, x + IND, y1, bottomOf(d), "yes");
         let out = yes.exits, b = yes.bottom, r = Math.max(yes.right, d.x + d.w);
         if (s.no.length) {
-          const noX = Math.max(yes.right, x + IND, d.x + d.w) + COL;
-          // From the right vertex, across and down into the second column.
-          const no = place(s.no, noX, y1, [], undefined);
-          const firstNo = boxes.find((bb) => bb.x === noX && bb.y === y1 && bb.kind !== "frame");
-          if (firstNo) links.push({ from: d.id, to: firstNo.id, label: "no", points: [{ x: d.x + d.w, y: d.y + d.h / 2 }, { x: cx(firstNo), y: d.y + d.h / 2 }, { x: cx(firstNo), y: firstNo.y }] });
-          out = [...out, ...no.exits];
-          b = Math.max(b, no.bottom);
-          r = Math.max(r, no.right);
+          const ladder = s.no.length === 1 && s.no[0].kind === "if";
+          const no = place(s.no, ladder ? x : x + IND, yes.bottom + GAP / 2, [{ box: d, side: true, label: "no" }]);
+          const lane = { x: Math.max(r, no.right) + SIDE, y: yes.bottom - GAP / 2 };
+          out = [...yes.exits.map((e) => ({ ...e, via: [...(e.via ?? []), lane] })), ...no.exits];
+          b = no.bottom;
+          r = lane.x + 2;
         } else out = [...out, { box: d, side: true, label: "no" }];
         exits = out;
         bottom = Math.max(b, d.y + d.h + GAP);
@@ -213,8 +217,8 @@ function build(f: Flow, narrative: Narrative | undefined, breaks: ReadonlySet<nu
         // Back from the body's end, up to the header's underside at its left.
         const xb = x + IND - 10;
         for (const e of body.exits) {
-          const bx = e.box, start = e.side ? { x: bx.x, y: bx.y + bx.h / 2 } : { x: cx(bx), y: bx.y + bx.h };
-          links.push({ from: bx.id, to: h.id, back: true, points: [start, ...(e.side ? [{ x: xb, y: start.y }] : [{ x: start.x, y: body.bottom - GAP / 2 }, { x: xb, y: body.bottom - GAP / 2 }]), { x: xb, y: h.y + h.h }] });
+          const pts = e.side && !e.via?.length ? [{ x: e.box.x, y: e.box.y + e.box.h / 2 }] : route(e, body.bottom - GAP / 2);
+          links.push({ from: e.box.id, to: h.id, back: true, points: [...pts, { x: xb, y: pts[pts.length - 1].y }, { x: xb, y: h.y + h.h }] });
         }
         exits = [{ box: h, side: true, label: "done" }];
         bottom = body.bottom + GAP / 2;

@@ -1,15 +1,15 @@
-// Hesperus sidebar: status, which picture is up, where the program starts, what to review, what it
-// reaches. State lives in the extension host; the webview keeps only which sections are folded and
-// whether the entry list is unfolded.
+// Hesperus sidebar: status, which view is up, the entry points, the boundaries crossed. State lives in
+// the extension host; the webview keeps only which sections are folded and whether the entry list is
+// unfolded.
 (() => {
   const vs = acquireVsCodeApi();
   const $ = (id) => document.getElementById(id);
   const kept = vs.getState() ?? {};
   const remember = (patch) => vs.setState(Object.assign(kept, patch));
 
-  for (const id of ["flow", "map", "reindex", "accept", "policy", "ask", "explain"]) $(id).onclick = () => vs.postMessage({ type: id });
-  $("assistant").onchange = () => vs.postMessage({ type: "assistant", id: $("assistant").value });
+  for (const id of ["flow", "map", "reindex"]) $(id).onclick = () => vs.postMessage({ type: id });
   $("watch").onchange = () => vs.postMessage({ type: "watch" });
+  $("tests").onchange = () => vs.postMessage({ type: "tests" });
   $("find").onsubmit = (e) => {
     e.preventDefault();
     vs.postMessage({ type: "find", query: $("q").value });
@@ -27,7 +27,7 @@
     };
   }
 
-  // Entry points shown before the list folds; a big program has dozens, and the first few drive the most.
+  // Entry points shown before the list folds; the first few have the largest reach.
   const FOLD = 8;
   let unfolded = kept.unfolded === true, last;
   $("unfold").onclick = () => {
@@ -36,7 +36,6 @@
     if (last) entries(last);
   };
 
-  const RULE = { "boundary-denied": "denied", "new-crossing": "new crossing", "new-dependency": "new dependency" };
   const sentence = (doc, max = 140) => {
     if (!doc) return "";
     const m = /^(.*?[.!?])(\s|$)/.exec(doc);
@@ -56,24 +55,6 @@
     return li;
   };
   const none = (text) => el("li", "none", text);
-  const SVG = "http://www.w3.org/2000/svg";
-  // The editor's problem glyphs, drawn by hand: a circle with a cross, a triangle, a circle with an i.
-  const PATH = {
-    error: "M7 1a6 6 0 1 1 0 12A6 6 0 0 1 7 1zm0 1.2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6zM4.9 4.1l2.1 2.1 2.1-2.1.8.8L7.8 7l2.1 2.1-.8.8L7 7.8 4.9 9.9l-.8-.8L6.2 7 4.1 4.9z",
-    warning: "M7 1.3l6.3 11.2H.7zm0 2.4L2.8 11.3h8.4zM6.4 5.5h1.2v3.2H6.4zm0 3.9h1.2v1.2H6.4z",
-    info: "M7 1a6 6 0 1 1 0 12A6 6 0 0 1 7 1zm0 1.2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6zM6.4 6h1.2v4.2H6.4zm0-2.2h1.2V5H6.4z",
-  };
-  const icon = (sev) => {
-    const s = document.createElementNS(SVG, "svg");
-    s.setAttribute("viewBox", "0 0 14 14");
-    s.setAttribute("class", `icon ${sev}`);
-    const p = document.createElementNS(SVG, "path");
-    p.setAttribute("d", PATH[sev] ?? PATH.info);
-    p.setAttribute("fill", "currentColor");
-    s.append(p);
-    return s;
-  };
-  const n = (list, sev) => list.filter((f) => f.severity === sev).length;
 
   addEventListener("message", ({ data: m }) => {
     if (m.type !== "state") return;
@@ -85,21 +66,26 @@
     if (busy) st.append(el("span", "spin"));
     else if (ready) st.append(el("span", "dot"));
     st.append(ready ? `${s.nodes.toLocaleString()} nodes · ${s.edges.toLocaleString()} edges` : s.label);
-    const detail = s.state === "error" ? s.detail : s.detail ?? s.reason ?? "";
-    $("detail").hidden = !detail;
-    $("detail").textContent = detail;
-    $("detail").className = "note" + (s.state === "error" ? " err" : "");
+    // The note is a few words; the whole message is its tooltip.
+    const note = $("detail");
+    note.hidden = !s.brief;
+    note.textContent = s.brief ?? "";
+    note.title = s.detail ?? "";
+    note.className = "note" + (s.state === "error" ? " err" : "");
     $("reindex").disabled = busy;
-    assistants(m);
     $("flow").setAttribute("aria-pressed", String(m.mode === "flow"));
     $("map").setAttribute("aria-pressed", String(m.mode === "map"));
     $("watch").checked = m.watch;
+    $("tests").checked = m.hideTests;
+    $("test-count").textContent = m.tests ? String(m.tests) : "";
+    $("tests").parentElement.hidden = !m.tests && !m.hideTests;
 
-    // A language whose editor extension is missing is the one thing worth a note here.
+    // A language whose editor extension is missing is the one thing worth a line here.
     const miss = $("missing");
     miss.replaceChildren();
     for (const l of (m.languages ?? []).filter((l) => !l.installed)) {
-      const li = el("li", "", `${l.files.toLocaleString()} ${l.id} files need the ${l.editor.name} extension. `);
+      const li = el("li", "", `${l.id}: no extension `);
+      li.title = `${l.files.toLocaleString()} ${l.id} files need ${l.editor.name} (${l.editor.id}) to be indexed.`;
       const b = el("button", "link", "Install");
       b.onclick = () => vs.postMessage({ type: "install", id: l.editor.id });
       li.append(b);
@@ -108,38 +94,14 @@
     miss.hidden = !miss.children.length;
 
     $("found").hidden = !m.found;
-    if (m.found !== undefined) $("found").textContent = m.found;
-    explained(m);
+    if (m.found !== undefined) ($("found").textContent = m.found), ($("found").title = m.found);
 
     entries(m);
-    review(m, ready);
-    reaches(m, ready);
+    boundaries(m, ready);
   });
 
-  // What Explain wrote for the flow on screen (its summary, from this session or the cache), or what
-  // the last press did.
-  function explained(m) {
-    const b = $("explain"), box = $("explained");
-    b.disabled = !!m.explaining || m.mode !== "flow";
-    b.textContent = m.explaining ? "Explaining…" : "Explain";
-    const n = m.narrative;
-    const text = m.explained ? m.explained : n?.summary ? `${n.summary}${n.via ? `  — ${n.via}` : ""}` : "";
-    box.hidden = !text || m.mode !== "flow";
-    box.textContent = text;
-  }
-
-  // The AI assistants the editor has; the chosen one is kept in the user's settings.
-  function assistants(m) {
-    const sel = $("assistant"), list = m.assistants ?? [];
-    sel.replaceChildren();
-    if (!list.length) sel.append(new Option("No AI assistant installed", "", true, true));
-    for (const a of list) sel.append(new Option(a.label, a.id, false, a.id === (m.assistant ?? list[0].id)));
-    sel.disabled = !list.length;
-    $("ask").title = list.length ? "Send what is on screen (the flow, the findings, what the repo reaches) to the assistant; the prompt is copied to the clipboard too" : "Copy a prompt about what is on screen to the clipboard";
-  }
-
-  // Where the program starts: the entries that drive the most code first. A click charts one. The
-  // first few are shown; the rest unfold on request, and the chosen one is always among them.
+  // Entry points, largest reach first. A click traces from one. The first few are shown; the rest
+  // unfold on request, and the chosen one is always among them.
   function entries(m) {
     last = m;
     const s = m.status, ready = s.state === "ready";
@@ -152,55 +114,30 @@
     list.replaceChildren();
     for (const e of shown) {
       const doc = sentence(e.doc);
-      const li = row(e.id === m.entry ? "current" : "", (doc ? doc + "\n" : "") + "Chart what this does", () => vs.postMessage({ type: "entry", id: e.id }));
-      li.append(el("span", "name", e.name), el("span", "desc", `${e.path}:${e.line}`));
+      const li = row(e.id === m.entry ? "current" : "", `${e.kind} · reach ${e.reach}${doc ? "\n" + doc : ""}\nClick: trace control flow from here`, () => vs.postMessage({ type: "entry", id: e.id }));
+      li.append(el("span", "name", e.name), el("span", "desc", `\u200E${e.path}:${e.line}\u200E`), el("span", "count", String(e.reach)));
       list.append(li);
     }
-    if (!all.length) list.append(none(ready ? "No entry point found: nothing in the repo is called from outside it." : s.state === "idle" ? "Press Index to read the repo." : "—"));
+    if (!all.length) list.append(none(ready ? "No entry point: nothing is reached from outside the repo." : s.state === "idle" ? "Not indexed." : "—"));
     const folded = all.length - shown.length;
     $("more").hidden = !folded && !unfolded && !(m.moreEntries > 0);
     $("unfold").hidden = !folded && !unfolded;
-    $("unfold").textContent = folded ? `Show ${folded} more` : "Show fewer";
-    $("more-note").textContent = m.moreEntries > 0 ? `${m.moreEntries} more beyond these; find one by name.` : "";
+    $("unfold").textContent = folded ? `${folded} more` : "Fewer";
+    $("more-note").textContent = m.moreEntries > 0 ? `${m.moreEntries} more; search by name.` : "";
   }
 
-  // What changed since a person last accepted, and what the policy forbids. A click opens the call
-  // site and shows it on the map.
-  function review(m, ready) {
-    const fs = m.findings;
-    const errors = n(fs, "error"), warnings = n(fs, "warning"), info = n(fs, "info");
-    const badge = $("review-count");
-    badge.textContent = ready && m.totalFindings ? String(m.totalFindings) : "";
-    badge.className = "badge" + (errors ? " err" : "");
-    $("summary").textContent = !ready ? "—" : !m.totalFindings
-      ? `Nothing new since the last accept.${m.removed ? ` ${m.removed} accepted crossings are gone.` : ""}`
-      : [errors && `${errors} denied`, warnings && `${warnings} new`, info && `${info} to note`, m.removed && `${m.removed} gone`].filter(Boolean).join(" · ")
-        + (m.totalFindings > fs.length ? ` (first ${fs.length})` : "");
-    $("policy-error").hidden = !m.policy.error;
-    $("policy-error").textContent = m.policy.error ?? "";
-    $("policy").textContent = m.policy.exists ? "Policy" : "Add policy";
-    $("accept").disabled = !fs.some((f) => f.rule !== "boundary-denied") && !m.removed;
-    const list = $("findings");
-    list.replaceChildren();
-    for (const f of fs) {
-      const li = row("", `${RULE[f.rule] ?? f.rule}: ${f.message}`, () => vs.postMessage({ type: "finding", index: f.i }));
-      li.append(icon(f.severity), el("span", "name", f.message), el("span", "desc", f.path ? `${f.path}:${f.line}` : ""));
-      list.append(li);
-    }
-  }
-
-  // Every boundary the repo reaches, with how many calls. A click shows it on the map.
-  function reaches(m, ready) {
+  // Every boundary the repo crosses, with call counts; a click shows it on the boundary graph.
+  function boundaries(m, ready) {
     const cs = m.crossings ?? [];
     $("reach-count").textContent = cs.length ? String(cs.length) : "";
     const list = $("crossings");
     list.replaceChildren();
     for (const c of cs) {
-      const li = row("", `${c.doc} Click to show what reaches it on the map.`, () => vs.postMessage({ type: "boundary", id: c.id }));
+      const li = row("", `${c.doc}\nClick: show on the boundary graph`, () => vs.postMessage({ type: "boundary", id: c.id }));
       li.append(el("span", "swatch b-" + c.id), el("span", "name", c.label), el("span", "desc", ""), el("span", "count", c.in ? `${c.out} out · ${c.in} in` : String(c.out)));
       list.append(li);
     }
-    if (!cs.length) list.append(none(ready ? "No calls into databases, the network, model APIs, cloud services, queues, files, processes or the environment." : "—"));
+    if (!cs.length) list.append(none(ready ? "No boundary crossings." : "—"));
   }
 
   vs.postMessage({ type: "ready" });

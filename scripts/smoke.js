@@ -57,9 +57,11 @@ window.addEventListener("message", (e) => onMessage(e.data));
 // loop, a call that leaves the repo as a terminal; opening a step inlines its own; the text form agrees.
 async function flowTest(repo) {
   const { indexHeadless } = require("../out/engine");
-  const { entries, flow, flowText } = require("../out/core/flow");
+  const { entries, flow, flowText, isTest, wayTo } = require("../out/core/flow");
+  for (const p of ["src/a.test.ts", "tests/x.py", "test_io.py", "pkg/io_test.go", "scripts/smoke.js", "spec/a_spec.rb"]) assert.ok(isTest(p), "test path: " + p);
+  for (const p of ["src/a.ts", "src/testing.ts", "contest/x.py", "src/latest.go", "attest.js"]) assert.ok(!isTest(p), "not a test path: " + p);
   const { flowLayout } = require("../out/flowchart");
-  const { parseNarrative, narrativePrompt } = require("../out/core/narrate");
+  const { parseNarrative, taggedFlow, checkNarrative, narrativeKey } = require("../out/core/narrate");
   const { flowInputs } = require("../out/service");
   const { defaultPolicy } = require("../out/core/lint");
   const APP = `const fs = require("fs");
@@ -81,8 +83,10 @@ function save(r) { fs.writeFileSync("out.txt", r); }
 function skip() { helper(); }
 main([]);
 `;
-  // A file the script imports: its top-level code runs on import, so it is no entry of its own.
+  // A file the script imports: its top-level code runs on import, so it is no entry of its own; nor
+  // is an exported function nothing calls, in a file the repo loads.
   const LIB = `export function helper() { return 1; }
+export function unused() { helper(); }
 helper();
 `;
   fs.writeFileSync(path.join(repo, "app.js"), APP);
@@ -99,6 +103,14 @@ helper();
   assert.ok(!es.some((e) => e.name.startsWith("app.js")), "a script whose load is main() is entered as main, not twice: " + es.map((e) => e.name).join(", "));
   assert.ok(!es.some((e) => e.name.startsWith("lib.js")), "an imported file is not an entry: " + es.map((e) => e.name).join(", "));
   assert.ok(!es.some((e) => e.name === "helper"), "a function the script calls is not an entry");
+  assert.ok(!es.some((e) => e.name === "unused"), "an uncalled function in a loaded file is not an entry: " + es.map((e) => e.name).join(", "));
+  // The way to a callable: the entry that reaches it and the calls to open on the way (main → skip → helper).
+  const helperNode = g.nodes.find((n) => n.name === "helper" && n.kind === "function");
+  const way = wayTo(g, es, helperNode.id);
+  assert.equal(way?.entry, main.id, "the way to helper starts at main: " + JSON.stringify(way));
+  assert.equal(way.open.length, 2, "two calls down: " + JSON.stringify(way));
+  const findStep = (steps, id) => { for (const s of steps) { if (s.id === id) return s; const r = findStep([...(s.steps ?? []), ...(s.yes ?? []), ...(s.no ?? []), ...(s.body ?? []), ...(s.cases ?? []).flatMap((x) => x.body)], id); if (r) return r; } };
+  assert.equal(findStep(flow(g, main.id, new Set(way.open), inp).steps, way.last)?.name, "helper", "the last opened step is the call into helper");
   const f = flow(g, main.id, new Set(), inp);
   const kinds = f.steps.map((s) => s.kind);
   assert.deepEqual(kinds, ["call", "if"], "steps in order");
@@ -120,12 +132,15 @@ helper();
   assert.ok(lay.links.some((l) => l.label === "yes") && lay.links.some((l) => l.label === "no") && lay.links.some((l) => l.back), "chart links");
   assert.ok(lay.boxes.every((b) => b.x >= 0 && b.y >= 0), "chart in positive space");
   // A narrative is checked against the flow: phases name steps by number, in order, without overlap.
-  const prompt = narrativePrompt(opened, "t");
-  assert.ok(prompt.includes("[S1]") && prompt.includes("[S2]") && !prompt.includes("[S3]"), "top-level steps tagged");
+  // Its key is the entry and its top-level steps, so opening a step keeps the narrative.
+  const tagged = taggedFlow(opened);
+  assert.ok(tagged.includes("[S1]") && tagged.includes("[S2]") && !tagged.includes("[S3]"), "top-level steps tagged");
   const n = parseNarrative('Sure: {"summary": "Reads, then saves.", "phases": [{"title": "Read", "from": 1, "to": 1}, {"title": "Save", "from": 2, "to": 9}, {"title": "Bad", "from": 1, "to": 2}]}', opened, "test");
   assert.equal(n?.summary, "Reads, then saves.");
   assert.deepEqual(n?.phases.map((p) => p.steps), [[opened.steps[0].id], [opened.steps[1].id]], "a phase past the end or out of order is dropped");
   assert.equal(parseNarrative("no json here", opened), undefined);
+  assert.equal(checkNarrative("", [], opened), undefined, "nothing usable");
+  assert.equal(narrativeKey(opened), narrativeKey(f), "key survives opening a step");
   const told = flowLayout(opened, { narrative: n });
   assert.equal(told.boxes.filter((b) => b.kind === "phase").length, 2, "a band per phase");
   assert.equal(told.summary, "Reads, then saves.");
@@ -215,20 +230,18 @@ async function headless(repo) {
   assert.deepEqual(from("/run(0)."), ["resolved:go", "resolved:run"], `python: ${from("/run(0).")}`);
   const cli = path.join(__dirname, "..", "out", "cli.js");
   const run = (args) => require("node:child_process").spawnSync(process.execPath, [cli, ...args], { encoding: "utf8" });
-  const first = run(["check", repo, "--json", "--svg"]);
+  const first = run(["index", repo]);
   assert.equal(first.status, 0, first.stderr);
-  const report = JSON.parse(first.stdout);
-  assert.deepEqual(report.summary, { errors: 0, warnings: 0, info: 0, removed: 0 }, "first lint records the baseline");
-  assert.ok(fs.readFileSync(path.join(repo, ".hesperus", "view.svg"), "utf8").includes("Filesystem"), "svg names the boundary");
   fs.appendFileSync(path.join(repo, "src/a.ts"), 'import axios from "axios";\nexport function b() { return axios.get("/"); }\n');
-  const second = run(["check", repo, "--index", "--json"]);
-  assert.equal(second.status, 0, `warnings alone pass: ${second.stderr}`);
-  assert.equal(run(["check", repo, "--max-warnings", "0"]).status, 1, "over the warning limit, exit 1");
-  assert.deepEqual(JSON.parse(second.stdout).findings.map((f) => `${f.rule}:${f.boundary}`).sort(), ["new-crossing:network", "new-dependency:network"], "new network crossing");
-  // MCP over stdio: initialize, list, call.
+  const second = run(["flow", repo, "--index"]);
+  assert.equal(second.status, 0, second.stderr);
+  assert.ok(second.stdout.includes("▶ a"), `flow: ${second.stdout.slice(0, 200)}`);
+  assert.equal(run(["check", repo]).status, 2, "check is no longer a command");
+  // MCP over stdio: initialize, list, call; a prompt carries the flow; a narrative is kept on disk.
   const mcp = spawn(process.execPath, [cli, "mcp", repo], { stdio: ["pipe", "pipe", "inherit"] });
   const replies = new Map();
   let buf = "";
+  const LAST = 6;
   const done = new Promise((resolve) => mcp.stdout.on("data", (d) => {
     buf += d;
     let i;
@@ -236,20 +249,31 @@ async function headless(repo) {
       const m = JSON.parse(buf.slice(0, i));
       buf = buf.slice(i + 1);
       replies.set(m.id, m);
-      if (m.id === 3) resolve();
+      if (m.id === LAST) resolve();
     }
   }));
   const send = (o) => mcp.stdin.write(JSON.stringify({ jsonrpc: "2.0", ...o }) + "\n");
   send({ id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "0" } } });
   send({ method: "notifications/initialized" });
   send({ id: 2, method: "tools/list" });
-  send({ id: 3, method: "tools/call", params: { name: "hesperus_diff", arguments: {} } });
+  send({ id: 3, method: "tools/call", params: { name: "hesperus_boundaries", arguments: {} } });
+  send({ id: 4, method: "prompts/list" });
+  send({ id: 5, method: "prompts/get", params: { name: "explain", arguments: { entry: "a" } } });
+  send({ id: 6, method: "tools/call", params: { name: "hesperus_narrate", arguments: { entry: "a", summary: "Reads a file.", phases: [{ title: "Read", from: 1, to: 1 }], via: "smoke" } } });
   await done;
   mcp.stdin.end();
   assert.equal(replies.get(1).result.serverInfo.name, "hesperus");
-  assert.ok(replies.get(2).result.tools.some((t) => t.name === "hesperus_check"), "tools listed");
-  const diff = JSON.parse(replies.get(3).result.content[0].text);
-  assert.deepEqual(diff.added.map((f) => f.rule).sort(), ["new-crossing", "new-dependency"], `diff: ${JSON.stringify(diff)}`);
+  assert.ok(replies.get(1).result.capabilities.prompts, "prompts capability");
+  const names = replies.get(2).result.tools.map((t) => t.name);
+  assert.ok(names.includes("hesperus_boundaries") && names.includes("hesperus_narrate") && !names.includes("hesperus_check") && !names.includes("hesperus_accept"), `tools listed: ${names}`);
+  const bounds = JSON.parse(replies.get(3).result.content[0].text);
+  assert.ok(bounds.network?.packages?.axios, `boundaries: ${JSON.stringify(bounds).slice(0, 300)}`);
+  assert.deepEqual(replies.get(4).result.prompts.map((p) => p.name), ["explain", "impact"], "prompts listed");
+  const explain = replies.get(5).result.messages[0].content.text;
+  assert.ok(explain.includes("[S1]") && explain.includes("hesperus_narrate") && explain.includes("▶ a"), `explain prompt: ${explain.slice(0, 300)}`);
+  assert.ok(replies.get(6).result.content[0].text.startsWith("Kept for a"), replies.get(6).result.content[0].text);
+  const kept = JSON.parse(fs.readFileSync(path.join(repo, ".hesperus", "narratives.json"), "utf8"));
+  assert.equal(Object.values(kept)[0].summary, "Reads a file.", "narrative on disk");
 }
 
 // Boundary lint: calls into axios and child_process cross the network and process boundaries; a policy

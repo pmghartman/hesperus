@@ -113,8 +113,24 @@ export async function headlessIndex(repo: string, fe: Frontend, files: readonly 
     walk(d.tree);
     return found;
   };
-  // Where a call's name is defined: its own file, then its own folder (a Go package, a Java package),
-  // by name; `this.m()` in the enclosing type. Anything else is for the imports to say.
+  /** A function named `name` declared inside one of the declarations around `at`, innermost first: the
+   *  lexical scope a nested function or a local arrow function lives in. */
+  const scoped = (d: Doc, at: Pos, name: string): BridgeSymbol | undefined => {
+    let found: BridgeSymbol | undefined;
+    const walk = (list: BridgeSymbol[]) => {
+      for (const s of list) {
+        if (!holds(at, s.range)) continue;
+        const m = s.children.find((c) => c.name === name && c.shape === "method");
+        if (m) found = m;
+        walk(s.children);
+      }
+    };
+    walk(d.tree);
+    return found;
+  };
+  // Where a call's name is defined: the scope around the call, its own file, then its own folder (a Go
+  // package, a Java package), by name; `this.m()` in the enclosing type. Anything else is for the
+  // imports to say.
   const definitionsOf = async (p: string, at: Pos): Promise<BridgeRef[]> => {
     const d = docs.get(p);
     if (!d) return [];
@@ -127,6 +143,8 @@ export async function headlessIndex(repo: string, fe: Frontend, files: readonly 
     const bound = d.facts.imports.some((i) => i.local === segs[0]) && !SELF.has(segs[0]);
     const scopes = bound ? [d] : [d, ...(byDir.get(path.posix.dirname(p)) ?? []).filter((x) => x !== d)];
     if (segs.length === 1) {
+      const near = scoped(d, at, segs[0]);
+      if (near) return [ref(d, near)];
       // A type's name called is a constructor or conversion; the index says so and `build` drops it.
       for (const shape of ["method", "type"] as const) for (const x of scopes) for (const s of top(x, segs[0], shape)) return [ref(x, s)];
       const t = enclosingType(d, at);

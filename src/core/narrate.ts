@@ -1,8 +1,9 @@
-// A plain-language reading of a flow, written by a model and checked against the chart. The chart stays
-// what the index found; the model only names it: a sentence or two on what the entry does, and the
-// top-level steps grouped into phases with a title each. Every phase names steps by tag, and a phase
-// that names a step the flow does not have, or breaks source order, is dropped: nothing a model says
-// can add a step, remove one, or move one.
+// An agent's reading of a control flow, checked against the chart. The chart stays what the index found;
+// the agent only labels it: a sentence or two on what the entry does, and the top-level steps grouped
+// into phases with a title each. Every phase names steps by number, and a phase that names a step the
+// flow does not have, or breaks source order, is dropped: nothing an agent says can add a step, remove
+// one, or move one. Narratives arrive through the MCP server (`hesperus_narrate`) and are kept under
+// `.hesperus/`, keyed by the flow's top-level shape, so the editor draws them whenever that flow is up.
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { CACHE_DIR } from "./cache";
@@ -18,28 +19,46 @@ export interface Narrative {
   /** What the entry does, in one or two sentences. */
   summary: string;
   phases: Phase[];
-  /** Where the words came from (a model name, or "chat"). */
+  /** Who wrote it (an agent or model name). */
   via?: string;
 }
 
-/** The tag a top-level step carries in the prompt and in the model's answer. */
+/** The tag a top-level step carries in the flow text handed to an agent. */
 export const tag = (i: number) => `[S${i + 1}]`;
 
-/** The question put to the model: the flow with its top-level steps tagged, and the shape of the answer. */
-export function narrativePrompt(f: Flow, repoName: string): string {
-  const n = f.steps.length;
-  return [
-    `Hesperus charted what the program in the repository "${repoName}" does from the entry point ${f.entry.name} (${f.entry.path}:${f.entry.line}), by static analysis. Each line below is a step the code takes, in the order it runs them: ▭ a call into the repo (with the comment above the callee), ⬚ a call that leaves the repo (with its boundary), ◇ a decision with its condition as written, ↻ a loop, ⚠ a catch. Indented lines are the steps inside the one above. The top-level steps are tagged ${tag(0)} to ${tag(n - 1)}.`,
-    "",
-    flowText(f, tag).trimEnd(),
-    "",
-    "Write the reading a person would want before the chart: what this entry point does, and the top-level steps grouped into phases a reader can follow. Answer with JSON only, no prose around it, in exactly this shape:",
-    '{"summary": "one or two plain sentences on what this entry does and what it reaches outside the repo", "phases": [{"title": "two to six words, plain language, no code", "from": 1, "to": 3}, ...]}',
-    `Rules: every phase covers a contiguous run of top-level steps, "from" and "to" are step numbers from 1 to ${n} inclusive, phases come in order and do not overlap, and together they cover every step. Use between 2 and 7 phases (one phase when there is only one step). Do not invent steps the chart does not show, and say nothing the steps do not support.`,
-  ].join("\n");
+/** The flow as the `explain` prompt hands it over: every top-level step tagged, so the answer can
+ *  name phases by step number. */
+export function taggedFlow(f: Flow): string {
+  return flowText(f, tag).trimEnd();
 }
 
-/** The model's answer, checked against the flow. Undefined when nothing usable came back. */
+/** A phase as an agent states it: a title over an inclusive 1-based range of top-level steps. */
+export interface PhaseAsk { title: string; from: number; to: number }
+
+/** A narrative from an agent's summary and phases, checked against the flow: a phase out of order,
+ *  past the end or untitled is dropped; one overlapping the last is trimmed to start after it.
+ *  Undefined when nothing usable is left. */
+export function checkNarrative(summary: unknown, phasesIn: unknown, f: Flow, via?: string): Narrative | undefined {
+  const text = typeof summary === "string" ? summary.replace(/\s+/g, " ").trim().slice(0, 600) : "";
+  const n = f.steps.length;
+  const phases: Phase[] = [];
+  let next = 0;
+  for (const p of Array.isArray(phasesIn) ? phasesIn : []) {
+    if (!p || typeof p !== "object") continue;
+    const q = p as Partial<PhaseAsk>;
+    const title = typeof q.title === "string" ? q.title.replace(/\s+/g, " ").trim().slice(0, 80) : "";
+    const from = Number(q.from), to = Number(q.to);
+    if (!title || !Number.isInteger(from) || !Number.isInteger(to) || to < from || to > n) continue;
+    const a = Math.max(from - 1, next);
+    if (a > to - 1) continue;
+    phases.push({ title, steps: f.steps.slice(a, to).map((s) => s.id) });
+    next = to;
+  }
+  if (!text && !phases.length) return undefined;
+  return { summary: text, phases, ...(via ? { via } : {}) };
+}
+
+/** A narrative from a model's free-form answer holding JSON `{"summary", "phases": [{"title", "from", "to"}]}`. */
 export function parseNarrative(answer: string, f: Flow, via?: string): Narrative | undefined {
   const start = answer.indexOf("{"), end = answer.lastIndexOf("}");
   if (start < 0 || end <= start) return undefined;
@@ -51,32 +70,15 @@ export function parseNarrative(answer: string, f: Flow, via?: string): Narrative
   }
   if (!raw || typeof raw !== "object") return undefined;
   const o = raw as { summary?: unknown; phases?: unknown };
-  const summary = typeof o.summary === "string" ? o.summary.replace(/\s+/g, " ").trim().slice(0, 600) : "";
-  const n = f.steps.length;
-  const phases: Phase[] = [];
-  let next = 0;
-  for (const p of Array.isArray(o.phases) ? o.phases : []) {
-    if (!p || typeof p !== "object") continue;
-    const q = p as { title?: unknown; from?: unknown; to?: unknown };
-    const title = typeof q.title === "string" ? q.title.replace(/\s+/g, " ").trim().slice(0, 80) : "";
-    const from = Number(q.from), to = Number(q.to);
-    // Ranges are 1-based and inclusive in the answer; a phase out of order or past the end is dropped,
-    // one overlapping the last is trimmed to start after it.
-    if (!title || !Number.isInteger(from) || !Number.isInteger(to) || to < from || to > n) continue;
-    const a = Math.max(from - 1, next);
-    if (a > to - 1) continue;
-    phases.push({ title, steps: f.steps.slice(a, to).map((s) => s.id) });
-    next = to;
-  }
-  if (!summary && !phases.length) return undefined;
-  return { summary, phases, ...(via ? { via } : {}) };
+  return checkNarrative(o.summary, o.phases, f, via);
 }
 
-/** Narratives already written, by the hash of the prompt that asked for them, so the same flow is not
- *  asked twice. A few dozen are kept per repo. */
+/** Narratives on disk, by the entry and its top-level steps: opening a step changes nothing at the top
+ *  level, so the narrative holds while the entry's own code does. A few dozen are kept per repo. */
 const FILE = "narratives.json";
+export const NARRATIVES_FILE = `${CACHE_DIR}/${FILE}`;
 const KEEP = 60;
-export const narrativeKey = (prompt: string) => sha256Hex(prompt).slice(0, 24);
+export const narrativeKey = (f: Flow) => sha256Hex([f.entry.id, ...f.steps.map((s) => s.id)].join("\n")).slice(0, 24);
 
 export function readNarrative(repo: string, key: string): Narrative | undefined {
   try {
