@@ -1,0 +1,14 @@
+hesperus 0.1
+
+subsystem catalog "Product catalog" {
+  src: "src/catalog/**"
+
+  component api
+  component search
+  store products {
+    engine: "postgres"
+  }
+
+  api -> products: reads
+  api -> search: calls
+}
