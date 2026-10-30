@@ -89,7 +89,19 @@ Flat sorted arrays of nodes (with `parent`) and edges, keyed by fully qualified 
 
 `.hesperus/actual/` under the directory `hesp emit` is run in (`--out` overrides), never inside the analyzed repository unless that is the current directory. Keeps the tool from writing into someone else's checkout.
 
+## Multi-language direction: frameworks are rows in a table
+
+Patrick's direction (relayed during the build): Hesperus will support many languages, and it should be built so that adding a language is as simple as adding rows to a table.
+
+**Chosen**: the extractor is split in three. `hesperus-ts/src/facts.ts` is the TypeScript *frontend*: ts-morph walks one file and emits a neutral fact stream (imports; calls, constructions and tagged templates with the callee name, the receiver text, the receiver's *origin* as the import binding it came from or `<global>`, and each argument's static text; string comparisons; object properties). `hesperus-ts/src/rules.ts` is *the table*: every row maps an origin module and symbol plus a call-site name and an argument classification to one effect (ingress by protocol, external-by-url, store with engine and access, hardware by name). `hesperus-ts/src/engine.ts` applies the table to the facts and knows nothing about any library. Adding a framework is adding rows; `src/test/rules.test.ts` requires a fixture per row, so the Definition of done's "fixture per detection heuristic" is now "fixture per rule row" (the eight per-heuristic repository fixtures remain as integration goldens, and their output was byte-identical before and after the split). `hesperus-ts explain <file>` prints a file's facts and the rows they fire; `hesperus-ts rules` prints the table.
+
+**The core stays Rust and language-neutral**: it speaks only IR, never parses a source language, and is the natural host for the planned second frontend: a Rust extractor over SCIP indexes (cross-file symbol resolution for TypeScript, Go, Python, Java, Rust, C#, Ruby) with tree-sitter for syntax-level patterns, emitting the same fact stream and reusing the same rule table (the table would move to a JSON file with a schema at that point; in v1 it is typed TypeScript so rows are checked at compile time).
+
+**Honest limit**: edge quality is bounded by semantic resolution, not by the host language. Tree-sitter alone yields imports and literal routes; function-level `calls` across files and dynamic dispatch need SCIP or a type checker. The v1 frontend resolves imports itself (relative paths, tsconfig `paths`, workspace packages) and tracks value origins within a file only; a receiver whose origin crosses a file boundary (a `pool` exported from `db.ts`) is `<local>` at the call site and matches only `<any>` rows.
+
 ## Extractor heuristics (framework knowledge, extractor only)
+
+These are the rows of the table, summarized:
 
 - Imports between files bound to different nodes: `calls`; type-only imports ignored; relative, tsconfig `paths`, and workspace-package (`package.json` name map) specifiers resolved; everything else ignored unless a boundary heuristic claims it.
 - Routes: `app.get|post|put|delete|patch|options|head|all|use("/...")` on a value created by `express()`, `Router()`, `new Hono()`, `new Koa()`, `fastify()`; `Bun.serve(`, `Deno.serve(`, `http(s).createServer(`; and `pathname === "/..."` / `.startsWith("/...")` / `case "/...":` comparisons. All feed one `ingress http` node.

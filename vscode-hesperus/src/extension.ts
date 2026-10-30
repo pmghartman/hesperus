@@ -19,6 +19,13 @@ export async function activate(context: vscode.ExtensionContext) {
       client = undefined;
       await startServer(context);
     }),
+    vscode.workspace.onDidChangeConfiguration(async (e) => {
+      if (e.affectsConfiguration("hesperus.serverPath")) {
+        await client?.stop();
+        client = undefined;
+        await startServer(context);
+      }
+    }),
   );
 }
 
@@ -95,24 +102,23 @@ export function findMaster(root: string, active: string | undefined, configured:
   return cur;
 }
 
-async function loadData(context: vscode.ExtensionContext): Promise<any | undefined> {
+let lastMaster: string | undefined;
+
+async function loadData(context: vscode.ExtensionContext): Promise<any> {
   const root = workspaceRoot();
-  if (!root) {
-    vscode.window.showErrorMessage("Hesperus: open a folder first.");
-    return;
-  }
+  if (!root) return { type: "data", error: "Open a folder first.", intent: null, actual: null, unified: null, locations: {} };
   const active = vscode.window.activeTextEditor?.document;
-  const master = findMaster(root, active?.languageId === "hesperus" ? active.uri.fsPath : undefined, config("intent", ""));
+  const master = findMaster(root, active?.languageId === "hesperus" ? active.uri.fsPath : undefined, config("intent", "")) ?? lastMaster;
   if (!master || !fs.existsSync(master)) {
-    vscode.window.showErrorMessage("Hesperus: no intent file. Open a .hesp file or set hesperus.intent.");
-    return;
+    return { type: "data", error: "No intent file. Open a .hesp file or set hesperus.intent.", intent: null, actual: null, unified: null, locations: {} };
   }
+  lastMaster = master;
   const hesp = config("hespPath", "hesp");
   const intentRes = await run(hesp, ["ir", "--locations", master], root);
-  if (intentRes.code !== 0) {
-    vscode.window.showErrorMessage(`Hesperus: hesp ir failed: ${intentRes.stderr.trim() || intentRes.stdout.trim()}`);
-    if (intentRes.code === 127) return;
+  if (intentRes.code === 127) {
+    return { type: "data", error: `Cannot run \`${hesp}\`: ${intentRes.stderr.trim()}. Set hesperus.hespPath.`, intent: null, actual: null, unified: null, locations: {}, intentPath: master };
   }
+  const error = intentRes.code !== 0 ? `hesp ir: ${intentRes.stderr.trim() || intentRes.stdout.trim()}` : undefined;
   const intent = intentRes.code === 0 ? JSON.parse(intentRes.stdout) : null;
   const actualDir = path.resolve(root, config("actualDir", ".hesperus/actual"));
   const actualMaster = path.join(actualDir, path.basename(master));
@@ -131,12 +137,11 @@ async function loadData(context: vscode.ExtensionContext): Promise<any | undefin
     }
   }
   const locations: Record<string, string> = intent?.locations ?? {};
-  return { type: "data", intent, actual, unified, intentPath: master, locations, masterDir: path.dirname(master) };
+  return { type: "data", error, intent, actual, unified, intentPath: master, locations, masterDir: path.dirname(master) };
 }
 
 async function openViewer(context: vscode.ExtensionContext) {
   const data = await loadData(context);
-  if (!data) return;
   if (!panel) {
     panel = vscode.window.createWebviewPanel("hesperus.viewer", "Hesperus", vscode.ViewColumn.Beside, {
       enableScripts: true,
@@ -148,7 +153,7 @@ async function openViewer(context: vscode.ExtensionContext) {
     panel.webview.onDidReceiveMessage(async (msg) => {
       if (msg.type === "ready") {
         const d = await loadData(context);
-        if (d) panel?.webview.postMessage(d);
+        panel?.webview.postMessage(d);
       } else if (msg.type === "openDefinition") {
         const d = await loadData(context);
         const loc: string | undefined = d?.locations?.[msg.id];
@@ -176,7 +181,7 @@ async function openViewer(context: vscode.ExtensionContext) {
   const watcher = vscode.workspace.createFileSystemWatcher("**/*.hesp");
   const refresh = async () => {
     const d = await loadData(context);
-    if (d) panel?.webview.postMessage(d);
+    panel?.webview.postMessage(d);
   };
   watcher.onDidChange(refresh);
   watcher.onDidCreate(refresh);
@@ -223,9 +228,6 @@ async function emit(context: vscode.ExtensionContext) {
     return;
   }
   vscode.window.showInformationMessage(`Hesperus: wrote ${res.stdout.trim().split("\n").length} actual files.`);
-  if (panel) {
-    const d = await loadData(context);
-    if (d) panel.webview.postMessage(d);
-  }
+  if (panel) panel.webview.postMessage(await loadData(context));
   void context;
 }

@@ -10,7 +10,7 @@ Hesperus describes a software system as a graph in `.hesp` files. Two descriptio
 - **Intent** (`examples/<system>/*.hesp` or wherever the project keeps them, tracked in git): what the system *should* be. You may edit these.
 - **Actual** (`.hesperus/actual/*.hesp`, gitignored, header line `generated "hesperus-ts"`): what the code *is*, emitted by `hesp emit`. **Never edit a generated file.** Change the code or the intent instead and re-emit.
 
-`hesp diff intent.hesp .hesperus/actual/intent.hesp` merges them. Read its statuses as:
+`hesp diff intent.hesp .hesperus/actual/intent.hesp` merges them. It prints a summary line, then only the differences (`--all` adds the `=` matches), then every constraint (`ok` with its witness edge, or `x`). An edge the extractor could not resolve ends its line with the word `unresolved` (in the IR it is `resolved: false`; the viewer draws it dashed). It exits 0 unless a constraint fails. Read the statuses as:
 
 | status | meaning | what you do |
 |---|---|---|
@@ -20,12 +20,16 @@ Hesperus describes a software system as a graph in `.hesp` files. Two descriptio
 | `conflict` (`!`) | both exist, `kind`/`protocol`/`host`/`engine` disagree | **drift**: report it; fix the code or the intent, whichever is wrong |
 | constraint `x` | a `forbid` has a witness or a `require` has none | **violation**: report it; it fails the build (`hesp diff` exits 1) |
 
+Two nodes in actual files are synthesized by the extractor, not declared by anyone: `subsystem unbound` holds one component per directory of code no intent `src` binds (`unbound.scripts` means "add a `src:` binding for `scripts/**` to the right node, or it is genuinely stray code"), and `network unresolved` is the sink for edges whose target the extractor could not identify. Do not declare either in the intent. Generated files also carry `at: ["path:line", ...]` evidence on nodes and edges; intent files never need it.
+
 ## After every edit
 
 ```
-hesp fmt <dir>        # formats in place; never touches generated files
-hesp check <master>   # parses the master and every import; exit 0 means clean
+hesp fmt <dir-or-file>   # formats in place; never touches generated files
+hesp check <master>      # parses the master and every import; prints `ok (N nodes, N edges, N files)` and exits 0 when clean
 ```
+
+`hesp fmt` keeps your order; it does not sort. Convention in the examples: imports, edges and constraints alphabetical. Labels (the quoted string after a name) are optional everywhere.
 
 Fix every diagnostic. Each one names a code (`E011`), a position and often a fix (`help: replace with ...`). Never leave a file that fails `hesp check`.
 
@@ -96,7 +100,7 @@ Rules that bite:
 1. Create `name.hesp` with `hesperus 0.1` and a `subsystem name "Label" { src: "path/**" ... }` root.
 2. Add `import "./name.hesp"` inside the master's `system` block.
 3. Add edges at the lowest block that contains both endpoints (cross-subsystem edges go in the master).
-4. Run `hesp fmt` and `hesp check` on the master. Then `hesp emit --lang ts <repo> --intent <master>` and `hesp diff` to see what the code already provides.
+4. Run `hesp fmt` and `hesp check` on the master. Then `hesp emit --lang ts <repo> --intent <master>` (`<repo>` is the root of the code the intent describes; output lands in `.hesperus/actual/` under the current directory, or `--out <dir>`) and `hesp diff <master> .hesperus/actual/<master name>` to see what the code already provides.
 
 ## Reading a diff for someone
 

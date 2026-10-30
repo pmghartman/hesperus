@@ -108,21 +108,15 @@ export function extract(repoRoot: string, opts: ExtractOptions): Ir {
           addEdge(from, to, "calls", at);
           break;
         }
-        case "route": {
-          const id = boundary("ingress", { protocol: "http" }, "http", { protocol: "http", label: "HTTP" });
+        case "ingress": {
+          const label = fd.protocol === "http" ? "HTTP" : "WebSocket";
+          const id = boundary("ingress", { protocol: fd.protocol }, fd.protocol, { protocol: fd.protocol, label });
           nodes.get(id)!.at.push(at);
-          addEdge(id, from, "http", at);
+          addEdge(id, from, fd.protocol, at);
           break;
         }
-        case "ws-server": {
-          const id = boundary("ingress", { protocol: "ws" }, "ws", { protocol: "ws", label: "WebSocket" });
-          nodes.get(id)!.at.push(at);
-          addEdge(id, from, "ws", at);
-          break;
-        }
-        case "http":
-        case "ws-client": {
-          const edgeKind = fd.kind === "http" ? "http" : "ws";
+        case "by-url": {
+          const edgeKind = fd.edge;
           const { host, relative } = classifyUrl(fd.url);
           if (host) {
             const id = boundary("external", { host }, identify(host), { host, protocol: edgeKind, label: host });
@@ -149,13 +143,8 @@ export function extract(repoRoot: string, opts: ExtractOptions): Ir {
           }
           break;
         }
-        case "fs": {
-          const id = boundary("hardware", { name: "filesystem" }, "filesystem", { label: "Filesystem" });
-          addEdge(from, id, "io", at);
-          break;
-        }
-        case "proc": {
-          const id = boundary("hardware", { name: "processes" }, "processes", { label: "OS processes" });
+        case "hardware": {
+          const id = boundary("hardware", { name: fd.name }, fd.name, { label: fd.label });
           addEdge(from, id, "io", at);
           break;
         }

@@ -10,6 +10,7 @@ declare function acquireVsCodeApi(): { postMessage(msg: unknown): void; getState
 const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : { postMessage: () => {}, getState: () => null, setState: () => {} };
 
 interface Data {
+  error?: string;
   intent: any | null;
   actual: any | null;
   unified: any | null;
@@ -40,8 +41,9 @@ function render() {
       return `<button class="tab${m === mode ? " active" : ""}" data-mode="${m}" ${available ? "" : "disabled"} title="${available ? "" : "run hesp emit to produce actual files"}">${m[0].toUpperCase()}${m.slice(1)}</button>`;
     })
     .join("");
+  const errorBox = data?.error ? `<p class="error">${esc(data.error)}</p>` : "";
   if (!g) {
-    root.innerHTML = `<header>${tabs}</header><p class="empty">Nothing to show for this mode.${mode !== "intent" ? " Run <code>hesp emit --lang ts &lt;repo&gt; --intent &lt;master&gt;</code> to produce the actual description." : ""}</p>`;
+    root.innerHTML = `<header>${tabs}</header>${errorBox}<p class="empty">Nothing to show for this mode.${mode !== "intent" ? " Run <code>hesp emit --lang ts &lt;repo&gt; --intent &lt;master&gt;</code> to produce the actual description." : ""}</p>`;
     bindTabs();
     return;
   }
@@ -51,7 +53,7 @@ function render() {
   const svg = renderSvg(l, { mode, graph: g, title: focus });
   const summary = data?.unified?.summary && mode === "unified" ? `<span class="summary">${data.unified.summary.match} match · ${data.unified.summary.intent_only} intent-only · ${data.unified.summary.actual_only} actual-only · ${data.unified.summary.conflict} conflict · ${data.unified.summary.violations} violations</span>` : "";
   const constraints = mode === "unified" && g.constraints.length ? `<ul class="constraints">${g.constraints.map((c) => `<li class="${c.satisfied ? "ok" : "violated"}">${c.satisfied ? "ok" : "x"} ${c.rule} ${c.from} → ${c.to}${c.kind ? `: ${c.kind}` : ""}${c.witnesses.length && !c.satisfied ? ` — ${c.witnesses.join(", ")}` : ""}</li>`).join("")}</ul>` : "";
-  root.innerHTML = `<header>${tabs}${renderBreadcrumb(g, focus)}${summary}</header><div class="canvas">${svg}</div><aside id="side">${renderSide(g)}</aside><footer>${renderLegend(mode)}<span class="hint">click a container to drill down · ctrl/cmd-click opens its .hesp · evidence links open source</span></footer>${constraints}`;
+  root.innerHTML = `<header>${tabs}${renderBreadcrumb(g, focus)}${summary}</header>${errorBox}<div class="canvas">${svg}</div><aside id="side">${renderSide(g)}</aside><footer>${renderLegend(mode)}<span class="hint">click a container to drill down · ctrl/cmd-click opens its .hesp · evidence links open source</span></footer>${constraints}`;
   bindTabs();
   root.querySelectorAll<SVGGElement>("g.node").forEach((el) => {
     el.addEventListener("click", (ev) => {

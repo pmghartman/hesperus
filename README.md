@@ -37,7 +37,7 @@ system shop "Web shop" {
 | `crates/hesperus-core` | lexer, error-tolerant parser (every error, with span and fix), templates, linker, validator, IR, canonical printer, idempotent formatter, differ |
 | `crates/hesp` | CLI: `check`, `fmt`, `ir`, `print`, `emit --lang ts`, `diff` |
 | `crates/hesperus-lsp` | language server (tower-lsp): diagnostics, completion, hover, go-to-definition across imports, rename, formatting |
-| `hesperus-ts` | the TypeScript extractor (ts-morph): maps files to intent nodes through `src` bindings, turns imports into `calls`, detects HTTP routes, outbound HTTP, database clients, WebSockets, filesystem and process use; everything it cannot resolve is `resolved: false` |
+| `hesperus-ts` | the TypeScript extractor: a ts-morph frontend emits a neutral fact stream, a rule table (`src/rules.ts`, one row per library pattern, one fixture per row) maps facts to effects, and the engine assembles the actual IR. Files map to intent nodes through `src` bindings, imports become `calls`, rows detect HTTP routes, outbound HTTP, database clients, WebSockets, filesystem and process use; everything it cannot resolve is `resolved: false`. Adding a framework is adding rows; adding a language is a new frontend for the same table |
 | `vscode-hesperus` | VS Code extension: grammar, LSP client, viewer with Intent / Actual / Unified modes, drill-down with edge aggregation, legend, click-through to `.hesp` and to source |
 | `skill/SKILL.md` | teaches agents the syntax and the workflow |
 | `examples/phosphorus` | the intent description of [Phosphorus](https://github.com/pmghartman/phosphorus), the first test codebase |

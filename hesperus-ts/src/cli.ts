@@ -4,11 +4,14 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { applyRules } from "./engine.js";
 import { extract } from "./extract.js";
+import { factsOf, newProject } from "./facts.js";
 import { Ir, toJson } from "./ir.js";
+import { RULES } from "./rules.js";
 
 function usage(): never {
-  process.stderr.write("usage: hesperus-ts extract <repo> [--intent <ir.json>] [--root <name>]\n");
+  process.stderr.write("usage: hesperus-ts extract <repo> [--intent <ir.json>] [--root <name>]\n       hesperus-ts explain <file.ts>   # the facts of one file and the rule rows they fire\n       hesperus-ts rules               # the rule table as JSON\n");
   process.exit(2);
 }
 
@@ -21,6 +24,17 @@ async function readStdin(): Promise<string> {
 
 async function main() {
   const args = process.argv.slice(2);
+  if (args[0] === "rules") {
+    process.stdout.write(JSON.stringify(RULES, null, 2) + "\n");
+    return;
+  }
+  if (args[0] === "explain" && args[1]) {
+    const file = path.resolve(args[1]);
+    const facts = factsOf(newProject(), path.basename(file), fs.readFileSync(file, "utf8"));
+    const findings = applyRules(facts);
+    process.stdout.write(JSON.stringify({ facts: facts.facts, findings }, null, 2) + "\n");
+    return;
+  }
   if (args[0] !== "extract" || !args[1]) usage();
   const repo = path.resolve(args[1]);
   let intentPath: string | null = null;
