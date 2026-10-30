@@ -132,19 +132,19 @@ fn fmt(paths: &[PathBuf], check: bool) -> i32 {
     let mut errors = 0;
     for f in files {
         let path = path_str(&f);
-        let text = match std::fs::read(&f).map_err(|e| e.to_string()).and_then(|b| {
+        let text = match std::fs::read(&f).map_err(|e| format!(": {e}")).and_then(|b| {
             let lossy = String::from_utf8_lossy(&b).into_owned();
             hesperus_core::lower::decode(b).map_err(|e| match e {
                 hesperus_core::lower::ReadError::NotUtf8(at) => {
                     let (line, col) = hesperus_core::diag::LineIndex::new(&lossy).position(at);
-                    format!("{line}:{col}: error[E034]: file is not valid UTF-8 at byte {at}")
+                    format!(":{line}:{col}: error[E034]: file is not valid UTF-8 at byte {at}")
                 }
-                hesperus_core::lower::ReadError::Missing(m) => m,
+                hesperus_core::lower::ReadError::Missing(m) => format!(": {m}"),
             })
         }) {
             Ok(t) => t,
             Err(e) => {
-                eprintln!("{path}: {e}");
+                eprintln!("{path}{e}");
                 errors += 1;
                 continue;
             }
@@ -293,10 +293,12 @@ fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extr
     };
     let command: Vec<String> = match extractor.map(|s| s.to_string()).or_else(|| std::env::var("HESPERUS_TS").ok()) {
         Some(cmd) => {
-            if cmd.ends_with(".js") || cmd.ends_with(".mjs") || cmd.ends_with(".cjs") {
+            // a bare script path runs under node; anything else is a command line
+            let words: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
+            if words.len() == 1 && (cmd.ends_with(".js") || cmd.ends_with(".mjs") || cmd.ends_with(".cjs")) {
                 vec!["node".into(), cmd]
             } else {
-                cmd.split_whitespace().map(|s| s.to_string()).collect()
+                words
             }
         }
         None => vec!["hesperus-ts".into()],

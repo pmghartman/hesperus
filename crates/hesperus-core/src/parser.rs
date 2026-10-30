@@ -301,6 +301,12 @@ impl Parser {
                         match self.peek_at(1) {
                             Tok::LParen => self.call(),
                             Tok::Colon if !top => self.property(),
+                            Tok::Colon => {
+                                let span = self.cur_span();
+                                self.error("E039", span, "a property belongs inside a node's block");
+                                self.recover();
+                                None
+                            }
                             Tok::Arrow | Tok::Dot => self.edge(),
                             Tok::Ident(_) => {
                                 let span = self.cur_span();

@@ -451,3 +451,21 @@ fn review_regressions_3() {
     assert!(text.contains("bad.hesp:4:16: error[E034]"), "{text}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Regressions from the fourth review.
+#[test]
+fn review_regressions_4() {
+    let check = |text: &str| load("r.hesp", &MemSource(HashMap::from([("r.hesp".to_string(), text.to_string())])));
+    // a 300-item list argument is over the limit like any other list
+    let items = (0..300).map(|i| format!("n{i}")).collect::<Vec<_>>().join(", ");
+    let p = check(&format!("hesperus 0.1\n\ntemplate t(parts) {{\n  each p in $parts {{\n    component $p\n  }}\n}}\n\nsystem s {{\n  t([{items}])\n}}\n"));
+    assert_eq!(codes(&p.diags), vec!["E021"]);
+    // a one-item `at` prints bare and round-trips
+    let src = "hesperus 0.1\ngenerated \"x\"\n\nsystem s {\n  component a {\n    at: \"src/x.ts:1\"\n  }\n  hardware fs\n\n  a -> fs: io {\n    at: \"src/x.ts:2\"\n  }\n}\n";
+    let p = check(src);
+    assert!(!p.has_errors(), "{:?}", p.diags);
+    assert_eq!(print(&p.ir)[0].1, src);
+    // a top-level property is a misplaced statement
+    let p = check("hesperus 0.1\n\ndesc: \"x\"\nsystem s {\n  component a\n}\n");
+    assert_eq!(codes(&p.diags), vec!["E039"]);
+}

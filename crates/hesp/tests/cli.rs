@@ -117,4 +117,8 @@ fn emit_requires_a_known_language_and_an_extractor() {
     let out = hesp().args(["emit", "--lang", "ts", ".", "--extractor", "/nonexistent/extractor"]).current_dir(root()).output().unwrap();
     assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(String::from_utf8_lossy(&out.stderr).contains("cannot run extractor"));
+    // a command line with arguments is run as given (here: a command that exits 3)
+    let out = hesp().args(["emit", "--lang", "ts", ".", "--extractor", "node -e process.exit(3)"]).current_dir(root()).output().unwrap();
+    assert_eq!(out.status.code(), Some(1), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("extractor failed"));
 }

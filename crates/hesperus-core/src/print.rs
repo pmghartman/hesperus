@@ -111,7 +111,7 @@ impl<'a> Ctx<'a> {
             props.push(prop("engine", Value::Str(string(e))));
         }
         if !n.at.is_empty() {
-            props.push(prop("at", Value::List(n.at.iter().map(|s| Value::Str(string(s))).collect(), Span::default())));
+            props.push(prop("at", str_or_list(&n.at)));
         }
         groups.push(props);
         // imports and children
@@ -143,7 +143,7 @@ impl<'a> Ctx<'a> {
                     block_items.push(stmt(prop("resolved", Value::Bool(false, Span::default())), false));
                 }
                 if !e.at.is_empty() {
-                    block_items.push(stmt(prop("at", Value::List(e.at.iter().map(|s| Value::Str(string(s))).collect(), Span::default())), false));
+                    block_items.push(stmt(prop("at", str_or_list(&e.at)), false));
                 }
                 edges.push(StmtKind::Edge(EdgeStmt {
                     from: self.path_from(&n.id, &e.from),

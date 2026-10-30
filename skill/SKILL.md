@@ -49,7 +49,7 @@ system shop "Web shop" { # the master's root: a system; one root per file
     protocol: http # http ws grpc tcp udp ssh other
   }
   store db {
-    engine: "postgres" # free string; the extractor emits postgres, mysql, sqlite, mongodb, redis
+    engine: "postgres" # free string; the extractor emits postgres, mysql, sqlite, mongodb, redis, sql (query builders)
   }
   external stripe {
     protocol: http

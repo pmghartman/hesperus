@@ -94,7 +94,7 @@ subsystem catalog "Product catalog" {
 
 ## 4. Nodes and identifiers
 
-A node is `kind name "optional label" { ... }`. The **label** is free text shown in the viewer and never diffed. The node's **id** is its fully qualified path: the names of its ancestors and itself joined by `.`, so `search` above has id `shop.catalog.search`. Ids must be unique (E010); the differ matches on them. A child of the root may not share the root's name (E033), so that the root's name always means the root in a path.
+A node is `kind name "optional label" { ... }`. The **label** is free text shown in the viewer and never diffed. The node's **id** is its fully qualified path: the names of its ancestors and itself joined by `.`, so `search` above has id `shop.catalog.search`. Ids must be unique (E010); the differ matches on them. In a master file, a child of the root `system` may not share the root's name (E033), so that the root's name always means the root in a path; a subsystem checked on its own is exempt, since it is normally a child of some system.
 
 Kinds form a closed set:
 

@@ -212,7 +212,13 @@ impl<'a> Expander<'a> {
                         items.clone()
                     }
                     EachSource::Name(name) => match env.get(name.text.trim_start_matches('$').trim_start_matches('{').trim_end_matches('}')) {
-                        Some(Bound::List(items)) => items.clone(),
+                        Some(Bound::List(items)) => {
+                            if items.len() > MAX_LIST {
+                                self.diags.push(Diagnostic::error("E021", name.span.clone(), format!("a list holds at most {MAX_LIST} items")));
+                                return;
+                            }
+                            items.clone()
+                        }
                         Some(Bound::Text(_)) => {
                             self.diags.push(Diagnostic::error("E009", name.span.clone(), format!("`{}` is a value, not a list", clip(&name.text))));
                             return;
