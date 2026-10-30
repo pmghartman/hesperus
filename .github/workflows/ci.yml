@@ -1,0 +1,31 @@
+name: ci
+on:
+  push:
+  pull_request:
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo test --workspace
+      - run: cargo build --release
+      - run: ./target/release/hesp check examples/phosphorus/phosphorus.hesp
+      - run: ./target/release/hesp fmt --check examples
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+        working-directory: hesperus-ts
+      - run: npm test
+        working-directory: hesperus-ts
+      - run: npm ci
+        working-directory: vscode-hesperus
+      - run: npm test
+        working-directory: vscode-hesperus
+      - run: npm run package
+        working-directory: vscode-hesperus
