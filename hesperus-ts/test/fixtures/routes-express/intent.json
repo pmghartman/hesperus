@@ -1,0 +1,71 @@
+{
+  "hesperus": "0.1",
+  "generated": null,
+  "root": "svc",
+  "files": [
+    {
+      "path": "svc.hesp",
+      "root": "svc"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "svc",
+      "kind": "system",
+      "name": "svc",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "svc.server",
+      "kind": "component",
+      "name": "server",
+      "parent": "svc",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/server.ts"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "svc.users",
+      "kind": "component",
+      "name": "users",
+      "parent": "svc",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/users.ts"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "svc.api",
+      "kind": "ingress",
+      "name": "api",
+      "parent": "svc",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": "http",
+      "host": null,
+      "engine": null,
+      "at": []
+    }
+  ],
+  "edges": [],
+  "constraints": []
+}

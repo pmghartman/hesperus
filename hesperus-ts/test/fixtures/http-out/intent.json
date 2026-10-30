@@ -1,0 +1,69 @@
+{
+  "hesperus": "0.1",
+  "generated": null,
+  "root": "app",
+  "files": [
+    {
+      "path": "app.hesp",
+      "root": "app"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "app",
+      "kind": "system",
+      "name": "app",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.client",
+      "kind": "component",
+      "name": "client",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/**"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.payments",
+      "kind": "external",
+      "name": "payments",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": "http",
+      "host": "api.stripe.com",
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.web",
+      "kind": "ingress",
+      "name": "web",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": "http",
+      "host": null,
+      "engine": null,
+      "at": []
+    }
+  ],
+  "edges": [],
+  "constraints": []
+}

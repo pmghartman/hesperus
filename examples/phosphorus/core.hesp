@@ -1,0 +1,15 @@
+hesperus 0.1
+
+subsystem core "Shared code every layer uses" {
+  src: "packages/core/**"
+
+  component theme "Colors and icons" {
+    src: "packages/core/theme/**"
+  }
+  component util "Logging, env, atomic writes" {
+    src: "packages/core/util/**"
+  }
+  component wire "The wire protocol between page and server" {
+    src: "packages/core/wire/**"
+  }
+}

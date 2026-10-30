@@ -1,0 +1,23 @@
+hesperus 0.1
+
+subsystem ai "Models, agents and the MCP server" {
+  src: "packages/ai/**"
+
+  component code "Code sessions with Claude Code and opencode" {
+    src: "packages/ai/code/**"
+  }
+  component mcp "The MCP server" {
+    src: "packages/ai/mcp/**"
+  }
+  component model "Model assignment" {
+    src: "packages/ai/model/**"
+  }
+  component modeld "The model daemon" {
+    src: "packages/ai/modeld/**"
+  }
+  component tools "llama.cpp tooling" {
+    src: "packages/ai/tools/**"
+  }
+
+  modeld -> tools: calls
+}

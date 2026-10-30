@@ -1,0 +1,31 @@
+hesperus 0.1
+generated "hesperus-ts"
+
+system shop {
+  component api
+  component web
+  ingress edge {
+    protocol: ws
+  }
+  store db {
+    engine: "sqlite"
+  }
+  external payments {
+    protocol: http
+    host: "api.stripe.com"
+  }
+  hardware filesystem
+  network unresolved
+
+  api -> db: reads
+  api -> db: writes
+  api -> filesystem: io
+  api -> payments: http
+  api -> unresolved: http {
+    resolved: false
+  }
+  edge -> api: http
+  web -> api: http
+  web -> db: reads
+  web -> payments: http
+}

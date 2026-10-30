@@ -1,0 +1,27 @@
+hesperus 0.1
+generated "hesperus-ts"
+
+system app {
+  subsystem a {
+    component a1
+    component a2
+    component deep {
+      component d1
+    }
+  }
+  subsystem b {
+    component b1
+    component b2
+  }
+  store db {
+    engine: "postgres"
+  }
+
+  a.a1 -> b.b1: calls
+  a.a2 -> b.b1: calls
+  a.a2 -> b.b2: http
+  a.deep.d1 -> b.b1: calls
+  b.b1 -> a.a1: calls
+  b.b1 -> db: reads
+  b.b1 -> db: writes
+}

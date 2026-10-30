@@ -1,0 +1,68 @@
+{
+  "name": "vscode-hesperus",
+  "displayName": "Hesperus",
+  "description": "Hesperus system descriptions: syntax, language server, and a viewer that diffs intent against the code",
+  "version": "0.1.0",
+  "publisher": "pmghartman",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/pmghartman/hesperus" },
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Programming Languages", "Visualization"],
+  "activationEvents": ["onLanguage:hesperus", "workspaceContains:**/*.hesp"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "hesperus",
+        "aliases": ["Hesperus", "hesperus"],
+        "extensions": [".hesp"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      { "language": "hesperus", "scopeName": "source.hesperus", "path": "./syntaxes/hesperus.tmLanguage.json" }
+    ],
+    "commands": [
+      { "command": "hesperus.openViewer", "title": "Hesperus: Open Viewer", "icon": "$(type-hierarchy)" },
+      { "command": "hesperus.emit", "title": "Hesperus: Emit Actual From Code" },
+      { "command": "hesperus.restartServer", "title": "Hesperus: Restart Language Server" }
+    ],
+    "menus": {
+      "editor/title": [
+        { "command": "hesperus.openViewer", "when": "resourceLangId == hesperus", "group": "navigation" }
+      ]
+    },
+    "configuration": {
+      "title": "Hesperus",
+      "properties": {
+        "hesperus.hespPath": { "type": "string", "default": "hesp", "description": "Path to the `hesp` command." },
+        "hesperus.serverPath": { "type": "string", "default": "hesperus-lsp", "description": "Path to the `hesperus-lsp` language server." },
+        "hesperus.extractorPath": { "type": "string", "default": "", "description": "Path to the hesperus-ts extractor entry (dist/cli.js) or command; empty uses $HESPERUS_TS or `hesperus-ts` on PATH." },
+        "hesperus.intent": { "type": "string", "default": "", "description": "Workspace-relative path of the intent master file; empty picks the master of the active .hesp file." },
+        "hesperus.actualDir": { "type": "string", "default": ".hesperus/actual", "description": "Workspace-relative directory holding the emitted actual files." },
+        "hesperus.sourceRoot": { "type": "string", "default": "", "description": "Repository the actual files describe, for click-through to source; empty means the workspace folder." }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "npm run build:ext && npm run build:webview",
+    "build:ext": "esbuild src/extension.ts --bundle --platform=node --external:vscode --outfile=dist/extension.js --format=cjs --sourcemap",
+    "build:webview": "esbuild src/webview/main.ts --bundle --outfile=media/viewer.js --format=iife --sourcemap",
+    "compile-tests": "tsc -p tsconfig.json",
+    "test": "npm run build && npm run compile-tests && node --test out/test/",
+    "test:vscode": "npm run build && npm run compile-tests && node out/test/runVsCode.js",
+    "package": "vsce package --no-dependencies"
+  },
+  "dependencies": {
+    "vscode-languageclient": "9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.0",
+    "@types/vscode": "1.90.0",
+    "@vscode/test-electron": "2.5.2",
+    "@vscode/vsce": "3.6.2",
+    "esbuild": "0.25.12",
+    "typescript": "5.9.3"
+  }
+}

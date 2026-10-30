@@ -1,0 +1,27 @@
+{
+  "name": "hesperus-ts",
+  "version": "0.1.0",
+  "description": "Hesperus extractor for TypeScript repositories: emits actual IR from code",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "hesperus-ts": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test dist/test/",
+    "update-golden": "npm run build && UPDATE_GOLDEN=1 node --test dist/test/"
+  },
+  "dependencies": {
+    "ts-morph": "28.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.0",
+    "ajv": "8.17.1",
+    "typescript": "5.9.3"
+  }
+}

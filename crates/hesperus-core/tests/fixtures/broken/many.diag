@@ -1,0 +1,18 @@
+fixtures/broken/many.hesp:4:3: error[E005]: unknown node kind `componet`; did you mean `component`?
+  help: replace with `component`
+fixtures/broken/many.hesp:6:5: error[E007]: unknown property `sources`; properties are desc, src, protocol, host, engine, at
+fixtures/broken/many.hesp:7:5: error[E008]: `protocol` is not allowed on a component
+fixtures/broken/many.hesp:10:13: error[E009]: expected a string, found identifier
+  help: replace with `"postgres"`
+fixtures/broken/many.hesp:13:15: error[E023]: unknown protocol `htp`; one of http, ws, grpc, tcp, udp, ssh, other
+  help: replace with `http`
+fixtures/broken/many.hesp:14:15: error[E030]: an ingress cannot contain nodes
+fixtures/broken/many.hesp:17:3: error[E031]: `system` may only be the root of the master file; use `subsystem` here
+  help: replace with `subsystem`
+fixtures/broken/many.hesp:19:10: error[E011]: cannot resolve `ap` from `shop`; did you mean `shop.api`?
+  help: replace with `shop.api`
+fixtures/broken/many.hesp:21:3: error[E032]: duplicate edge `shop.web -> shop.db: reads`
+fixtures/broken/many.hesp:22:14: error[E006]: unknown edge kind `invokes`; one of calls, reads, writes, http, ws, io
+fixtures/broken/many.hesp:23:3: error[E036]: an edge cannot connect `shop.api` to itself
+fixtures/broken/many.hesp:25:5: error[E008]: `src` is not allowed on an edge; edge properties are desc, at, resolved
+fixtures/broken/many.hesp:28:17: error[E011]: cannot resolve `nowhere` from `shop`

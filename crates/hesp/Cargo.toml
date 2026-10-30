@@ -1,0 +1,16 @@
+[package]
+name = "hesp"
+description = "Hesperus command line: check, fmt, ir, emit, diff"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "hesp"
+path = "src/main.rs"
+
+[dependencies]
+hesperus-core = { path = "../hesperus-core" }
+serde_json.workspace = true
+clap = { version = "4", features = ["derive"] }

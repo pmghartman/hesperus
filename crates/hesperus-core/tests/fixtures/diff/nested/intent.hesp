@@ -1,0 +1,26 @@
+hesperus 0.1
+
+system mesh {
+  subsystem peers {
+    component accept
+    component dial
+    ingress link {
+      protocol: ws
+    }
+
+    link -> accept: ws
+  }
+  subsystem store {
+    component log
+    component index
+  }
+  subsystem web {
+    component ui
+  }
+
+  peers.accept -> store.log: writes
+  peers.dial -> store.log: reads
+  web.ui -> peers.link: ws
+
+  forbid web -> store
+}

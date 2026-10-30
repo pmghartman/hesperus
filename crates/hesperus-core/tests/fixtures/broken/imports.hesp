@@ -1,0 +1,8 @@
+hesperus 0.1
+
+system m {
+  import "./missing.hesp"
+  import "./bad-root.hesp"
+  import "./bad-root.hesp"
+  import "./cycle-a.hesp"
+}

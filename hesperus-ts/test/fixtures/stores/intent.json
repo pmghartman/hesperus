@@ -1,0 +1,131 @@
+{
+  "hesperus": "0.1",
+  "generated": null,
+  "root": "app",
+  "files": [
+    {
+      "path": "app.hesp",
+      "root": "app"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "app",
+      "kind": "system",
+      "name": "app",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data",
+      "kind": "subsystem",
+      "name": "data",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/**"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data.pg",
+      "kind": "component",
+      "name": "pg",
+      "parent": "app.data",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/pg.ts"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data.mongo",
+      "kind": "component",
+      "name": "mongo",
+      "parent": "app.data",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/mongo.ts"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data.cache",
+      "kind": "component",
+      "name": "cache",
+      "parent": "app.data",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/cache.ts"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data.local",
+      "kind": "component",
+      "name": "local",
+      "parent": "app.data",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/local.ts"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data.orm",
+      "kind": "component",
+      "name": "orm",
+      "parent": "app.data",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/orm.ts"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data.db",
+      "kind": "store",
+      "name": "db",
+      "parent": "app.data",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": "postgres",
+      "at": []
+    }
+  ],
+  "edges": [],
+  "constraints": []
+}

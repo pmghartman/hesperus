@@ -1,8 +1,11 @@
-.hesperus/
-.vscode/*
-!.vscode/launch.json
-!.vscode/tasks.json
+/target/
 node_modules/
+dist/
 out/
-grammars/
 *.vsix
+.hesperus/
+.vscode-test/
+.DS_Store
+
+vscode-hesperus/media/viewer.js
+vscode-hesperus/media/viewer.js.map

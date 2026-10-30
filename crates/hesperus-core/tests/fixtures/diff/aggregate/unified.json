@@ -1,0 +1,569 @@
+{
+  "hesperus": "0.1",
+  "root": "app",
+  "depth": null,
+  "summary": {
+    "match": 14,
+    "intent_only": 2,
+    "actual_only": 3,
+    "conflict": 0,
+    "violations": 0
+  },
+  "nodes": [
+    {
+      "id": "app",
+      "kind": "system",
+      "name": "app",
+      "parent": null,
+      "status": "match",
+      "intent": {
+        "id": "app",
+        "kind": "system",
+        "name": "app",
+        "parent": null,
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "app",
+        "kind": "system",
+        "name": "app",
+        "parent": null,
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "app.a",
+      "kind": "subsystem",
+      "name": "a",
+      "parent": "app",
+      "status": "match",
+      "intent": {
+        "id": "app.a",
+        "kind": "subsystem",
+        "name": "a",
+        "parent": "app",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "app.a",
+        "kind": "subsystem",
+        "name": "a",
+        "parent": "app",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "app.a.a1",
+      "kind": "component",
+      "name": "a1",
+      "parent": "app.a",
+      "status": "match",
+      "intent": {
+        "id": "app.a.a1",
+        "kind": "component",
+        "name": "a1",
+        "parent": "app.a",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "app.a.a1",
+        "kind": "component",
+        "name": "a1",
+        "parent": "app.a",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "app.a.a2",
+      "kind": "component",
+      "name": "a2",
+      "parent": "app.a",
+      "status": "match",
+      "intent": {
+        "id": "app.a.a2",
+        "kind": "component",
+        "name": "a2",
+        "parent": "app.a",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "app.a.a2",
+        "kind": "component",
+        "name": "a2",
+        "parent": "app.a",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "app.a.deep",
+      "kind": "component",
+      "name": "deep",
+      "parent": "app.a",
+      "status": "match",
+      "intent": {
+        "id": "app.a.deep",
+        "kind": "component",
+        "name": "deep",
+        "parent": "app.a",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "app.a.deep",
+        "kind": "component",
+        "name": "deep",
+        "parent": "app.a",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "app.a.deep.d1",
+      "kind": "component",
+      "name": "d1",
+      "parent": "app.a.deep",
+      "status": "match",
+      "intent": {
+        "id": "app.a.deep.d1",
+        "kind": "component",
+        "name": "d1",
+        "parent": "app.a.deep",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "app.a.deep.d1",
+        "kind": "component",
+        "name": "d1",
+        "parent": "app.a.deep",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "app.b",
+      "kind": "subsystem",
+      "name": "b",
+      "parent": "app",
+      "status": "match",
+      "intent": {
+        "id": "app.b",
+        "kind": "subsystem",
+        "name": "b",
+        "parent": "app",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "app.b",
+        "kind": "subsystem",
+        "name": "b",
+        "parent": "app",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "app.b.b1",
+      "kind": "component",
+      "name": "b1",
+      "parent": "app.b",
+      "status": "match",
+      "intent": {
+        "id": "app.b.b1",
+        "kind": "component",
+        "name": "b1",
+        "parent": "app.b",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "app.b.b1",
+        "kind": "component",
+        "name": "b1",
+        "parent": "app.b",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "app.b.b2",
+      "kind": "component",
+      "name": "b2",
+      "parent": "app.b",
+      "status": "match",
+      "intent": {
+        "id": "app.b.b2",
+        "kind": "component",
+        "name": "b2",
+        "parent": "app.b",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "app.b.b2",
+        "kind": "component",
+        "name": "b2",
+        "parent": "app.b",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "app.db",
+      "kind": "store",
+      "name": "db",
+      "parent": "app",
+      "status": "match",
+      "intent": {
+        "id": "app.db",
+        "kind": "store",
+        "name": "db",
+        "parent": "app",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": "postgres",
+        "at": []
+      },
+      "actual": {
+        "id": "app.db",
+        "kind": "store",
+        "name": "db",
+        "parent": "app",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": "postgres",
+        "at": []
+      },
+      "conflicts": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "app.a.a1",
+      "to": "app.b.b1",
+      "kind": "calls",
+      "status": "match",
+      "intent": {
+        "from": "app.a.a1",
+        "to": "app.b.b1",
+        "kind": "calls",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "app.a.a1",
+        "to": "app.b.b1",
+        "kind": "calls",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "app.a.a1",
+      "to": "app.b.b2",
+      "kind": "calls",
+      "status": "intent-only",
+      "intent": {
+        "from": "app.a.a1",
+        "to": "app.b.b2",
+        "kind": "calls",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": null,
+      "count": 1,
+      "statuses": {
+        "intent-only": 1
+      }
+    },
+    {
+      "from": "app.a.a2",
+      "to": "app.b.b1",
+      "kind": "calls",
+      "status": "match",
+      "intent": {
+        "from": "app.a.a2",
+        "to": "app.b.b1",
+        "kind": "calls",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "app.a.a2",
+        "to": "app.b.b1",
+        "kind": "calls",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "app.a.a2",
+      "to": "app.b.b2",
+      "kind": "http",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "from": "app.a.a2",
+        "to": "app.b.b2",
+        "kind": "http",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "actual-only": 1
+      }
+    },
+    {
+      "from": "app.a.deep.d1",
+      "to": "app.b.b1",
+      "kind": "calls",
+      "status": "match",
+      "intent": {
+        "from": "app.a.deep.d1",
+        "to": "app.b.b1",
+        "kind": "calls",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "app.a.deep.d1",
+        "to": "app.b.b1",
+        "kind": "calls",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "app.b.b1",
+      "to": "app.a.a1",
+      "kind": "calls",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "from": "app.b.b1",
+        "to": "app.a.a1",
+        "kind": "calls",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "actual-only": 1
+      }
+    },
+    {
+      "from": "app.b.b1",
+      "to": "app.db",
+      "kind": "reads",
+      "status": "match",
+      "intent": {
+        "from": "app.b.b1",
+        "to": "app.db",
+        "kind": "reads",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "app.b.b1",
+        "to": "app.db",
+        "kind": "reads",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "app.b.b1",
+      "to": "app.db",
+      "kind": "writes",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "from": "app.b.b1",
+        "to": "app.db",
+        "kind": "writes",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "actual-only": 1
+      }
+    },
+    {
+      "from": "app.b.b2",
+      "to": "app.db",
+      "kind": "writes",
+      "status": "intent-only",
+      "intent": {
+        "from": "app.b.b2",
+        "to": "app.db",
+        "kind": "writes",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": null,
+      "count": 1,
+      "statuses": {
+        "intent-only": 1
+      }
+    }
+  ],
+  "constraints": []
+}

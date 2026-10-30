@@ -1,0 +1,29 @@
+hesperus 0.1
+
+# leading comment
+
+let xs = [a, b, "c"]
+
+template t(p) {
+  component $p "L $p" {
+    desc: "d"
+  }
+}
+
+system s "The   system" { # trailing on brace
+  src: ["a/**", "b"]
+  t(q) # call
+  each x in xs {
+    component $x
+  }
+
+  component a # trailing
+  # between
+  component b
+  a -> b: calls "lbl" {
+    at: ["f.ts:1"]
+  }
+  forbid a -> b
+  # last
+}
+# eof comment

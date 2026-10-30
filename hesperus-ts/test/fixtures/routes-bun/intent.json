@@ -1,0 +1,43 @@
+{
+  "hesperus": "0.1",
+  "generated": null,
+  "root": "bunapp",
+  "files": [
+    {
+      "path": "bunapp.hesp",
+      "root": "bunapp"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "bunapp",
+      "kind": "system",
+      "name": "bunapp",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "bunapp.srv",
+      "kind": "component",
+      "name": "srv",
+      "parent": "bunapp",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/**"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    }
+  ],
+  "edges": [],
+  "constraints": []
+}

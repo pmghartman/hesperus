@@ -1,0 +1,32 @@
+[
+  [
+    "mesh.peers.dial",
+    24,
+    24,
+    false
+  ],
+  [
+    "mesh.peers.link",
+    24,
+    112,
+    false
+  ],
+  [
+    "mesh.peers.accept",
+    316,
+    24,
+    false
+  ],
+  [
+    "mesh.store",
+    692,
+    24,
+    true
+  ],
+  [
+    "mesh.web",
+    692,
+    112,
+    true
+  ]
+]

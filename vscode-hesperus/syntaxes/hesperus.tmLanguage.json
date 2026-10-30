@@ -1,0 +1,72 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Hesperus",
+  "scopeName": "source.hesperus",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#header" },
+    { "include": "#definition" },
+    { "include": "#import" },
+    { "include": "#constraint" },
+    { "include": "#node" },
+    { "include": "#edge" },
+    { "include": "#property" },
+    { "include": "#each" },
+    { "include": "#call" },
+    { "include": "#string" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comment": { "match": "#.*$", "name": "comment.line.number-sign.hesperus" },
+    "header": {
+      "patterns": [
+        { "match": "^(hesperus)\\s+([0-9]+\\.[0-9]+)", "captures": { "1": { "name": "keyword.other.version.hesperus" }, "2": { "name": "constant.numeric.version.hesperus" } } },
+        { "match": "^(generated)\\b", "captures": { "1": { "name": "keyword.other.generated.hesperus" } } }
+      ]
+    },
+    "definition": {
+      "patterns": [
+        { "match": "^\\s*(let)\\s+([A-Za-z_][A-Za-z0-9_-]*)\\s*(=)", "captures": { "1": { "name": "keyword.control.let.hesperus" }, "2": { "name": "variable.other.constant.hesperus" }, "3": { "name": "keyword.operator.assignment.hesperus" } } },
+        { "match": "^\\s*(template)\\s+([A-Za-z_][A-Za-z0-9_-]*)", "captures": { "1": { "name": "keyword.control.template.hesperus" }, "2": { "name": "entity.name.function.template.hesperus" } } }
+      ]
+    },
+    "import": { "match": "^\\s*(import)\\b", "captures": { "1": { "name": "keyword.control.import.hesperus" } } },
+    "constraint": { "match": "^\\s*(require|forbid)\\b", "captures": { "1": { "name": "keyword.control.constraint.hesperus" } } },
+    "each": { "match": "^\\s*(each)\\s+([A-Za-z_][A-Za-z0-9_-]*)\\s+(in)\\b", "captures": { "1": { "name": "keyword.control.each.hesperus" }, "2": { "name": "variable.parameter.hesperus" }, "3": { "name": "keyword.control.in.hesperus" } } },
+    "node": {
+      "match": "^\\s*(system|subsystem|component|ingress|egress|store|external|network|hardware)\\s+([A-Za-z_$][A-Za-z0-9_$-]*(?:\\{[^}]*\\})?)",
+      "captures": { "1": { "name": "storage.type.node.hesperus" }, "2": { "name": "entity.name.type.node.hesperus", "patterns": [{ "include": "#interpolation" }] } }
+    },
+    "edge": {
+      "match": "^\\s*([A-Za-z_$][A-Za-z0-9_$.-]*)\\s*(->)\\s*([A-Za-z_$][A-Za-z0-9_$.-]*)(?:\\s*(:)\\s*(calls|reads|writes|http|ws|io|[A-Za-z_]+))?",
+      "captures": {
+        "1": { "name": "variable.other.path.hesperus", "patterns": [{ "include": "#interpolation" }] },
+        "2": { "name": "keyword.operator.arrow.hesperus" },
+        "3": { "name": "variable.other.path.hesperus", "patterns": [{ "include": "#interpolation" }] },
+        "4": { "name": "punctuation.separator.hesperus" },
+        "5": { "name": "support.type.edge-kind.hesperus" }
+      }
+    },
+    "property": {
+      "match": "^\\s*(desc|src|protocol|host|engine|at|resolved)\\s*(:)",
+      "captures": { "1": { "name": "support.variable.property.hesperus" }, "2": { "name": "punctuation.separator.hesperus" } }
+    },
+    "call": { "match": "^\\s*([A-Za-z_][A-Za-z0-9_-]*)\\s*(?=\\()", "captures": { "1": { "name": "entity.name.function.template.hesperus" } } },
+    "string": {
+      "name": "string.quoted.double.hesperus",
+      "begin": "\"",
+      "end": "\"",
+      "patterns": [
+        { "match": "\\\\[\"\\\\nt$]", "name": "constant.character.escape.hesperus" },
+        { "include": "#interpolation" }
+      ]
+    },
+    "interpolation": { "match": "\\$\\{[A-Za-z_][A-Za-z0-9_]*\\}|\\$[A-Za-z_][A-Za-z0-9_]*", "name": "variable.parameter.interpolation.hesperus" },
+    "punctuation": {
+      "patterns": [
+        { "match": "\\b(true|false)\\b", "name": "constant.language.boolean.hesperus" },
+        { "match": "[{}\\[\\](),]", "name": "punctuation.hesperus" }
+      ]
+    }
+  }
+}

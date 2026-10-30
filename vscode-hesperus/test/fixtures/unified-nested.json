@@ -1,0 +1,542 @@
+{
+  "hesperus": "0.1",
+  "root": "mesh",
+  "depth": null,
+  "summary": {
+    "match": 12,
+    "intent_only": 2,
+    "actual_only": 4,
+    "conflict": 0,
+    "violations": 1
+  },
+  "nodes": [
+    {
+      "id": "mesh",
+      "kind": "system",
+      "name": "mesh",
+      "parent": null,
+      "status": "match",
+      "intent": {
+        "id": "mesh",
+        "kind": "system",
+        "name": "mesh",
+        "parent": null,
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "mesh",
+        "kind": "system",
+        "name": "mesh",
+        "parent": null,
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "mesh.peers",
+      "kind": "subsystem",
+      "name": "peers",
+      "parent": "mesh",
+      "status": "match",
+      "intent": {
+        "id": "mesh.peers",
+        "kind": "subsystem",
+        "name": "peers",
+        "parent": "mesh",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "mesh.peers",
+        "kind": "subsystem",
+        "name": "peers",
+        "parent": "mesh",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "mesh.peers.accept",
+      "kind": "component",
+      "name": "accept",
+      "parent": "mesh.peers",
+      "status": "match",
+      "intent": {
+        "id": "mesh.peers.accept",
+        "kind": "component",
+        "name": "accept",
+        "parent": "mesh.peers",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "mesh.peers.accept",
+        "kind": "component",
+        "name": "accept",
+        "parent": "mesh.peers",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "mesh.peers.dial",
+      "kind": "component",
+      "name": "dial",
+      "parent": "mesh.peers",
+      "status": "match",
+      "intent": {
+        "id": "mesh.peers.dial",
+        "kind": "component",
+        "name": "dial",
+        "parent": "mesh.peers",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "mesh.peers.dial",
+        "kind": "component",
+        "name": "dial",
+        "parent": "mesh.peers",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "mesh.peers.gossip",
+      "kind": "component",
+      "name": "gossip",
+      "parent": "mesh.peers",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "id": "mesh.peers.gossip",
+        "kind": "component",
+        "name": "gossip",
+        "parent": "mesh.peers",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "mesh.peers.link",
+      "kind": "ingress",
+      "name": "link",
+      "parent": "mesh.peers",
+      "status": "match",
+      "intent": {
+        "id": "mesh.peers.link",
+        "kind": "ingress",
+        "name": "link",
+        "parent": "mesh.peers",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": "ws",
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "mesh.peers.link",
+        "kind": "ingress",
+        "name": "link",
+        "parent": "mesh.peers",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": "ws",
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "mesh.store",
+      "kind": "subsystem",
+      "name": "store",
+      "parent": "mesh",
+      "status": "match",
+      "intent": {
+        "id": "mesh.store",
+        "kind": "subsystem",
+        "name": "store",
+        "parent": "mesh",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "mesh.store",
+        "kind": "subsystem",
+        "name": "store",
+        "parent": "mesh",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "mesh.store.index",
+      "kind": "component",
+      "name": "index",
+      "parent": "mesh.store",
+      "status": "intent-only",
+      "intent": {
+        "id": "mesh.store.index",
+        "kind": "component",
+        "name": "index",
+        "parent": "mesh.store",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": null,
+      "conflicts": []
+    },
+    {
+      "id": "mesh.store.log",
+      "kind": "component",
+      "name": "log",
+      "parent": "mesh.store",
+      "status": "match",
+      "intent": {
+        "id": "mesh.store.log",
+        "kind": "component",
+        "name": "log",
+        "parent": "mesh.store",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "mesh.store.log",
+        "kind": "component",
+        "name": "log",
+        "parent": "mesh.store",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "mesh.web",
+      "kind": "subsystem",
+      "name": "web",
+      "parent": "mesh",
+      "status": "match",
+      "intent": {
+        "id": "mesh.web",
+        "kind": "subsystem",
+        "name": "web",
+        "parent": "mesh",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "mesh.web",
+        "kind": "subsystem",
+        "name": "web",
+        "parent": "mesh",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "mesh.web.ui",
+      "kind": "component",
+      "name": "ui",
+      "parent": "mesh.web",
+      "status": "match",
+      "intent": {
+        "id": "mesh.web.ui",
+        "kind": "component",
+        "name": "ui",
+        "parent": "mesh.web",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "mesh.web.ui",
+        "kind": "component",
+        "name": "ui",
+        "parent": "mesh.web",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "mesh.peers.accept",
+      "to": "mesh.store.log",
+      "kind": "writes",
+      "status": "match",
+      "intent": {
+        "from": "mesh.peers.accept",
+        "to": "mesh.store.log",
+        "kind": "writes",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "mesh.peers.accept",
+        "to": "mesh.store.log",
+        "kind": "writes",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "mesh.peers.dial",
+      "to": "mesh.store.log",
+      "kind": "reads",
+      "status": "intent-only",
+      "intent": {
+        "from": "mesh.peers.dial",
+        "to": "mesh.store.log",
+        "kind": "reads",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": null,
+      "count": 1,
+      "statuses": {
+        "intent-only": 1
+      }
+    },
+    {
+      "from": "mesh.peers.gossip",
+      "to": "mesh.peers.accept",
+      "kind": "calls",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "from": "mesh.peers.gossip",
+        "to": "mesh.peers.accept",
+        "kind": "calls",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "actual-only": 1
+      }
+    },
+    {
+      "from": "mesh.peers.gossip",
+      "to": "mesh.store.log",
+      "kind": "reads",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "from": "mesh.peers.gossip",
+        "to": "mesh.store.log",
+        "kind": "reads",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "actual-only": 1
+      }
+    },
+    {
+      "from": "mesh.peers.link",
+      "to": "mesh.peers.accept",
+      "kind": "ws",
+      "status": "match",
+      "intent": {
+        "from": "mesh.peers.link",
+        "to": "mesh.peers.accept",
+        "kind": "ws",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "mesh.peers.link",
+        "to": "mesh.peers.accept",
+        "kind": "ws",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "mesh.web.ui",
+      "to": "mesh.peers.link",
+      "kind": "ws",
+      "status": "match",
+      "intent": {
+        "from": "mesh.web.ui",
+        "to": "mesh.peers.link",
+        "kind": "ws",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "mesh.web.ui",
+        "to": "mesh.peers.link",
+        "kind": "ws",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "mesh.web.ui",
+      "to": "mesh.store.log",
+      "kind": "reads",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "from": "mesh.web.ui",
+        "to": "mesh.store.log",
+        "kind": "reads",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "actual-only": 1
+      }
+    }
+  ],
+  "constraints": [
+    {
+      "rule": "forbid",
+      "from": "mesh.web",
+      "to": "mesh.store",
+      "kind": null,
+      "satisfied": false,
+      "witnesses": [
+        "mesh.web.ui -> mesh.store.log: reads"
+      ]
+    }
+  ]
+}

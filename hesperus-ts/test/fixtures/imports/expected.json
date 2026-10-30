@@ -1,0 +1,194 @@
+{
+  "hesperus": "0.1",
+  "generated": "hesperus-ts",
+  "root": "app",
+  "files": [
+    {
+      "path": "app.hesp",
+      "root": "app"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "app",
+      "kind": "system",
+      "name": "app",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.api",
+      "kind": "component",
+      "name": "api",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.lib",
+      "kind": "component",
+      "name": "lib",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.unbound",
+      "kind": "subsystem",
+      "name": "unbound",
+      "parent": "app",
+      "label": "Code no intent node binds",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.unbound.scripts",
+      "kind": "component",
+      "name": "scripts",
+      "parent": "app.unbound",
+      "label": null,
+      "desc": null,
+      "src": [
+        "scripts/**"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.unbound.tools_gen",
+      "kind": "component",
+      "name": "tools_gen",
+      "parent": "app.unbound",
+      "label": null,
+      "desc": null,
+      "src": [
+        "tools/gen/**"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.unresolved",
+      "kind": "network",
+      "name": "unresolved",
+      "parent": "app",
+      "label": "Unresolved targets",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.util",
+      "kind": "component",
+      "name": "util",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.web",
+      "kind": "component",
+      "name": "web",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "app.api",
+      "to": "app.lib",
+      "kind": "calls",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/api/handler.ts:2",
+        "src/api/handler.ts:6"
+      ]
+    },
+    {
+      "from": "app.api",
+      "to": "app.unresolved",
+      "kind": "calls",
+      "label": null,
+      "desc": null,
+      "resolved": false,
+      "at": [
+        "src/api/handler.ts:12"
+      ]
+    },
+    {
+      "from": "app.api",
+      "to": "app.util",
+      "kind": "calls",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/api/handler.ts:1"
+      ]
+    },
+    {
+      "from": "app.api",
+      "to": "app.web",
+      "kind": "calls",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/api/handler.ts:5",
+        "src/api/handler.ts:8"
+      ]
+    },
+    {
+      "from": "app.unbound.scripts",
+      "to": "app.lib",
+      "kind": "calls",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "scripts/build.ts:1"
+      ]
+    }
+  ],
+  "constraints": []
+}

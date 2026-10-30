@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hesperus.dev/schema/ir-0.1.json",
+  "title": "Hesperus IR 0.1",
+  "description": "Canonical intermediate representation of one Hesperus project (a master file and its imports). Produced by `hesp ir`, by extractors, and consumed by the printer, differ, language server and viewer.",
+  "type": "object",
+  "required": ["hesperus", "root", "nodes", "edges"],
+  "additionalProperties": false,
+  "properties": {
+    "hesperus": { "const": "0.1", "description": "Language version." },
+    "generated": {
+      "type": ["string", "null"],
+      "description": "Name of the extractor that emitted this IR; null for intent."
+    },
+    "root": { "$ref": "#/$defs/id", "description": "Id of the root node." },
+    "files": {
+      "type": "array",
+      "description": "Which node is the root of which file, master first; paths relative to the master's directory with `/` separators.",
+      "items": {
+        "type": "object",
+        "required": ["path", "root"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string", "pattern": "\\.hesp$" },
+          "root": { "$ref": "#/$defs/id" }
+        }
+      }
+    },
+    "nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+    "edges": { "type": "array", "items": { "$ref": "#/$defs/edge" } },
+    "constraints": { "type": "array", "items": { "$ref": "#/$defs/constraint" } },
+    "locations": {
+      "type": "object",
+      "description": "Optional (`hesp ir --locations`, on intent or actual files): where each node is declared, as path:line relative to the master's directory. Not part of the canonical IR.",
+      "additionalProperties": { "$ref": "#/$defs/evidence" }
+    }
+  },
+  "$defs": {
+    "ident": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_-]*$" },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_-]*(\\.[A-Za-z_][A-Za-z0-9_-]*)*$",
+      "description": "Fully qualified node path."
+    },
+    "evidence": { "type": "string", "pattern": "^.+:[0-9]+$", "description": "path:line into the repository." },
+    "nodeKind": {
+      "enum": ["system", "subsystem", "component", "ingress", "egress", "store", "external", "network", "hardware"]
+    },
+    "edgeKind": { "enum": ["calls", "reads", "writes", "http", "ws", "io"] },
+    "protocol": { "enum": ["http", "ws", "grpc", "tcp", "udp", "ssh", "other"] },
+    "node": {
+      "type": "object",
+      "required": ["id", "kind", "name", "parent"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "$ref": "#/$defs/nodeKind" },
+        "name": { "$ref": "#/$defs/ident", "description": "Last segment of id." },
+        "parent": { "oneOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
+        "label": { "type": ["string", "null"], "description": "Free text, never diffed." },
+        "desc": { "type": ["string", "null"], "description": "Free text, never diffed." },
+        "src": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Binding globs, sorted. Written in intent; an extractor sets them only on the components of its synthesized `unbound` subsystem, as the directory glob that grouped them."
+        },
+        "protocol": { "oneOf": [{ "$ref": "#/$defs/protocol" }, { "type": "null" }] },
+        "host": { "type": ["string", "null"] },
+        "engine": { "type": ["string", "null"] },
+        "at": { "type": "array", "items": { "$ref": "#/$defs/evidence" }, "description": "Evidence, sorted." }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["from", "to", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "from": { "$ref": "#/$defs/id" },
+        "to": { "$ref": "#/$defs/id" },
+        "kind": { "$ref": "#/$defs/edgeKind" },
+        "label": { "type": ["string", "null"] },
+        "desc": { "type": ["string", "null"] },
+        "resolved": { "type": "boolean", "default": true },
+        "at": { "type": "array", "items": { "$ref": "#/$defs/evidence" } }
+      }
+    },
+    "constraint": {
+      "type": "object",
+      "required": ["rule", "from", "to"],
+      "additionalProperties": false,
+      "properties": {
+        "rule": { "enum": ["require", "forbid"] },
+        "from": { "$ref": "#/$defs/id" },
+        "to": { "$ref": "#/$defs/id" },
+        "kind": { "oneOf": [{ "$ref": "#/$defs/edgeKind" }, { "type": "null" }] }
+      }
+    }
+  }
+}

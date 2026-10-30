@@ -1,0 +1,5 @@
+hesperus 0.1
+
+subsystem a {
+  import "./cycle-b.hesp"
+}

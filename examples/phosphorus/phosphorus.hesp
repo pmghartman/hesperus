@@ -1,0 +1,155 @@
+hesperus 0.1
+
+system phosphorus "Every computer you own, as one desktop in your browser" {
+  desc: "Install it on each machine and they find each other: one private mesh of Macs, PCs and Linux boxes, opened from any browser."
+
+  import "./ai.hesp"
+  import "./apps.hesp"
+  import "./chat.hesp"
+  import "./core.hesp"
+  import "./home.hesp"
+  import "./host.hesp"
+  import "./mesh.hesp"
+  import "./net.hesp"
+  import "./server.hesp"
+
+  ingress http "Browsers and peers over HTTP" {
+    protocol: http
+  }
+  ingress ws "Browser and peer sockets" {
+    protocol: ws
+  }
+  external github "GitHub API" {
+    protocol: http
+    host: "api.github.com"
+  }
+  external tailscale "Tailscale API" {
+    protocol: http
+    host: "api.tailscale.com"
+  }
+  external tailscale_pkgs "Tailscale downloads" {
+    protocol: http
+    host: "pkgs.tailscale.com"
+  }
+  network tailnet "Peers over the tailnet" {
+    protocol: ws
+  }
+  hardware filesystem "Disk"
+  hardware processes "OS processes"
+
+  ai.code -> core.util: calls
+  ai.code -> processes: io
+  ai.mcp -> core.util: calls
+  ai.mcp -> home.files: calls
+  ai.mcp -> net.term: calls
+  ai.mcp -> net.wsock: calls
+  ai.model -> core.util: calls
+  ai.model -> mesh.peers: calls
+  ai.model -> mesh.store: calls
+  ai.model -> mesh.users: calls
+  ai.model -> mesh.webapps: calls
+  ai.modeld -> core.util: calls
+  ai.tools -> core.util: calls
+  apps.hostapp -> ai.modeld: calls
+  apps.hostapp -> core.util: calls
+  apps.hostapp -> host.cli: calls
+  apps.hostapp -> host.host: calls
+  apps.hostapp -> mesh.elector: calls
+  apps.hostapp -> server.server: calls
+  apps.tray -> core.theme: calls
+  apps.tray -> core.util: calls
+  apps.tray -> filesystem: io
+  apps.tray -> mesh.appfeed: calls
+  apps.tray -> processes: io
+  apps.web -> core.theme: calls
+  apps.web -> core.wire: calls
+  apps.web -> http: http
+  apps.web -> ws: ws
+  chat.chatmedia -> core.util: calls
+  chat.chatmedia -> mesh.store: calls
+  home.collab -> core.util: calls
+  home.collab -> filesystem: io
+  home.collab -> mesh.users: calls
+  home.collab -> net.wsock: calls
+  home.files -> core.util: calls
+  home.files -> filesystem: io
+  home.mirror -> core.util: calls
+  home.mirror -> mesh.store: calls
+  host.cli -> core.theme: calls
+  host.cli -> core.util: calls
+  host.cli -> mesh.services: calls
+  host.config -> core.util: calls
+  host.config -> mesh.services: calls
+  host.envfile -> core.util: calls
+  host.envfile -> filesystem: io
+  host.host -> core.util: calls
+  host.host -> filesystem: io
+  host.host -> mesh.appfeed: calls
+  host.host -> processes: io
+  host.host -> tailscale_pkgs: http
+  host.procs -> core.util: calls
+  host.procs -> processes: io
+  host.reconfig -> core.util: calls
+  host.stats -> core.util: calls
+  host.stats -> net.wsock: calls
+  http -> net.proxy: http
+  http -> server.server: http
+  mesh.elector -> core.util: calls
+  mesh.git -> core.util: calls
+  mesh.git -> filesystem: io
+  mesh.peers -> core.util: calls
+  mesh.peers -> core.wire: calls
+  mesh.peers -> net.gamedns: calls
+  mesh.peers -> net.proxy: calls
+  mesh.peers -> net.wsock: calls
+  mesh.peers -> tailnet: ws
+  mesh.peers -> tailscale: http
+  mesh.services -> core.util: calls
+  mesh.services -> net.proxy: calls
+  mesh.services -> processes: io
+  mesh.store -> core.util: calls
+  mesh.store -> filesystem: io
+  mesh.store -> home.files: calls
+  mesh.update -> core.util: calls
+  mesh.update -> filesystem: io
+  mesh.users -> core.util: calls
+  mesh.users -> net.wsock: calls
+  mesh.webapps -> ai.tools: calls
+  mesh.webapps -> core.util: calls
+  mesh.webapps -> filesystem: io
+  mesh.webapps -> github: http
+  net.proxy -> core.util: calls
+  net.term -> core.util: calls
+  server.server -> ai.code: calls
+  server.server -> ai.mcp: calls
+  server.server -> ai.model: calls
+  server.server -> chat.chatmedia: calls
+  server.server -> chat.web-md: calls
+  server.server -> core.util: calls
+  server.server -> home.collab: calls
+  server.server -> home.files: calls
+  server.server -> home.mirror: calls
+  server.server -> host.config: calls
+  server.server -> host.envfile: calls
+  server.server -> host.reconfig: calls
+  server.server -> host.stats: calls
+  server.server -> mesh.git: calls
+  server.server -> mesh.peers: calls
+  server.server -> mesh.services: calls
+  server.server -> mesh.store: calls
+  server.server -> mesh.update: calls
+  server.server -> mesh.users: calls
+  server.server -> mesh.webapps: calls
+  server.server -> net.gamedns: calls
+  server.server -> net.proxy: calls
+  server.server -> net.term: calls
+  server.server -> net.wsock: calls
+  server.server -> tailscale: http
+  ws -> server.server: ws
+
+  forbid apps.web -> filesystem
+  forbid core -> mesh
+  forbid core -> server
+  require http -> server
+  require server -> mesh.peers: calls
+}

@@ -1,0 +1,17 @@
+hesperus 0.1
+
+subsystem apps "The programs that ship" {
+  src: "apps/**"
+
+  component hostapp "The host process" {
+    src: "apps/host/**"
+  }
+  component tray "The tray icon" {
+    src: "apps/tray/**"
+  }
+  component web "The desktop in the browser" {
+    src: "apps/web/**"
+  }
+
+  hostapp -> tray: calls
+}

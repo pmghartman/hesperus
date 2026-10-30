@@ -1,0 +1,11 @@
+hesperus 0.1
+
+system a {
+  component x
+}
+
+subsystem b {
+  component y
+}
+
+import "./nothing.hesp"

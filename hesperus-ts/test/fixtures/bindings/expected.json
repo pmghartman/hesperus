@@ -1,0 +1,213 @@
+{
+  "hesperus": "0.1",
+  "generated": "hesperus-ts",
+  "root": "sys",
+  "files": [
+    {
+      "path": "sys.hesp",
+      "root": "sys"
+    },
+    {
+      "path": "mesh.hesp",
+      "root": "sys.mesh"
+    },
+    {
+      "path": "web.hesp",
+      "root": "sys.web"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "sys",
+      "kind": "system",
+      "name": "sys",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "sys.mesh",
+      "kind": "subsystem",
+      "name": "mesh",
+      "parent": "sys",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "sys.mesh.ledger",
+      "kind": "store",
+      "name": "ledger",
+      "parent": "sys.mesh",
+      "label": "postgres",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": "postgres",
+      "at": [
+        "src/mesh/store/log.ts:3"
+      ]
+    },
+    {
+      "id": "sys.mesh.peers",
+      "kind": "component",
+      "name": "peers",
+      "parent": "sys.mesh",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "sys.mesh.store",
+      "kind": "component",
+      "name": "store",
+      "parent": "sys.mesh",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "sys.mesh.tailscale",
+      "kind": "external",
+      "name": "tailscale",
+      "parent": "sys.mesh",
+      "label": "api.tailscale.com",
+      "desc": null,
+      "src": [],
+      "protocol": "http",
+      "host": "api.tailscale.com",
+      "engine": null,
+      "at": [
+        "src/mesh/peers/accept.ts:1"
+      ]
+    },
+    {
+      "id": "sys.web",
+      "kind": "subsystem",
+      "name": "web",
+      "parent": "sys",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "sys.web.pair",
+      "kind": "component",
+      "name": "pair",
+      "parent": "sys.web",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "sys.web.short",
+      "kind": "component",
+      "name": "short",
+      "parent": "sys.web",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "sys.web.ui",
+      "kind": "component",
+      "name": "ui",
+      "parent": "sys.web",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "sys.mesh",
+      "to": "sys.mesh.peers",
+      "kind": "calls",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/mesh/util.ts:1"
+      ]
+    },
+    {
+      "from": "sys.mesh.peers",
+      "to": "sys.mesh.store",
+      "kind": "calls",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/mesh/peers/dial.ts:1"
+      ]
+    },
+    {
+      "from": "sys.mesh.peers",
+      "to": "sys.mesh.tailscale",
+      "kind": "http",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/mesh/peers/accept.ts:1"
+      ]
+    },
+    {
+      "from": "sys.mesh.store",
+      "to": "sys.mesh.ledger",
+      "kind": "writes",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/mesh/store/log.ts:3"
+      ]
+    },
+    {
+      "from": "sys.web.ui",
+      "to": "sys.web.short",
+      "kind": "calls",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/web/deep/x.tsx:1"
+      ]
+    }
+  ],
+  "constraints": []
+}

@@ -1,0 +1,27 @@
+hesperus 0.1
+generated "hesperus-ts"
+
+system mesh {
+  subsystem peers {
+    component accept
+    component dial
+    component gossip
+    ingress link {
+      protocol: ws
+    }
+
+    gossip -> accept: calls
+    link -> accept: ws
+  }
+  subsystem store {
+    component log
+  }
+  subsystem web {
+    component ui
+  }
+
+  peers.accept -> store.log: writes
+  peers.gossip -> store.log: reads
+  web.ui -> peers.link: ws
+  web.ui -> store.log: reads
+}

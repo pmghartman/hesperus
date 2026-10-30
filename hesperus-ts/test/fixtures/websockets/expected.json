@@ -1,0 +1,144 @@
+{
+  "hesperus": "0.1",
+  "generated": "hesperus-ts",
+  "root": "rt",
+  "files": [
+    {
+      "path": "rt.hesp",
+      "root": "rt"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "rt",
+      "kind": "system",
+      "name": "rt",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "rt.client",
+      "kind": "component",
+      "name": "client",
+      "parent": "rt",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "rt.feed",
+      "kind": "external",
+      "name": "feed",
+      "parent": "rt",
+      "label": "stream.example.com",
+      "desc": null,
+      "src": [],
+      "protocol": "ws",
+      "host": "stream.example.com",
+      "engine": null,
+      "at": [
+        "src/client.ts:2"
+      ]
+    },
+    {
+      "id": "rt.server",
+      "kind": "component",
+      "name": "server",
+      "parent": "rt",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "rt.unresolved",
+      "kind": "network",
+      "name": "unresolved",
+      "parent": "rt",
+      "label": "Unresolved targets",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "rt.ws",
+      "kind": "ingress",
+      "name": "ws",
+      "parent": "rt",
+      "label": "WebSocket",
+      "desc": null,
+      "src": [],
+      "protocol": "ws",
+      "host": null,
+      "engine": null,
+      "at": [
+        "src/server.ts:2",
+        "src/sio.ts:2"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "rt.client",
+      "to": "rt.feed",
+      "kind": "ws",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/client.ts:2"
+      ]
+    },
+    {
+      "from": "rt.client",
+      "to": "rt.unresolved",
+      "kind": "ws",
+      "label": null,
+      "desc": null,
+      "resolved": false,
+      "at": [
+        "src/client.ts:3"
+      ]
+    },
+    {
+      "from": "rt.client",
+      "to": "rt.ws",
+      "kind": "ws",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/client.ts:4"
+      ]
+    },
+    {
+      "from": "rt.ws",
+      "to": "rt.server",
+      "kind": "ws",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/server.ts:2",
+        "src/sio.ts:2"
+      ]
+    }
+  ],
+  "constraints": []
+}

@@ -1,0 +1,23 @@
+mesh: 12 match, 2 intent-only, 4 actual-only, 0 conflict, 1 violation
+nodes
+ = mesh                                          match
+ = mesh.peers                                    match
+ = mesh.peers.accept                             match
+ = mesh.peers.dial                               match
+ + mesh.peers.gossip                             actual-only
+ = mesh.peers.link                               match
+ = mesh.store                                    match
+ - mesh.store.index                              intent-only
+ = mesh.store.log                                match
+ = mesh.web                                      match
+ = mesh.web.ui                                   match
+edges
+ = mesh.peers.accept -> mesh.store.log: writes   match
+ - mesh.peers.dial -> mesh.store.log: reads      intent-only
+ + mesh.peers.gossip -> mesh.peers.accept: calls actual-only
+ + mesh.peers.gossip -> mesh.store.log: reads    actual-only
+ = mesh.peers.link -> mesh.peers.accept: ws      match
+ = mesh.web.ui -> mesh.peers.link: ws            match
+ + mesh.web.ui -> mesh.store.log: reads          actual-only
+constraints
+ x  forbid mesh.web -> mesh.store violated by mesh.web.ui -> mesh.store.log: reads

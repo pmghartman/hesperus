@@ -1,0 +1,12 @@
+app: 5 match, 1 intent-only, 3 actual-only, 0 conflict, 0 violations
+nodes
+ = app                     match
+ = app.a                   match
+ = app.b                   match
+ = app.db                  match
+edges
+ - app.a -> app.b: calls   intent-only (4 edges, 3 match, 1 intent-only)
+ + app.a -> app.b: http    actual-only
+ + app.b -> app.a: calls   actual-only
+ = app.b -> app.db: reads  match
+ + app.b -> app.db: writes actual-only (2 edges, 1 intent-only, 1 actual-only)
