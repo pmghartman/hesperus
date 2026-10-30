@@ -316,6 +316,39 @@ impl Ir {
                 return Err(format!("`{}` is a system below the root", clip(&n.id)));
             }
         }
+        let no_control = |s: &str| !s.chars().any(|c| (c.is_control() && c != '\t') || c == '\u{E000}');
+        let evidence_ok = |e: &str| e.rfind(':').map(|i| i > 0 && !e[i + 1..].is_empty() && e[i + 1..].bytes().all(|b| b.is_ascii_digit())).unwrap_or(false);
+        for n in &self.nodes {
+            for text in [n.label.as_deref(), n.desc.as_deref(), n.host.as_deref(), n.engine.as_deref()].into_iter().flatten().chain(n.src.iter().map(|s| s.as_str())).chain(n.at.iter().map(|s| s.as_str())) {
+                if !no_control(text) {
+                    return Err(format!("node `{}` has a control character in a string", clip(&n.id)));
+                }
+            }
+            for a in &n.at {
+                if !evidence_ok(a) {
+                    return Err(format!("node `{}` has evidence `{}` that is not path:line", clip(&n.id), clip(a)));
+                }
+            }
+            let k = n.kind;
+            if !n.src.is_empty() && !k.is_container() {
+                return Err(format!("`src` on `{}`, a {}", clip(&n.id), k.as_str()));
+            }
+            if n.protocol.is_some() && !matches!(k, NodeKind::Ingress | NodeKind::Egress | NodeKind::External | NodeKind::Network) {
+                return Err(format!("`protocol` on `{}`, a {}", clip(&n.id), k.as_str()));
+            }
+            if n.host.is_some() && !matches!(k, NodeKind::External | NodeKind::Network) {
+                return Err(format!("`host` on `{}`, a {}", clip(&n.id), k.as_str()));
+            }
+            if n.engine.is_some() && k != NodeKind::Store {
+                return Err(format!("`engine` on `{}`, a {}", clip(&n.id), k.as_str()));
+            }
+            if let Some(p) = &n.parent {
+                if p == &self.root && n.name == self.root && by_id[self.root.as_str()].kind == NodeKind::System {
+                    return Err(format!("`{}` shares the root's name", clip(&n.id)));
+                }
+            }
+        }
+        let mut seen_edges = std::collections::HashSet::new();
         for e in &self.edges {
             for end in [&e.from, &e.to] {
                 if !by_id.contains_key(end.as_str()) {
@@ -325,6 +358,19 @@ impl Ir {
             if e.from == e.to {
                 return Err(format!("edge `{} -> {}` connects a node to itself", clip(&e.from), clip(&e.to)));
             }
+            if !seen_edges.insert((e.from.as_str(), e.to.as_str(), e.kind)) {
+                return Err(format!("duplicate edge `{} -> {}: {}`", clip(&e.from), clip(&e.to), e.kind.as_str()));
+            }
+            for text in [e.label.as_deref(), e.desc.as_deref()].into_iter().flatten().chain(e.at.iter().map(|s| s.as_str())) {
+                if !no_control(text) {
+                    return Err(format!("edge `{} -> {}` has a control character in a string", clip(&e.from), clip(&e.to)));
+                }
+            }
+            for a in &e.at {
+                if !evidence_ok(a) {
+                    return Err(format!("edge `{} -> {}` has evidence `{}` that is not path:line", clip(&e.from), clip(&e.to), clip(a)));
+                }
+            }
         }
         for c in &self.constraints {
             for end in [&c.from, &c.to] {
@@ -333,12 +379,23 @@ impl Ir {
                 }
             }
         }
-        for f in &self.files {
-            if !by_id.contains_key(f.root.as_str()) {
+        let mut seen_paths = std::collections::HashSet::new();
+        let mut seen_roots = std::collections::HashSet::new();
+        for (i, f) in self.files.iter().enumerate() {
+            let Some(root) = by_id.get(f.root.as_str()) else {
                 return Err(format!("file `{}` has a root `{}` that does not exist", clip(&f.path), clip(&f.root)));
+            };
+            if !f.path.ends_with(".hesp") || !no_control(&f.path) {
+                return Err(format!("file `{}` is not a .hesp path", clip(&f.path)));
             }
-            if !f.path.ends_with(".hesp") {
-                return Err(format!("file `{}` does not end in .hesp", clip(&f.path)));
+            if !seen_paths.insert(f.path.as_str()) {
+                return Err(format!("file `{}` is listed twice", clip(&f.path)));
+            }
+            if !seen_roots.insert(f.root.as_str()) {
+                return Err(format!("node `{}` is the root of two files", clip(&f.root)));
+            }
+            if i > 0 && root.kind != NodeKind::Subsystem {
+                return Err(format!("file `{}` has root `{}`, a {}; an imported file's root is a subsystem", clip(&f.path), clip(&f.root), root.kind.as_str()));
             }
         }
         if let Some(first) = self.files.first() {

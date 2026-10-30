@@ -220,14 +220,35 @@ fn read_ir(path: &Path) -> Result<Ir, String> {
     Ir::from_json(&text)
 }
 
-fn write_files(files: &[(String, String)], out: &Path) -> Result<(), String> {
-    // every path is checked before anything is written
-    for (rel, _) in files {
+/// Print an IR to files, refusing anything that would escape `out` or fail `hesp check`,
+/// before a single file is written.
+fn print_checked(ir: &Ir, out: &Path) -> Result<Vec<(String, String)>, String> {
+    let files = hesperus_core::print::print(ir);
+    let Some((master_rel, _)) = files.first() else { return Err("the IR has no files to print".into()) };
+    for (rel, _) in &files {
         let norm = hesperus_core::lower::normalize(rel);
         if norm.starts_with("..") || norm.starts_with('/') {
             return Err(format!("`{rel}` lies outside the master's directory; actual files mirror the intent's layout and are only written under {}; nothing was written", path_str(out)));
         }
     }
+    struct Mem(Vec<(String, String)>, PathBuf);
+    impl hesperus_core::Source for Mem {
+        fn read(&self, path: &str) -> Result<String, hesperus_core::lower::ReadError> {
+            let rel = Path::new(path).strip_prefix(&self.1).ok().map(|p| path_str(p));
+            self.0.iter().find(|(r, _)| Some(hesperus_core::lower::normalize(r)) == rel).map(|(_, t)| t.clone()).ok_or_else(|| hesperus_core::lower::ReadError::Missing("not emitted".into()))
+        }
+    }
+    let base = PathBuf::from("/__hesp_print__");
+    let check = hesperus_core::load(&path_str(&base.join(master_rel)), &Mem(files.clone(), base.clone()));
+    if check.has_errors() {
+        let src = |p: &str| check.text_of(p).map(|s| s.to_string());
+        let rendered = render(&check.diags, &src).replace("/__hesp_print__/", "");
+        return Err(format!("the printed files would not check clean; nothing was written:\n{rendered}"));
+    }
+    Ok(files)
+}
+
+fn write_files(files: &[(String, String)], out: &Path) -> Result<(), String> {
     for (rel, text) in files {
         let p = out.join(hesperus_core::lower::normalize(rel));
         if let Some(parent) = p.parent() {
@@ -247,11 +268,13 @@ fn print_ir(ir_path: &Path, out: Option<&Path>) -> i32 {
             return 2;
         }
     };
-    let files = hesperus_core::print::print(&ir);
-    if files.is_empty() {
-        eprintln!("hesp print: the IR has no files to print");
-        return 1;
-    }
+    let files = match print_checked(&ir, out.unwrap_or(Path::new("."))) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("hesp print: {e}");
+            return 1;
+        }
+    };
     match out {
         Some(dir) => {
             if let Err(e) = write_files(&files, dir) {
@@ -344,28 +367,14 @@ fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extr
         eprintln!("hesp emit: extractor output lacks a `generated` marker");
         return 1;
     }
-    let files = hesperus_core::print::print(&actual);
-    let Some((master_rel, _)) = files.first() else {
-        eprintln!("hesp emit: extractor output has no files to print");
-        return 1;
-    };
     let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".hesperus/actual"));
-    // what we are about to write must itself check clean: print to memory and load it from there first
-    struct Mem(Vec<(String, String)>, PathBuf);
-    impl hesperus_core::Source for Mem {
-        fn read(&self, path: &str) -> Result<String, hesperus_core::lower::ReadError> {
-            let rel = Path::new(path).strip_prefix(&self.1).ok().map(|p| path_str(p));
-            self.0.iter().find(|(r, _)| Some(hesperus_core::lower::normalize(r)) == rel).map(|(_, t)| t.clone()).ok_or_else(|| hesperus_core::lower::ReadError::Missing("not emitted".into()))
+    let files = match print_checked(&actual, &out_dir) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("hesp emit: {e}");
+            return 1;
         }
-    }
-    let base = PathBuf::from("/__hesp_emit__");
-    let check = hesperus_core::load(&path_str(&base.join(master_rel)), &Mem(files.clone(), base.clone()));
-    if check.has_errors() {
-        let src = |p: &str| check.text_of(p).map(|s| s.to_string());
-        eprint!("{}", render(&check.diags, &src));
-        eprintln!("hesp emit: emitted files would not check clean (extractor bug); nothing was written");
-        return 1;
-    }
+    };
     if let Err(e) = write_files(&files, &out_dir) {
         eprintln!("hesp emit: {e}");
         return 1;

@@ -72,7 +72,7 @@ fn print_writes_only_under_out() {
     let out_dir = dir.join("out");
     let out = hesp().args(["print"]).arg(&ir_path).arg("--out").arg(&out_dir).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("outside the master's directory"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("outside the master's directory"), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(!dir.join("shared/core.hesp").exists());
     assert!(!out_dir.exists() || std::fs::read_dir(&out_dir).unwrap().next().is_none(), "nothing is written before the refusal");
     // a well-formed layout prints into --out and checks clean
@@ -123,7 +123,8 @@ fn emit_refuses_bad_extractor_output_without_writing() {
         std::fs::write(&script, format!("process.stdout.write({});", serde_json::to_string(bad).unwrap())).unwrap();
         let out = hesp().args(["emit", "--lang", "ts"]).arg(&dir).arg("--out").arg(&out_dir).arg("--extractor").arg(format!("node {}", script.display())).output().unwrap();
         assert_eq!(out.status.code(), Some(1), "{}", String::from_utf8_lossy(&out.stderr));
-        assert!(String::from_utf8_lossy(&out.stderr).contains("not valid IR"), "{}", String::from_utf8_lossy(&out.stderr));
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(err.contains("not valid IR") || err.contains("would not check clean"), "{err}");
         assert!(!out_dir.exists(), "nothing written for {bad}");
     }
     let _ = std::fs::remove_dir_all(&dir);

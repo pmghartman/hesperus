@@ -14,7 +14,7 @@ Every fenced block in this document tagged `hesp` is parsed by the test suite. A
 - **Comments**: `#` to end of line, including after the version line and after a closing `}`. Comments are never semantic: the formatter keeps them (except inside a multi-line list, where it drops them), the IR drops them.
 - **Newlines** terminate statements. A block's `{` stays on its statement's line; `}` stands on its own line.
 - **Identifiers**: `[A-Za-z_][A-Za-z0-9_-]*`, where every `-` must be followed by an identifier character (so `a->b` lexes as `a`, `->`, `b`). Case-sensitive. Reserved words cannot be identifiers: `hesperus generated import require forbid let template each in true false`. Kind names are not reserved: `store`, `network` or `host` are ordinary node names.
-- **Strings**: double-quoted. Escapes: `\"` `\\` `\n` `\t` `\$`. Strings cannot span lines. The private-use character U+E000 is reserved by the implementation and rejected in source (E003).
+- **Strings**: double-quoted. Escapes: `\"` `\\` `\n` `\t` `\$`. Strings cannot span lines; control characters other than a tab are rejected (E003), write `\n` or `\t`. The private-use character U+E000 is reserved by the implementation and rejected in source (E003).
 - **Version number**: the token after `hesperus` on line one, `MAJOR.MINOR`.
 - **Interpolation**: inside a `template` or `each` body, `$name` or `${name}` in an identifier, path segment or string is replaced by the bound value (section 7). Outside those bodies, `$` is an error (E028).
 
@@ -230,7 +230,7 @@ system app {
 
 Hesperus has no loops over anything unbounded, no conditionals and no recursion. Repetition exists only through total constructs that expand before linking:
 
-- `let name = [a, b, "c"]` binds a name to a finite list of identifiers and strings. Lists hold at most 256 items (E021).
+- `let name = [a, b, "c"]` binds a name to a finite list of identifiers and strings. Every literal list, including property lists and template arguments, holds at most 256 items (E021).
 - `template name(p1, p2) { items }` defines a parameterized body. Templates are called as `name(arg, ...)` inside a block; the body is spliced in with each `$p` replaced by the argument. Arguments are identifiers, strings or lists; a list argument may only be iterated by `each` (E009). Arity must match (E018).
 - `each x in list { items }` splices the body once per element with `$x` bound to it. The list is a literal, a `let` name, or a list parameter of the enclosing template (`parts` or `$parts`). A bound variable is passed on as an argument by writing it `$x`; a bare identifier is a literal name.
 

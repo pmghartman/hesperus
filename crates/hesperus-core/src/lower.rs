@@ -254,8 +254,8 @@ impl<'a> Linker<'a> {
             let first = self.defs.get(&id).cloned();
             let mut d = Diagnostic::error("E010", n.name.span.clone(), format!("duplicate node `{}`", clip(&id)));
             if let Some(f) = first {
-                let (line, _) = self.position(&f);
-                d.message.push_str(&format!("; first declared at {}:{}", f.file, line));
+                let (line, col) = self.position(&f);
+                d.message.push_str(&format!("; first declared at {}:{}:{}", f.file.rsplit('/').next().unwrap_or(&f.file), line, col));
             }
             self.diags.push(d);
             return;

@@ -146,6 +146,8 @@ pub fn lex(file: &str, text: &str) -> (Vec<Token>, Vec<Diagnostic>) {
                     let ch_len = c.len_utf8();
                     if c == ESCAPED_DOLLAR {
                         diags.push(Diagnostic::error("E003", Span::new(file, i, i + ch_len), "private-use character U+E000 is not allowed in a string").with_fix(""));
+                    } else if c.is_control() && c != '\t' {
+                        diags.push(Diagnostic::error("E003", Span::new(file, i, i + ch_len), format!("control character {} is not allowed in a string; use \\n or \\t", c.escape_unicode())).with_fix(""));
                     } else {
                         val.push_str(&text[i..i + ch_len]);
                     }

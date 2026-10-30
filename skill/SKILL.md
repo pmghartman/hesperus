@@ -10,7 +10,7 @@ Hesperus describes a software system as a graph in `.hesp` files. Two descriptio
 - **Intent** (`examples/<system>/*.hesp` or wherever the project keeps them, tracked in git): what the system *should* be. You may edit these.
 - **Actual** (`.hesperus/actual/*.hesp`, gitignored, header line `generated "hesperus-ts"`): what the code *is*, emitted by `hesp emit`. **Never edit a generated file.** Change the code or the intent instead and re-emit.
 
-`hesp diff intent.hesp .hesperus/actual/intent.hesp` merges them. It prints a summary line, then only the differences (`--all` adds the `=` matches), then every constraint (`ok` with its witness edge, or `x`). An edge the extractor could not resolve ends its line with the word `unresolved` (in the IR it is `resolved: false`; the viewer draws it dashed). It exits 0 unless a constraint fails. Read the statuses as:
+`hesp diff intent.hesp .hesperus/actual/intent.hesp` merges them. It prints a summary line, then only the differences (`--all` adds the `=` matches), then every constraint: `ok` (a satisfied `require` adds `by <edge>`) or `x` with the offending edges. An edge the extractor could not resolve ends its line with the word `unresolved` (in the IR it is `resolved: false`; the viewer draws it dashed). It exits 0 unless a constraint fails. Read the statuses as:
 
 | status | meaning | what you do |
 |---|---|---|

@@ -495,3 +495,52 @@ fn review_regressions_5() {
     assert!(p.diags.iter().any(|d| d.message.contains("\\u{0}")), "{:?}", p.diags);
     assert!(p.diags.iter().all(|d| !d.message.contains('\u{0}')));
 }
+
+/// Regressions from the sixth review.
+#[test]
+fn review_regressions_6() {
+    let check = |text: &str| load("r.hesp", &MemSource(HashMap::from([("r.hesp".to_string(), text.to_string())])));
+    // tens of thousands of errors render quickly
+    let mut big = String::from("hesperus 0.1\n\nsystem s {\n");
+    for i in 0..30_000 {
+        big.push_str(&format!("  componet n{i}\n"));
+    }
+    big.push_str("}\n");
+    let start = std::time::Instant::now();
+    let p = check(&big);
+    let text = render(&p.diags, &|_| Some(big.clone()));
+    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+    assert_eq!(text.matches("E005").count(), 30_000);
+    // long names skip the nearest-name search
+    let long = "x".repeat(100_000);
+    let start = std::time::Instant::now();
+    let p = check(&format!("hesperus 0.1\n\nlet {long} = [a]\n\nsystem s {{\n  each q in {long}y {{\n    component $q\n  }}\n}}\n"));
+    assert_eq!(codes(&p.diags), vec!["E020"]);
+    assert!(start.elapsed().as_secs() < 3);
+    // E002 is clipped
+    let p = check(&format!("hesperus {}\n\nsystem s {{\n  component a\n}}\n", "1".repeat(100_000)));
+    assert!(p.diags.iter().all(|d| d.message.len() < 400));
+    // control characters never reach a message raw, and are rejected inside strings
+    let p = check("hesperus 0.1\n\nsystem s {\n  \"abc\u{1}def\" -> b: calls\n}\n");
+    assert!(p.diags.iter().all(|d| !d.message.chars().any(|c| c.is_control())));
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a \"x\u{1}y\"\n}\n");
+    assert_eq!(codes(&p.diags), vec!["E003"]);
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a \"tab\tok\"\n}\n");
+    assert!(!p.has_errors());
+    // every literal list is bounded
+    let items = (0..300).map(|i| format!("\"p{i}\"")).collect::<Vec<_>>().join(", ");
+    let p = check(&format!("hesperus 0.1\n\nsystem s {{\n  src: [{items}]\n}}\n"));
+    assert_eq!(codes(&p.diags), vec!["E021"]);
+    // IR validation rejects what the parser would: duplicate edges, bad properties, duplicate files, control characters
+    let bad = |json: &str| hesperus_core::Ir::from_json(json).unwrap_err();
+    let base = r#"{"id":"a","kind":"system","name":"a","parent":null}"#;
+    assert!(bad(&format!(r#"{{"hesperus":"0.1","root":"a","nodes":[{base},{{"id":"a.b","kind":"component","name":"b","parent":"a"}}],"edges":[{{"from":"a","to":"a.b","kind":"calls"}},{{"from":"a","to":"a.b","kind":"calls"}}]}}"#)).contains("duplicate edge"));
+    assert!(bad(&format!(r#"{{"hesperus":"0.1","root":"a","nodes":[{base},{{"id":"a.b","kind":"component","name":"b","parent":"a","engine":"pg"}}],"edges":[]}}"#)).contains("`engine`"));
+    assert!(bad(&format!(r#"{{"hesperus":"0.1","root":"a","nodes":[{base},{{"id":"a.b","kind":"component","name":"b","parent":"a","at":["nope"]}}],"edges":[]}}"#)).contains("path:line"));
+    assert!(bad(&format!(r#"{{"hesperus":"0.1","root":"a","files":[{{"path":"a.hesp","root":"a"}},{{"path":"b.hesp","root":"a"}}],"nodes":[{base}],"edges":[]}}"#)).contains("two files"));
+    assert!(bad(&format!(r#"{{"hesperus":"0.1","root":"a","nodes":[{base},{{"id":"a.b","kind":"component","name":"b","parent":"a","label":"x\u0001y"}}],"edges":[]}}"#)).contains("control character"));
+    assert!(bad(&format!(r#"{{"hesperus":"0.1","root":"a","files":[{{"path":"a.hesp","root":"a"}},{{"path":"b.hesp","root":"a.b"}}],"nodes":[{base},{{"id":"a.b","kind":"component","name":"b","parent":"a"}}],"edges":[]}}"#)).contains("subsystem"));
+    // E010 names the first declaration with line and column
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a\n  component a\n}\n");
+    assert!(p.diags[0].message.ends_with("first declared at r.hesp:4:13"), "{}", p.diags[0].message);
+}

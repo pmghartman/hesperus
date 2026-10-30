@@ -31,7 +31,7 @@
     "constraints": { "type": "array", "items": { "$ref": "#/$defs/constraint" } },
     "locations": {
       "type": "object",
-      "description": "Optional, intent only (`hesp ir --locations`): where each node is declared, as path:line.",
+      "description": "Optional (`hesp ir --locations`, on intent or actual files): where each node is declared, as path:line relative to the master's directory. Not part of the canonical IR.",
       "additionalProperties": { "$ref": "#/$defs/evidence" }
     }
   },

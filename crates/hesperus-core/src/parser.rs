@@ -169,7 +169,7 @@ impl Parser {
                 Tok::Number(n) => {
                     let nt = self.bump();
                     if n != "0.1" {
-                        self.error("E002", self.span_of(&nt), format!("unsupported version {n}; this tool speaks 0.1"));
+                        self.error("E002", self.span_of(&nt), format!("unsupported version {}; this tool speaks 0.1", clip(&n)));
                         self.diags.last_mut().unwrap().fix = Some("0.1".into());
                     }
                     file.version = Some(Str { text: n, span: self.span_of(&nt) });
@@ -575,6 +575,9 @@ impl Parser {
             }
             if self.at(&Tok::RBracket) {
                 let t = self.bump();
+                if items.len() > crate::expand::MAX_LIST {
+                    self.error("E021", Span::new(&self.file, open.start, t.end), format!("a list holds at most {} items", crate::expand::MAX_LIST));
+                }
                 return Some((items, Span::new(&self.file, open.start, t.end)));
             }
             if self.at(&Tok::Eof) {
@@ -752,7 +755,7 @@ pub fn describe(t: &Tok) -> String {
     match t {
         Tok::Ident(s) => format!("`{}`", clip(s)),
         Tok::Str(s) => format!("string \"{}\"", clip(s)),
-        Tok::Number(n) => format!("number {n}"),
+        Tok::Number(n) => format!("number {}", clip(n)),
         Tok::Newline => "end of line".into(),
         Tok::Comment(_) => "a comment".into(),
         Tok::LBrace => "`{`".into(),

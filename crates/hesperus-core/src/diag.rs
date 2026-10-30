@@ -128,8 +128,14 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
 /// than it differs: the distance has to be below its own length, so one-letter names
 /// are never offered for an unrelated word.
 pub fn nearest<'a>(word: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    if word.len() > 200 {
+        return None;
+    }
     let mut best: Option<(usize, &str)> = None;
     for c in candidates {
+        if c.len() > 200 {
+            continue;
+        }
         let d = edit_distance(word, c);
         if d <= 3 && d < c.chars().count() && d < word.chars().count().max(1) && best.map(|(bd, _)| d < bd).unwrap_or(true) {
             best = Some((d, c));
@@ -143,21 +149,34 @@ pub fn clip(s: &str) -> String {
     clip_to(s, 80)
 }
 
+/// Clip to `max` characters and escape control characters, so a message is never
+/// long and never carries raw bytes into a terminal or an editor.
 pub fn clip_to(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        s.to_string()
-    } else {
-        let head: String = s.chars().take(max - 1).collect();
-        format!("{head}…")
+    let mut out = String::new();
+    let mut n = 0;
+    for c in s.chars() {
+        if n >= max - 1 && s.chars().count() > max {
+            out.push('…');
+            return out;
+        }
+        if c.is_control() || c == '\u{E000}' {
+            out.push_str(&c.escape_unicode().to_string());
+        } else {
+            out.push(c);
+        }
+        n += 1;
     }
+    out
 }
 
 /// Render diagnostics as `path:line:col: error[E001]: message` lines.
 pub fn render(diags: &[Diagnostic], sources: &dyn Fn(&str) -> Option<String>) -> String {
     let mut out = String::new();
+    let mut indexes: std::collections::HashMap<String, Option<LineIndex>> = std::collections::HashMap::new();
     for d in diags {
-        let (line, col) = match sources(&d.span.file) {
-            Some(text) => LineIndex::new(&text).position(d.span.start),
+        let index = indexes.entry(d.span.file.clone()).or_insert_with(|| sources(&d.span.file).map(|t| LineIndex::new(&t)));
+        let (line, col) = match index {
+            Some(ix) => ix.position(d.span.start),
             None => (0, 0),
         };
         let sev = match d.severity {
