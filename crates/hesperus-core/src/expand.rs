@@ -2,7 +2,7 @@
 //! Every construct is total: expansion always terminates and is bounded.
 
 use crate::ast::*;
-use crate::diag::{Diagnostic, Span};
+use crate::diag::{clip, Diagnostic, Span};
 use std::collections::HashMap;
 
 pub const MAX_LIST: usize = 256;
@@ -36,10 +36,18 @@ pub fn expand(file: &File) -> Expanded {
     let mut roots = Vec::new();
     let mut root_spans = Vec::new();
     for (i, item) in file.items.iter().enumerate() {
+        if !roots.is_empty() {
+            if let StmtKind::Let(l) = &item.kind {
+                ex.diags.push(Diagnostic::error("E039", l.name.span.clone(), "`let` belongs before the root node"));
+            }
+            if let StmtKind::Template(t) = &item.kind {
+                ex.diags.push(Diagnostic::error("E039", t.name.span.clone(), "`template` belongs before the root node"));
+            }
+        }
         match &item.kind {
             StmtKind::Let(l) => {
                 if ex.lets.contains_key(&l.name.text) || ex.templates.contains_key(&l.name.text) {
-                    ex.diags.push(Diagnostic::error("E027", l.name.span.clone(), format!("`{}` is defined twice", l.name.text)));
+                    ex.diags.push(Diagnostic::error("E027", l.name.span.clone(), format!("`{}` is defined twice", clip(&l.name.text))));
                     continue;
                 }
                 if l.list.len() > MAX_LIST {
@@ -54,12 +62,15 @@ pub fn expand(file: &File) -> Expanded {
             }
             StmtKind::Template(t) => {
                 if ex.templates.contains_key(&t.name.text) || ex.lets.contains_key(&t.name.text) {
-                    ex.diags.push(Diagnostic::error("E027", t.name.span.clone(), format!("`{}` is defined twice", t.name.text)));
+                    ex.diags.push(Diagnostic::error("E027", t.name.span.clone(), format!("`{}` is defined twice", clip(&t.name.text))));
                     continue;
                 }
                 ex.templates.insert(t.name.text.clone(), (i, t));
             }
             StmtKind::Node(n) => {
+                if roots.is_empty() && n.kind.text != "system" && n.kind.text != "subsystem" {
+                    ex.diags.push(Diagnostic::error("E015", n.kind.span.clone(), format!("a file's root must be a system or subsystem, not a {}", clip(&n.kind.text))));
+                }
                 let empty = HashMap::new();
                 if let Some(n) = ex.node(n, &empty, 0, usize::MAX) {
                     roots.push(n);
@@ -203,13 +214,13 @@ impl<'a> Expander<'a> {
                     EachSource::Name(name) => match env.get(name.text.trim_start_matches('$').trim_start_matches('{').trim_end_matches('}')) {
                         Some(Bound::List(items)) => items.clone(),
                         Some(Bound::Text(_)) => {
-                            self.diags.push(Diagnostic::error("E009", name.span.clone(), format!("`{}` is a value, not a list", name.text)));
+                            self.diags.push(Diagnostic::error("E009", name.span.clone(), format!("`{}` is a value, not a list", clip(&name.text))));
                             return;
                         }
                         None => match self.lets.get(&name.text) {
                             Some((items, _)) => items.clone(),
                             None => {
-                                let mut d = Diagnostic::error("E020", name.span.clone(), format!("undefined list `{}`", name.text));
+                                let mut d = Diagnostic::error("E020", name.span.clone(), format!("undefined list `{}`", clip(&name.text)));
                                 let mut names: Vec<&str> = self.lets.keys().map(|s| s.as_str()).collect();
                                 names.sort();
                                 d.fix = crate::diag::nearest(&name.text, names.into_iter()).map(|s| s.to_string());
@@ -243,7 +254,7 @@ impl<'a> Expander<'a> {
                 let (idx, t) = match self.templates.get(&c.name.text) {
                     Some(t) => (t.0, t.1),
                     None => {
-                        let mut d = Diagnostic::error("E017", c.name.span.clone(), format!("undefined template `{}`", c.name.text));
+                        let mut d = Diagnostic::error("E017", c.name.span.clone(), format!("undefined template `{}`", clip(&c.name.text)));
                         let mut names: Vec<&str> = self.templates.keys().map(|s| s.as_str()).collect();
                         names.sort();
                         d.fix = crate::diag::nearest(&c.name.text, names.into_iter()).map(|s| s.to_string());
@@ -252,11 +263,11 @@ impl<'a> Expander<'a> {
                     }
                 };
                 if idx >= before {
-                    self.diags.push(Diagnostic::error("E019", c.name.span.clone(), format!("`{}` may only call templates defined earlier in the file", c.name.text)));
+                    self.diags.push(Diagnostic::error("E019", c.name.span.clone(), format!("`{}` may only call templates defined earlier in the file", clip(&c.name.text))));
                     return;
                 }
                 if c.args.len() != t.params.len() {
-                    self.diags.push(Diagnostic::error("E018", c.name.span.clone(), format!("`{}` takes {} argument(s), {} given", c.name.text, t.params.len(), c.args.len())));
+                    self.diags.push(Diagnostic::error("E018", c.name.span.clone(), format!("`{}` takes {} argument(s), {} given", clip(&c.name.text), t.params.len(), c.args.len())));
                     return;
                 }
                 if depth + 1 > MAX_DEPTH {
@@ -323,7 +334,7 @@ impl<'a> Expander<'a> {
         }
         let text = self.interpolate(&i.text, &i.span, env)?;
         if !crate::lexer::is_valid_ident(&text) {
-            self.diags.push(Diagnostic::error("E022", i.span.clone(), format!("`{}` expands to `{}`, which is not a valid identifier", i.text, text)));
+            self.diags.push(Diagnostic::error("E022", i.span.clone(), format!("`{}` expands to `{}`, which is not a valid identifier", clip(&i.text), clip(&text))));
             return None;
         }
         Some(Ident { text, span: i.span.clone() })
@@ -370,18 +381,18 @@ impl<'a> Expander<'a> {
                 chars[start..i].iter().collect()
             };
             if env.is_empty() && self.templates.is_empty() && self.lets.is_empty() {
-                self.diags.push(Diagnostic::error("E028", span.clone(), format!("`${name}` outside a template or `each` body")));
+                self.diags.push(Diagnostic::error("E028", span.clone(), format!("`${}` outside a template or `each` body; write `\\$` for a literal dollar", clip(&name))));
                 return None;
             }
             match env.get(&name) {
                 Some(Bound::Text(t)) => out.push_str(t),
                 Some(Bound::List(_)) => {
-                    self.diags.push(Diagnostic::error("E009", span.clone(), format!("`${name}` is a list and cannot be spliced into text")));
+                    self.diags.push(Diagnostic::error("E009", span.clone(), format!("`${}` is a list and cannot be spliced into text", clip(&name))));
                     return None;
                 }
                 None => {
                     let code = if env.is_empty() { "E028" } else { "E020" };
-                    let msg = if env.is_empty() { format!("`${name}` outside a template or `each` body") } else { format!("undefined variable `${name}`") };
+                    let msg = if env.is_empty() { format!("`${}` outside a template or `each` body; write `\\$` for a literal dollar", clip(&name)) } else { format!("undefined variable `${}`", clip(&name)) };
                     let mut d = Diagnostic::error(code, span.clone(), msg);
                     let mut names: Vec<&str> = env.keys().map(|s| s.as_str()).collect();
                     names.sort();

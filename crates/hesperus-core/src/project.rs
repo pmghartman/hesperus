@@ -44,6 +44,11 @@ pub fn format_text(path: &str, text: &str) -> (String, Vec<Diagnostic>) {
     (crate::format::format_file(&parsed.file), parsed.diags)
 }
 
+/// Whether a file carries the `generated` header (by parsing, not by line position).
+pub fn is_generated(path: &str, text: &str) -> bool {
+    crate::parser::parse(path, text).file.generated.is_some()
+}
+
 /// Every `.hesp` under `dir` (or `dir` itself when it is a file), sorted.
 pub fn find_hesp_files(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();

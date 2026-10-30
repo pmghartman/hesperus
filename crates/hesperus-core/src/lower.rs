@@ -153,6 +153,7 @@ struct Linker<'a> {
     edges: Vec<PendingEdge>,
     constraints: Vec<PendingConstraint>,
     ids: HashSet<String>,
+    root_is_system: bool,
 }
 
 pub fn load(master: &str, source: &dyn Source) -> Project {
@@ -170,6 +171,7 @@ pub fn load(master: &str, source: &dyn Source) -> Project {
         edges: Vec::new(),
         constraints: Vec::new(),
         ids: HashSet::new(),
+        root_is_system: false,
     };
     let text = match source.read(&master) {
         Ok(t) => t,
@@ -179,6 +181,7 @@ pub fn load(master: &str, source: &dyn Source) -> Project {
         }
         Err(ReadError::NotUtf8(at)) => {
             lk.diags.push(Diagnostic::error("E034", Span::new(&master, at, at + 1), format!("file is not valid UTF-8 at byte {at}")));
+            lk.remember_lossy(&master);
             return lk.finish(master);
         }
     };
@@ -188,6 +191,7 @@ pub fn load(master: &str, source: &dyn Source) -> Project {
         let generated = lk.files[0].ast.generated.as_ref().map(|g| g.text.clone());
         lk.ir.generated = generated;
         lk.ir.root = root.name.text.clone();
+        lk.root_is_system = root.kind.text == "system";
         let fidx = 0;
         lk.ir.files.push(FileEntry { path: lk.file_entry_path(&master), root: root.name.text.clone() });
         lk.build(&root, None, fidx, true);
@@ -204,6 +208,13 @@ impl<'a> Linker<'a> {
         self.diags.sort_by_key(|d| (order.iter().position(|p| *p == d.span.file).unwrap_or(usize::MAX), d.span.start, d.code));
         self.diags.dedup();
         Project { master, files: self.files, ir: self.ir, diags: self.diags, defs: self.defs, refs: self.refs, imports: self.imports }
+    }
+
+    /// Keep a lossy decoding of an undecodable file so diagnostics can be positioned in it.
+    fn remember_lossy(&mut self, path: &str) {
+        let text = std::fs::read(path).map(|b| String::from_utf8_lossy(&b).into_owned()).unwrap_or_default();
+        let parsed = parse(path, "");
+        self.files.push(Loaded { path: path.to_string(), text, ast: parsed.file, expanded: Vec::new() });
     }
 
     fn file_entry_path(&self, path: &str) -> String {
@@ -235,13 +246,13 @@ impl<'a> Linker<'a> {
             self.diags.push(Diagnostic::error("E031", n.kind.span.clone(), "`system` may only be the root of the master file; use `subsystem` here").with_fix("subsystem"));
         }
         if let Some(p) = parent {
-            if p == self.ir.root && n.name.text == self.ir.root {
-                self.diags.push(Diagnostic::error("E033", n.name.span.clone(), format!("a child of the root cannot share the root's name `{}`", n.name.text)));
+            if self.root_is_system && p == self.ir.root && n.name.text == self.ir.root {
+                self.diags.push(Diagnostic::error("E033", n.name.span.clone(), format!("a child of the root cannot share the root's name `{}`", clip(&n.name.text))));
             }
         }
         if !self.ids.insert(id.clone()) {
             let first = self.defs.get(&id).cloned();
-            let mut d = Diagnostic::error("E010", n.name.span.clone(), format!("duplicate node `{id}`"));
+            let mut d = Diagnostic::error("E010", n.name.span.clone(), format!("duplicate node `{}`", clip(&id)));
             if let Some(f) = first {
                 let (line, _) = self.position(&f);
                 d.message.push_str(&format!("; first declared at {}:{}", f.file, line));
@@ -259,7 +270,7 @@ impl<'a> Linker<'a> {
                 match &item.kind {
                     StmtKind::Property(p) => {
                         if !seen_keys.insert(p.key.text.clone()) {
-                            self.diags.push(Diagnostic::error("E037", p.key.span.clone(), format!("property `{}` set twice", p.key.text)));
+                            self.diags.push(Diagnostic::error("E037", p.key.span.clone(), format!("property `{}` set twice", clip(&p.key.text))));
                             continue;
                         }
                         self.node_property(&mut node, p);
@@ -302,17 +313,18 @@ impl<'a> Linker<'a> {
         let from_dir = dirname(&self.files[fidx].path).to_string();
         let path = join(&from_dir, &imp.text);
         if self.loaded_paths.contains(&path) {
-            self.diags.push(Diagnostic::error("E013", imp.span.clone(), format!("`{}` is already imported (a file is imported once, and never in a cycle)", imp.text)));
+            self.diags.push(Diagnostic::error("E013", imp.span.clone(), format!("`{}` is already imported (a file is imported once, and never in a cycle)", clip(&imp.text))));
             return;
         }
         let text = match self.source.read(&path) {
             Ok(t) => t,
             Err(ReadError::Missing(_)) => {
-                self.diags.push(Diagnostic::error("E012", imp.span.clone(), format!("import not found: `{}` (looked for {path})", imp.text)));
+                self.diags.push(Diagnostic::error("E012", imp.span.clone(), format!("import not found: `{}` (looked for {path})", clip(&imp.text))));
                 return;
             }
             Err(ReadError::NotUtf8(at)) => {
-                self.diags.push(Diagnostic::error("E034", Span::new(&path, at, at + 1), format!("`{}` is not valid UTF-8 at byte {at}", imp.text)));
+                self.diags.push(Diagnostic::error("E034", Span::new(&path, at, at + 1), format!("`{}` is not valid UTF-8 at byte {at}", clip(&imp.text))));
+                self.remember_lossy(&path);
                 return;
             }
         };
@@ -321,7 +333,7 @@ impl<'a> Linker<'a> {
         let new_idx = self.files.len() - 1;
         let Some(root) = roots.first() else { return };
         if root.kind.text != "subsystem" {
-            self.diags.push(Diagnostic::error("E014", root.kind.span.clone(), format!("an imported file's root must be a subsystem, not a {}", root.kind.text)).with_fix("subsystem"));
+            self.diags.push(Diagnostic::error("E014", root.kind.span.clone(), format!("an imported file's root must be a subsystem, not a {}", clip(&root.kind.text))).with_fix("subsystem"));
             return;
         }
         if let Some(g) = &self.files[new_idx].ast.generated {
@@ -352,8 +364,8 @@ impl<'a> Linker<'a> {
             _ => {
                 let fix = nearest(key, PROPERTY_KEYS.iter().copied());
                 let msg = match fix {
-                    Some(f) => format!("unknown property `{key}`; did you mean `{f}`?"),
-                    None => format!("unknown property `{key}`; properties are desc, src, protocol, host, engine, at"),
+                    Some(f) => format!("unknown property `{}`; did you mean `{f}`?", clip(key)),
+                    None => format!("unknown property `{}`; properties are desc, src, protocol, host, engine, at", clip(key)),
                 };
                 let mut d = Diagnostic::error("E007", p.key.span.clone(), msg);
                 d.fix = fix.map(|f| f.to_string());
@@ -394,7 +406,7 @@ impl<'a> Linker<'a> {
                     Some(pr) => node.protocol = Some(pr),
                     None => {
                         let fix = nearest(&i.text, PROTOCOLS.iter().copied());
-                        let mut d = Diagnostic::error("E023", i.span.clone(), format!("unknown protocol `{}`; one of {}", i.text, PROTOCOLS.join(", ")));
+                        let mut d = Diagnostic::error("E023", i.span.clone(), format!("unknown protocol `{}`; one of {}", clip(&i.text), PROTOCOLS.join(", ")));
                         d.fix = fix.map(|f| f.to_string());
                         self.diags.push(d);
                     }
@@ -438,11 +450,11 @@ impl<'a> Linker<'a> {
                 None => EdgeKind::Calls,
             };
             if from == to {
-                self.diags.push(Diagnostic::error("E036", pe.span.clone(), format!("an edge cannot connect `{from}` to itself")));
+                self.diags.push(Diagnostic::error("E036", pe.span.clone(), format!("an edge cannot connect `{}` to itself", clip(&from))));
                 continue;
             }
             if !seen.insert((from.clone(), to.clone(), kind)) {
-                self.diags.push(Diagnostic::error("E032", pe.span.clone(), format!("duplicate edge `{from} -> {to}: {}`", kind.as_str())));
+                self.diags.push(Diagnostic::error("E032", pe.span.clone(), format!("duplicate edge `{} -> {}: {}`", clip(&from), clip(&to), kind.as_str())));
                 continue;
             }
             let mut edge = Edge::new(&from, &to, kind);
@@ -453,7 +465,7 @@ impl<'a> Linker<'a> {
                     match &item.kind {
                         StmtKind::Property(p) => {
                             if !seen_keys.insert(p.key.text.clone()) {
-                                self.diags.push(Diagnostic::error("E037", p.key.span.clone(), format!("property `{}` set twice", p.key.text)));
+                                self.diags.push(Diagnostic::error("E037", p.key.span.clone(), format!("property `{}` set twice", clip(&p.key.text))));
                                 continue;
                             }
                             match p.key.text.as_str() {
@@ -474,7 +486,7 @@ impl<'a> Linker<'a> {
                                 },
                                 other => {
                                     let code = if PROPERTY_KEYS.contains(&other) { "E008" } else { "E007" };
-                                    let msg = if code == "E008" { format!("`{other}` is not allowed on an edge; edge properties are desc, at, resolved") } else { format!("unknown property `{other}`") };
+                                    let msg = if code == "E008" { format!("`{}` is not allowed on an edge; edge properties are desc, at, resolved", clip(other)) } else { format!("unknown property `{}`", clip(other)) };
                                     let mut d = Diagnostic::error(code, p.key.span.clone(), msg);
                                     if code == "E007" {
                                         d.fix = nearest(other, ["desc", "at", "resolved"].into_iter()).map(|s| s.to_string());

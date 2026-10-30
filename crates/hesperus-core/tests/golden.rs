@@ -412,3 +412,42 @@ fn review_regressions_2() {
     let p = check(&format!("hesperus 0.1\n\nsystem s {{\n  \"{}\"\n}}\n", "x".repeat(100_000)));
     assert!(p.diags.iter().all(|d| d.message.len() < 400));
 }
+
+/// Regressions from the third review.
+#[test]
+fn review_regressions_3() {
+    let check = |text: &str| load("r.hesp", &MemSource(HashMap::from([("r.hesp".to_string(), text.to_string())])));
+    // deeply nested lists are E035, not a stack overflow
+    let deep = format!("hesperus 0.1\n\nsystem s {{\n  src: {}\"x\"{}\n}}\n", "[".repeat(100_000), "]".repeat(100_000));
+    let p = check(&deep);
+    assert!(p.diags.iter().any(|d| d.code == "E035"), "{:?}", codes(&p.diags));
+    let _ = format_text("r.hesp", &deep);
+    // long duplicate ids are clipped in the message
+    let long = "x".repeat(100_000);
+    let p = check(&format!("hesperus 0.1\n\nsystem s {{\n  component {long}\n  component {long}\n}}\n"));
+    assert!(p.diags.iter().all(|d| d.message.len() < 400));
+    // generated detection does not depend on line position
+    assert!(hesperus_core::project::is_generated("g.hesp", "# first\nhesperus 0.1\ngenerated \"hesperus-ts\"\n\nsystem s {\n  component a\n}\n"));
+    assert!(!hesperus_core::project::is_generated("g.hesp", "hesperus 0.1\n\nsystem s {\n  component a\n}\n"));
+    // a subsystem file checked alone may hold a child named like itself
+    let p = load_from_disk(&root().join("examples/phosphorus/server.hesp").display().to_string());
+    assert!(!p.has_errors(), "{}", render(&p.diags, &|q| p.text_of(q).map(|s| s.to_string())));
+    // definitions after the root are misplaced
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a\n}\n\nlet l = [a]\n");
+    assert_eq!(codes(&p.diags), vec!["E039"]);
+    // a component cannot be a root
+    let p = check("hesperus 0.1\n\ncomponent c {\n  component d\n}\n");
+    assert_eq!(codes(&p.diags), vec!["E015"]);
+    // a literal dollar gets the escape hint
+    let p = check("hesperus 0.1\n\nsystem s {\n  desc: \"costs $5\"\n}\n");
+    assert!(p.diags[0].message.contains("\\$"), "{}", p.diags[0].message);
+    // E034 carries a position when the file comes from disk
+    let dir = std::env::temp_dir().join(format!("hesp-utf8-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let f = dir.join("bad.hesp");
+    std::fs::write(&f, b"hesperus 0.1\n\nsystem s {\n  component a \"\xff\"\n}\n").unwrap();
+    let p = load_from_disk(&f.display().to_string());
+    let text = render(&p.diags, &|q| p.text_of(q).map(|s| s.to_string()));
+    assert!(text.contains("bad.hesp:4:16: error[E034]"), "{text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

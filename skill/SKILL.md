@@ -36,35 +36,35 @@ Fix every diagnostic. Each one names a code (`E011`), a position and often a fix
 ## Syntax in one page
 
 ```hesp
-hesperus 0.1                       # every file starts with this line
+hesperus 0.1 # every file starts with this line
 
-system shop "Web shop" {           # the master's root: a system; one root per file
+system shop "Web shop" { # the master's root: a system; one root per file
   desc: "Free text, never diffed"
-  src: ["src/**", "lib/money.ts"]   # binding: which code belongs here (globs)
+  src: ["src/**", "lib/money.ts"] # binding: which code belongs here (globs)
 
-  import "./catalog.hesp"          # splices that file's subsystem in as a child
+  import "./catalog.hesp" # splices that file's subsystem in as a child
 
-  component api                    # containers: system, subsystem, component
-  ingress web "Storefront" {       # boundaries: ingress egress store external network hardware
-    protocol: http                 # http ws grpc tcp udp ssh other
+  component api # containers: system, subsystem, component
+  ingress web "Storefront" { # boundaries: ingress egress store external network hardware
+    protocol: http # http ws grpc tcp udp ssh other
   }
   store db {
-    engine: "postgres"             # free string; the extractor emits postgres, mysql, sqlite, mongodb, redis
+    engine: "postgres" # free string; the extractor emits postgres, mysql, sqlite, mongodb, redis
   }
   external stripe {
     protocol: http
-    host: "api.stripe.com"         # binds the detected external with this host
+    host: "api.stripe.com" # binds the detected external with this host
   }
-  hardware filesystem              # extractor names: filesystem, processes; network: unresolved
+  hardware filesystem # extractor names: filesystem, processes; network: unresolved
 
-  web -> api: http                 # edge kinds: calls reads writes http ws io (default calls)
+  web -> api: http # edge kinds: calls reads writes http ws io (default calls)
   api -> db: reads
   api -> db: writes
   api -> stripe: http
   api -> filesystem: io
 
-  forbid web -> db                 # no edge from web (or anything inside) to db
-  require api -> db: writes        # at least one such edge must exist in the code
+  forbid web -> db # no edge from web (or anything inside) to db
+  require api -> db: writes # at least one such edge must exist in the code
 }
 ```
 
@@ -76,10 +76,10 @@ hesperus 0.1
 subsystem catalog "Product catalog" {
   src: "src/catalog/**"
 
-  component search {
-    src: "src/catalog/search/**"   # more specific globs win
-  }
   component listing
+  component search {
+    src: "src/catalog/search/**" # more specific globs win
+  }
 
   listing -> search: calls
 }
@@ -89,7 +89,7 @@ Rules that bite:
 
 - Ids are paths: `shop.catalog.search`. Edges name nodes by path, resolved from the enclosing block outward, so inside `catalog` write `search`, at the root write `catalog.search`; the fully qualified id always works.
 - A node must exist before an edge can name it; there is no implicit creation. `hesp check` says `E011` otherwise.
-- Comments start with `#`. Labels (the quoted string after the name) are free text and never diffed.
+- Comments start with `#`. Labels (the quoted string after the name) are free text and never diffed. A literal dollar sign in a string is written `\$` (a bare `$` means interpolation and is an error outside templates).
 - Boundary nodes (`ingress`, `store`, ...) hold no children.
 - Edge identity is `(from, to, kind)`: `api -> db: reads` and `api -> db: writes` are two edges.
 - Repetition only through `let x = [a, b]`, `template name(p) { ... }` called as `name($x)`, and `each x in list { ... }`, all at most 4 levels deep; templates may only call templates defined earlier in the file. Interpolate with `$p` or `${p}`.
@@ -100,7 +100,7 @@ Rules that bite:
 1. Create `name.hesp` with `hesperus 0.1` and a `subsystem name "Label" { src: "path/**" ... }` root.
 2. Add `import "./name.hesp"` inside the master's `system` block.
 3. Add edges at the lowest block that contains both endpoints (cross-subsystem edges go in the master).
-4. Run `hesp fmt` and `hesp check` on the master. Then `hesp emit --lang ts <repo> --intent <master>` (`<repo>` is the root of the code the intent describes; output lands in `.hesperus/actual/` under the current directory, or `--out <dir>`) and `hesp diff <master> .hesperus/actual/<master name>` to see what the code already provides.
+4. Run `hesp fmt` and `hesp check` on the master. Then `hesp emit --lang ts <repo> --intent <master>` (`<repo>` is the root of the code the intent describes; output lands in `.hesperus/actual/` under the current directory, or `--out <dir>`) and `hesp diff <master> .hesperus/actual/<master name>` to see what the code already provides. `hesp emit` needs the TypeScript extractor: `hesperus-ts` on `PATH`, or `HESPERUS_TS=<path to hesperus-ts/dist/cli.js>` in the environment, or `--extractor <command>`.
 
 ## Reading a diff for someone
 

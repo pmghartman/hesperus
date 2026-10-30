@@ -62,7 +62,7 @@
         "src": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Binding globs, intent only, sorted."
+          "description": "Binding globs, sorted. Written in intent; an extractor sets them only on the components of its synthesized `unbound` subsystem, as the directory glob that grouped them."
         },
         "protocol": { "oneOf": [{ "$ref": "#/$defs/protocol" }, { "type": "null" }] },
         "host": { "type": ["string", "null"] },

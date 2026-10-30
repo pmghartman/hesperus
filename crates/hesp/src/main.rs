@@ -3,7 +3,7 @@
 use clap::{Parser, Subcommand};
 use hesperus_core::diag::{render, Severity};
 use hesperus_core::ir::Ir;
-use hesperus_core::project::{find_hesp_files, format_text, load_from_disk};
+use hesperus_core::project::{find_hesp_files, format_text, is_generated, load_from_disk};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -132,10 +132,16 @@ fn fmt(paths: &[PathBuf], check: bool) -> i32 {
     let mut errors = 0;
     for f in files {
         let path = path_str(&f);
-        let text = match std::fs::read(&f).map_err(|e| e.to_string()).and_then(|b| hesperus_core::lower::decode(b).map_err(|e| match e {
-            hesperus_core::lower::ReadError::NotUtf8(at) => format!("error[E034]: file is not valid UTF-8 at byte {at}"),
-            hesperus_core::lower::ReadError::Missing(m) => m,
-        })) {
+        let text = match std::fs::read(&f).map_err(|e| e.to_string()).and_then(|b| {
+            let lossy = String::from_utf8_lossy(&b).into_owned();
+            hesperus_core::lower::decode(b).map_err(|e| match e {
+                hesperus_core::lower::ReadError::NotUtf8(at) => {
+                    let (line, col) = hesperus_core::diag::LineIndex::new(&lossy).position(at);
+                    format!("{line}:{col}: error[E034]: file is not valid UTF-8 at byte {at}")
+                }
+                hesperus_core::lower::ReadError::Missing(m) => m,
+            })
+        }) {
             Ok(t) => t,
             Err(e) => {
                 eprintln!("{path}: {e}");
@@ -150,8 +156,7 @@ fn fmt(paths: &[PathBuf], check: bool) -> i32 {
             continue;
         }
         if formatted != text {
-            let generated = formatted.lines().nth(1).map(|l| l.starts_with("generated ")).unwrap_or(false);
-            if generated {
+            if is_generated(&path, &text) {
                 eprintln!("{path}: generated file is not canonical; re-run the extractor instead of editing it");
                 errors += 1;
                 continue;
@@ -216,12 +221,15 @@ fn read_ir(path: &Path) -> Result<Ir, String> {
 }
 
 fn write_files(files: &[(String, String)], out: &Path) -> Result<(), String> {
-    for (rel, text) in files {
+    // every path is checked before anything is written
+    for (rel, _) in files {
         let norm = hesperus_core::lower::normalize(rel);
         if norm.starts_with("..") || norm.starts_with('/') {
-            return Err(format!("`{rel}` lies outside the master's directory; actual files mirror the intent's layout and are only written under {}", path_str(out)));
+            return Err(format!("`{rel}` lies outside the master's directory; actual files mirror the intent's layout and are only written under {}; nothing was written", path_str(out)));
         }
-        let p = out.join(&norm);
+    }
+    for (rel, text) in files {
+        let p = out.join(hesperus_core::lower::normalize(rel));
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }

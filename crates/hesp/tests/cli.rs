@@ -74,6 +74,7 @@ fn print_writes_only_under_out() {
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("outside the master's directory"));
     assert!(!dir.join("shared/core.hesp").exists());
+    assert!(!out_dir.exists() || std::fs::read_dir(&out_dir).unwrap().next().is_none(), "nothing is written before the refusal");
     // a well-formed layout prints into --out and checks clean
     let ok = serde_json::json!({
         "hesperus": "0.1", "generated": "hesperus-ts", "root": "app",
@@ -93,6 +94,19 @@ fn print_writes_only_under_out() {
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     let printed = std::fs::read_to_string(out_dir.join("app.hesp")).unwrap();
     assert!(printed.contains("core -> core.x: calls"), "{printed}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn fmt_never_rewrites_a_generated_file() {
+    let dir = scratch("fmtgen");
+    let f = dir.join("g.hesp");
+    let text = "# a comment first\nhesperus 0.1\ngenerated \"hesperus-ts\"\n\nsystem s {\n      component a\n    component b\n  a->b\n}\n";
+    std::fs::write(&f, text).unwrap();
+    let out = hesp().args(["fmt"]).arg(&f).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("generated file is not canonical"));
+    assert_eq!(std::fs::read_to_string(&f).unwrap(), text, "file untouched");
     let _ = std::fs::remove_dir_all(&dir);
 }
 

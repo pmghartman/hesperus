@@ -10,12 +10,12 @@ pub struct Parsed {
     pub diags: Vec<Diagnostic>,
 }
 
-/// Deepest block nesting the parser accepts; deeper files get E035 instead of a stack overflow.
+/// Deepest block (and list) nesting the parser accepts; deeper files get E035 instead of a stack overflow.
 pub const MAX_NESTING: usize = 64;
 
 pub fn parse(path: &str, text: &str) -> Parsed {
     let (toks, mut diags) = lex(path, text);
-    let mut p = Parser { file: path.to_string(), toks, pos: 0, diags: Vec::new(), depth: 0 };
+    let mut p = Parser { file: path.to_string(), toks, pos: 0, diags: Vec::new(), depth: 0, list_depth: 0 };
     let file = p.file();
     diags.extend(p.diags);
     Parsed { file, diags }
@@ -27,6 +27,7 @@ struct Parser {
     pos: usize,
     diags: Vec<Diagnostic>,
     depth: usize,
+    list_depth: usize,
 }
 
 impl Parser {
@@ -539,6 +540,27 @@ impl Parser {
 
     fn list(&mut self) -> Option<(Vec<Value>, Span)> {
         let open = self.bump();
+        if self.depth + self.list_depth >= MAX_NESTING {
+            self.error("E035", self.span_of(&open), format!("lists nest deeper than {MAX_NESTING} levels"));
+            // skip to the matching bracket
+            let mut d = 1;
+            while d > 0 && !self.at(&Tok::Eof) {
+                match self.peek() {
+                    Tok::LBracket => d += 1,
+                    Tok::RBracket => d -= 1,
+                    _ => {}
+                }
+                self.bump();
+            }
+            return None;
+        }
+        self.list_depth += 1;
+        let r = self.list_inner(open);
+        self.list_depth -= 1;
+        r
+    }
+
+    fn list_inner(&mut self, open: Token) -> Option<(Vec<Value>, Span)> {
         let mut items = Vec::new();
         loop {
             // comments inside a list are dropped (the formatter cannot place them)

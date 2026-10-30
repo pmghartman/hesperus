@@ -55,7 +55,7 @@ An edge block may only contain properties (`desc`, `at`, `resolved`). A node blo
 
 ## 3. Files, roots and imports
 
-Every file begins with `hesperus 0.1`. A file holds `let` and `template` definitions followed by exactly one root node (E015). The master file's root is a `system`; `system` may appear nowhere else (E031). A subsystem file can also be checked on its own, in which case its root is the project's root. Blocks nest at most 64 levels deep (E035).
+Every file begins with `hesperus 0.1`. A file holds `let` and `template` definitions followed by exactly one root node (E015). The master file's root is a `system`; `system` may appear nowhere else (E031). A subsystem file can also be checked on its own, in which case its root is the project's root. Blocks and lists nest at most 64 levels deep (E035). The root must be a `system` or `subsystem` (E015).
 
 `import "relative/path.hesp"` inside a container's block splices the imported file's root node in as a child of that container. The imported root must be a `subsystem` (E014). Paths are relative to the importing file and use `/`. A file may be imported once per project (E013 also covers cycles). Definitions (`let`, `template`) are file-local.
 
@@ -399,7 +399,7 @@ The parser recovers at the next newline or `}` and reports every error it finds.
 | E012 | import not found |
 | E013 | file imported twice or import cycle |
 | E014 | imported root must be a subsystem |
-| E015 | a file must hold exactly one root node |
+| E015 | a file must hold exactly one root node, a system or subsystem |
 | E017 | undefined template |
 | E018 | template arity mismatch |
 | E019 | template calls a template defined later (or itself) |
@@ -419,7 +419,7 @@ The parser recovers at the next newline or `}` and reports every error it finds.
 | E036 | an edge connects a node to itself |
 | E037 | property set twice |
 | E038 | a hand-written file imports a generated one |
-| E039 | statement in the wrong place (`let`/`template` inside a block, `import` inside a template or `each` body, a node item at the top level) |
+| E039 | statement in the wrong place (`let`/`template` inside a block or after the root node, `import` inside a template or `each` body, a node item at the top level) |
 
 ```hesp error=E005,E007,E011
 hesperus 0.1

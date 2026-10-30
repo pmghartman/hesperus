@@ -4,7 +4,7 @@
 use hesperus_core::ast::{EDGE_KINDS, NODE_KINDS, PROPERTY_KEYS, PROTOCOLS};
 use hesperus_core::diag::{LineIndex, Severity};
 use hesperus_core::lower::{join, dirname, normalize};
-use hesperus_core::project::{find_hesp_files, format_text, OverlaySource};
+use hesperus_core::project::{find_hesp_files, format_text, is_generated, OverlaySource};
 use hesperus_core::{Project, Source};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -506,7 +506,7 @@ impl LanguageServer for Backend {
         if diags.iter().any(|d| d.severity == Severity::Error) || formatted == text {
             return Ok(None);
         }
-        if formatted.lines().nth(1).map(|l| l.starts_with("generated ")).unwrap_or(false) {
+        if is_generated(&path, &text) {
             return Ok(None);
         }
         let index = LineIndex::new(&text);

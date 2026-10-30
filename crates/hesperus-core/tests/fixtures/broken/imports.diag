@@ -2,4 +2,5 @@ fixtures/broken/imports.hesp:4:10: error[E012]: import not found: `./missing.hes
 fixtures/broken/imports.hesp:6:10: error[E013]: `./bad-root.hesp` is already imported (a file is imported once, and never in a cycle)
 fixtures/broken/bad-root.hesp:3:1: error[E014]: an imported file's root must be a subsystem, not a component
   help: replace with `subsystem`
+fixtures/broken/bad-root.hesp:3:1: error[E015]: a file's root must be a system or subsystem, not a component
 fixtures/broken/cycle-b.hesp:4:10: error[E013]: `./cycle-a.hesp` is already imported (a file is imported once, and never in a cycle)
