@@ -130,8 +130,8 @@ pub fn lex(file: &str, text: &str) -> (Vec<Token>, Vec<Diagnostic>) {
                                     diags.push(Diagnostic::error(
                                         "E029",
                                         Span::new(file, i, i + 1 + e.len_utf8()),
-                                        format!("bad string escape `\\{}`; valid escapes are \\\" \\\\ \\n \\t \\$", e),
-                                    ).with_fix(e.to_string()));
+                                        format!("bad string escape `\\{}`; valid escapes are \\\" \\\\ \\n \\t \\$", if e.is_control() { e.escape_unicode().to_string() } else { e.to_string() }),
+                                    ).with_fix(if e.is_control() { String::new() } else { e.to_string() }));
                                     val.push(e);
                                 }
                             }
@@ -155,7 +155,7 @@ pub fn lex(file: &str, text: &str) -> (Vec<Token>, Vec<Diagnostic>) {
                 }
                 if !closed {
                     let mut d = Diagnostic::error("E004", Span::new(file, s, i), "unterminated string; add a closing `\"`");
-                    if i - s <= 200 {
+                    if i - s <= 200 && !text[s..i].chars().any(|c| c.is_control()) {
                         d = d.with_fix(format!("{}\"", &text[s..i]));
                     }
                     diags.push(d);

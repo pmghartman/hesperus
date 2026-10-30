@@ -30,6 +30,11 @@ fn check_fmt_ir_and_diff_exit_codes() {
     assert!(out.status.success());
     let ir: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(ir["root"], "phosphorus");
+    // locations are relative to the master's directory however the master was named
+    let out = hesp().args(["ir", "--locations"]).arg(&master).output().unwrap();
+    let ir: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(ir["locations"]["phosphorus.mesh"], "mesh.hesp:3");
+    assert_eq!(ir["locations"]["phosphorus"], "phosphorus.hesp:3");
     // a broken file: exit 1, every error on stderr with code and position
     let broken = root().join("crates/hesperus-core/tests/fixtures/broken/many.hesp");
     let out = hesp().args(["check"]).arg(&broken).output().unwrap();

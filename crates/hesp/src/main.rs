@@ -199,9 +199,11 @@ fn ir(file: &Path, locations: bool) -> i32 {
     let mut ir = project.ir.clone();
     if locations {
         let mut map = std::collections::BTreeMap::new();
+        let master_dir = hesperus_core::lower::dirname(&project.master).to_string();
         for (id, span) in &project.defs {
             let line = project.text_of(&span.file).map(|t| hesperus_core::diag::LineIndex::new(t).position(span.start).0).unwrap_or(0);
-            map.insert(id.clone(), format!("{}:{}", span.file, line));
+            let rel = hesperus_core::lower::relative(&master_dir, &span.file);
+            map.insert(id.clone(), format!("{}:{}", rel.strip_prefix("./").unwrap_or(&rel), line));
         }
         ir.locations = Some(map);
     }

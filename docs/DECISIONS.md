@@ -113,7 +113,7 @@ Patrick's direction (relayed during the build): Hesperus will support many langu
 
 ## Extractor heuristics (framework knowledge, extractor only)
 
-These are the rows of the table, summarized:
+The rows of the table, summarized. Three classifiers sit beside the table rather than in it, because they are not about any library: `classifyUrl` (host of a literal URL; loopback hosts are the repository's own server) and `sqlAccess` (SQL verb → reads/writes) in `engine.ts`, and the unbound-component naming and the 20-entry evidence cap in `extract.ts`/`ir.ts`; they have unit tests rather than per-row fixtures.
 
 - Imports between files bound to different nodes: `calls`; type-only imports ignored; relative, tsconfig `paths`, and workspace-package (`package.json` name map) specifiers resolved; everything else ignored unless a boundary heuristic claims it.
 - Routes: `app.get|post|put|delete|patch|options|head|all|use("/...")` on a value created by `express()`, `Router()`, `new Hono()`, `new Koa()`, `fastify()`; `Bun.serve(`, `Deno.serve(`, `http(s).createServer(`; and `pathname === "/..."` / `.startsWith("/...")` / `case "/...":` comparisons. All feed one `ingress http` node.

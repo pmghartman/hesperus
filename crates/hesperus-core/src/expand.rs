@@ -152,6 +152,9 @@ impl<'a> Expander<'a> {
 
     fn stmt(&mut self, s: &Stmt, env: &HashMap<String, Bound>, depth: usize, before: usize, out: &mut Vec<Stmt>) {
         let mk = |kind: StmtKind, span: &Span| Stmt { leading: Vec::new(), trailing_comment: None, kind, span: span.clone() };
+        if self.exhausted {
+            return;
+        }
         match &s.kind {
             StmtKind::Node(n) => {
                 if let Some(n) = self.node(n, env, depth, before) {
@@ -179,6 +182,9 @@ impl<'a> Expander<'a> {
                 out.push(mk(StmtKind::Constraint(ConstraintStmt { rule: c.rule.clone(), from, to, kind: c.kind.clone() }), &s.span));
             }
             StmtKind::Property(p) => {
+                if !self.tick(&s.span) {
+                    return;
+                }
                 let value = match self.value(&p.value, env) {
                     Some(v) => v,
                     None => return,
@@ -238,6 +244,9 @@ impl<'a> Expander<'a> {
                 };
                 let literal = matches!(e.source, EachSource::List(..));
                 for item in items {
+                    if self.exhausted {
+                        return;
+                    }
                     let text = match self.value(&item, env) {
                         Some(Value::Str(s)) => s.text,
                         Some(Value::Ident(i)) => i.text,
@@ -375,6 +384,10 @@ impl<'a> Expander<'a> {
                 let mut j = start;
                 while j < chars.len() && chars[j] != '}' {
                     j += 1;
+                }
+                if j >= chars.len() {
+                    self.diags.push(Diagnostic::error("E022", span.clone(), "unclosed `${`; write `${name}`"));
+                    return None;
                 }
                 let n: String = chars[start..j].iter().collect();
                 i = (j + 1).min(chars.len());

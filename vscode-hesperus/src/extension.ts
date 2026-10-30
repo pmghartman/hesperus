@@ -163,13 +163,16 @@ async function openViewer(context: vscode.ExtensionContext) {
         // the intent declaration when there is one, else the generated file that holds the node
         const intentLoc: string | undefined = d?.locations?.[msg.id];
         const actualLoc: string | undefined = d?.actualLocations?.[msg.id];
-        const loc = intentLoc ?? actualLoc;
+        // in Actual mode the generated file is the declaration; otherwise the intent, falling back to actual
+        const preferActual = msg.mode === "actual";
+        const useActual = preferActual ? !!actualLoc : !intentLoc;
+        const loc = useActual ? actualLoc : intentLoc;
         if (!loc) {
           vscode.window.showInformationMessage(`Hesperus: no .hesp file declares ${msg.id}.`);
           return;
         }
         const [file, line] = splitLoc(loc);
-        const abs = path.isAbsolute(file) ? file : path.resolve(intentLoc ? d.masterDir : d.actualDir, file);
+        const abs = path.isAbsolute(file) ? file : path.resolve(useActual ? d.actualDir : d.masterDir, file);
         await openAt(abs, line);
       } else if (msg.type === "openSource") {
         const sourceRoot = config("sourceRoot", workspaceRoot() ?? "");

@@ -11,6 +11,7 @@ const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : { p
 
 interface Data {
   error?: string;
+  actualLocations?: Record<string, string>;
   intent: any | null;
   actual: any | null;
   unified: any | null;
@@ -96,7 +97,7 @@ function renderInspector(g: Graph): string {
   const n: VNode = g.nodes.get(selected)!;
   const out = g.edges.filter((e) => e.from === selected);
   const inc = g.edges.filter((e) => e.to === selected);
-  const def = data?.locations?.[n.id];
+  const def = mode === "actual" ? data?.actualLocations?.[n.id] ?? data?.locations?.[n.id] : data?.locations?.[n.id] ?? data?.actualLocations?.[n.id];
   const kv: [string, string][] = [];
   for (const d of n.detail) {
     const i = d.indexOf(": ");
@@ -179,7 +180,7 @@ function bind(g: Graph | null) {
   root.querySelectorAll<HTMLAnchorElement>("a[data-def]").forEach((a) =>
     a.addEventListener("click", (ev) => {
       ev.preventDefault();
-      vscode.postMessage({ type: "openDefinition", id: a.dataset.def! });
+      vscode.postMessage({ type: "openDefinition", id: a.dataset.def!, mode });
     }),
   );
   if (!g) return;
@@ -187,7 +188,7 @@ function bind(g: Graph | null) {
     const id = el.dataset.id!;
     el.addEventListener("click", (ev) => {
       if (ev.ctrlKey || ev.metaKey) {
-        vscode.postMessage({ type: "openDefinition", id });
+        vscode.postMessage({ type: "openDefinition", id, mode });
         return;
       }
       selected = id;

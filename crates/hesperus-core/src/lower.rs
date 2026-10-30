@@ -154,6 +154,8 @@ struct Linker<'a> {
     constraints: Vec<PendingConstraint>,
     ids: HashSet<String>,
     root_is_system: bool,
+    /// Unresolved references still allowed a nearest-name search (it is quadratic).
+    suggestion_budget: usize,
 }
 
 pub fn load(master: &str, source: &dyn Source) -> Project {
@@ -172,6 +174,7 @@ pub fn load(master: &str, source: &dyn Source) -> Project {
         constraints: Vec::new(),
         ids: HashSet::new(),
         root_is_system: false,
+        suggestion_budget: 200,
     };
     let text = match source.read(&master) {
         Ok(t) => t,
@@ -255,7 +258,7 @@ impl<'a> Linker<'a> {
             let mut d = Diagnostic::error("E010", n.name.span.clone(), format!("duplicate node `{}`", clip(&id)));
             if let Some(f) = first {
                 let (line, col) = self.position(&f);
-                d.message.push_str(&format!("; first declared at {}:{}:{}", f.file.rsplit('/').next().unwrap_or(&f.file), line, col));
+                d.message.push_str(&format!("; first declared at {}:{}:{}", f.file, line, col));
             }
             self.diags.push(d);
             return;
@@ -536,9 +539,14 @@ impl<'a> Linker<'a> {
             }
             None => {
                 let dotted = path.dotted();
-                let mut ids: Vec<&str> = self.ids.iter().map(|s| s.as_str()).collect();
-                ids.sort();
-                let suggestion = if dotted.len() <= 200 { nearest_id(&dotted, &ids, scope) } else { None };
+                let suggestion = if dotted.len() <= 200 && self.suggestion_budget > 0 {
+                    self.suggestion_budget -= 1;
+                    let mut ids: Vec<&str> = self.ids.iter().map(|s| s.as_str()).collect();
+                    ids.sort();
+                    nearest_id(&dotted, &ids, scope)
+                } else {
+                    None
+                };
                 let shown = clip(&dotted);
                 let msg = match &suggestion {
                     Some(s) => format!("cannot resolve `{shown}` from `{}`; did you mean `{}`?", clip(scope), clip(s)),

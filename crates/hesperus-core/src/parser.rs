@@ -370,6 +370,16 @@ impl Parser {
         }
     }
 
+    /// A name that may not be interpolated: `let`, `template` and parameter names.
+    fn plain_ident(&mut self, what: &str) -> Option<Ident> {
+        let id = self.ident(what)?;
+        if id.text.contains('$') {
+            self.error("E028", id.span.clone(), format!("`{}` cannot be interpolated; {what} is a plain name", clip(&id.text)));
+            return None;
+        }
+        Some(id)
+    }
+
     fn string(&mut self) -> Option<Str> {
         match self.peek().clone() {
             Tok::Str(s) => {
@@ -436,8 +446,8 @@ impl Parser {
                     if !EDGE_KINDS.contains(&k.as_str()) {
                         let fix = nearest(&k, EDGE_KINDS.iter().copied());
                         let msg = match fix {
-                            Some(f) => format!("unknown edge kind `{k}`; did you mean `{f}`?"),
-                            None => format!("unknown edge kind `{k}`; one of calls, reads, writes, http, ws, io"),
+                            Some(f) => format!("unknown edge kind `{}`; did you mean `{f}`?", clip(&k)),
+                            None => format!("unknown edge kind `{}`; one of calls, reads, writes, http, ws, io", clip(&k)),
                         };
                         let mut d = Diagnostic::error("E006", self.span_of(&t), msg);
                         d.fix = fix.map(|f| f.to_string());
@@ -481,7 +491,7 @@ impl Parser {
                     let t = self.bump();
                     if !EDGE_KINDS.contains(&k.as_str()) {
                         let fix = nearest(&k, EDGE_KINDS.iter().copied());
-                        let mut d = Diagnostic::error("E006", self.span_of(&t), format!("unknown edge kind `{k}`"));
+                        let mut d = Diagnostic::error("E006", self.span_of(&t), format!("unknown edge kind `{}`", clip(&k)));
                         d.fix = fix.map(|f| f.to_string());
                         self.diags.push(d);
                     }
@@ -619,7 +629,10 @@ impl Parser {
 
     fn let_stmt(&mut self) -> Option<StmtKind> {
         self.bump();
-        let name = self.ident("a list name")?;
+        let Some(name) = self.plain_ident("a list name") else {
+            self.recover();
+            return None;
+        };
         if self.expect(Tok::Eq, "`=`").is_none() {
             self.recover();
             return None;
@@ -636,7 +649,10 @@ impl Parser {
 
     fn template(&mut self) -> Option<StmtKind> {
         self.bump();
-        let name = self.ident("a template name")?;
+        let Some(name) = self.plain_ident("a template name") else {
+            self.recover();
+            return None;
+        };
         if self.expect(Tok::LParen, "`(`").is_none() {
             self.recover();
             return None;
@@ -647,7 +663,7 @@ impl Parser {
                 self.bump();
                 break;
             }
-            let p = match self.ident("a parameter name") {
+            let p = match self.plain_ident("a parameter name") {
                 Some(p) => p,
                 None => {
                     self.recover();
@@ -676,7 +692,10 @@ impl Parser {
 
     fn each(&mut self) -> Option<StmtKind> {
         self.bump();
-        let var = self.ident("a variable name")?;
+        let Some(var) = self.plain_ident("a variable name") else {
+            self.recover();
+            return None;
+        };
         match self.peek() {
             Tok::Ident(s) if s == "in" => {
                 self.bump();

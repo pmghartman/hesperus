@@ -544,3 +544,56 @@ fn review_regressions_6() {
     let p = check("hesperus 0.1\n\nsystem s {\n  component a\n  component a\n}\n");
     assert!(p.diags[0].message.ends_with("first declared at r.hesp:4:13"), "{}", p.diags[0].message);
 }
+
+/// Regressions from the seventh review.
+#[test]
+fn review_regressions_7() {
+    let check = |text: &str| load("r.hesp", &MemSource(HashMap::from([("r.hesp".to_string(), text.to_string())])));
+    // nested `each` stops at the statement limit instead of spinning
+    let items = (0..256).map(|i| format!("i{i}")).collect::<Vec<_>>().join(", ");
+    let start = std::time::Instant::now();
+    let p = check(&format!("hesperus 0.1\n\nlet l = [{items}]\n\nsystem s {{\n  each a in l {{\n    each b in l {{\n      each c in l {{\n        each d in l {{\n          component $a$b$c$d\n        }}\n      }}\n    }}\n  }}\n}}\n"));
+    assert!(codes(&p.diags).contains(&"E021"));
+    assert!(start.elapsed().as_secs() < 5, "{:?}", start.elapsed());
+    // 100k unresolved references finish quickly (suggestions are budgeted)
+    let mut big = String::from("hesperus 0.1\n\nsystem s {\n");
+    for i in 0..2000 {
+        big.push_str(&format!("  component node_number_{i}\n"));
+    }
+    for i in 0..100_000 {
+        big.push_str(&format!("  node_number_0 -> node_numbr_{i}: calls\n"));
+    }
+    big.push_str("}\n");
+    let start = std::time::Instant::now();
+    let p = check(&big);
+    // the 10,000-statement limit cuts the file short; what remains resolves quickly
+    assert!(codes(&p.diags).contains(&"E021"));
+    assert!(p.diags.iter().filter(|d| d.code == "E011").count() > 5_000);
+    assert!(start.elapsed().as_secs() < 20, "{:?}", start.elapsed());
+    // E006 clipped
+    let p = check(&format!("hesperus 0.1\n\nsystem s {{\n  component a\n  component b\n\n  a -> b: {}\n}}\n", "x".repeat(100_000)));
+    assert!(p.diags.iter().all(|d| d.message.len() < 400));
+    // a `\n` escape round-trips through the IR and the printer
+    let src = "hesperus 0.1\n\nsystem s {\n  desc: \"line one\\nline two\"\n}\n";
+    let p = check(src);
+    assert!(!p.has_errors());
+    let ir = hesperus_core::Ir::from_json(&p.ir.to_json()).unwrap();
+    assert_eq!(print(&ir)[0].1, src);
+    // unknown IR fields are refused
+    assert!(hesperus_core::Ir::from_json(r#"{"hesperus":"0.1","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null,"color":"red"}],"edges":[]}"#).is_err());
+    assert!(hesperus_core::Ir::from_json(r#"{"hesperus":"0.1","root":"a","layout":{},"nodes":[{"id":"a","kind":"system","name":"a","parent":null}],"edges":[]}"#).is_err());
+    // the master must come first in `files`, said plainly
+    let e = hesperus_core::Ir::from_json(r#"{"hesperus":"0.1","root":"a","files":[{"path":"c.hesp","root":"a.c"},{"path":"a.hesp","root":"a"}],"nodes":[{"id":"a","kind":"system","name":"a","parent":null},{"id":"a.c","kind":"subsystem","name":"c","parent":"a"}],"edges":[]}"#).unwrap_err();
+    assert!(e.contains("must be the master"), "{e}");
+    // `$` in definition names and an unclosed `${`
+    let p = check("hesperus 0.1\n\nlet $l = [a]\ntemplate $t(x) {\n  component $x\n}\n\nsystem s {\n  component a\n}\n");
+    assert_eq!(codes(&p.diags), vec!["E028"]);
+    let p = check("hesperus 0.1\n\ntemplate t(x) {\n  component $x \"${x\"\n}\n\nsystem s {\n  t(a)\n}\n");
+    assert_eq!(codes(&p.diags), vec!["E022"]);
+    // control characters never reach messages or fixes raw
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a \"x\\\u{1}y\"\n  component b \"abc\u{1}\n}\n");
+    for d in &p.diags {
+        assert!(!d.message.chars().any(|c| c.is_control()), "{}", d.message);
+        assert!(!d.fix.as_deref().unwrap_or("").chars().any(|c| c.is_control()));
+    }
+}

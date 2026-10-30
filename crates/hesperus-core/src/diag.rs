@@ -189,7 +189,7 @@ pub fn render(diags: &[Diagnostic], sources: &dyn Fn(&str) -> Option<String>) ->
             if fix.is_empty() {
                 out.push_str("  help: remove it\n");
             } else {
-                out.push_str(&format!("  help: replace with `{}`\n", fix.replace('\n', "\\n")));
+                out.push_str(&format!("  help: replace with `{}`\n", clip_to(fix, 400).replace('\n', "\\n")));
             }
         }
     }

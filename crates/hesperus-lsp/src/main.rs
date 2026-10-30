@@ -119,9 +119,10 @@ impl Backend {
                 });
             }
         }
+        let mut indexes: HashMap<String, LineIndex> = HashMap::new();
         for d in &project.diags {
             let Some(text) = project.text_of(&d.span.file) else { continue };
-            let index = LineIndex::new(text);
+            let index = indexes.entry(d.span.file.clone()).or_insert_with(|| LineIndex::new(text));
             let severity = match d.severity {
                 Severity::Error => DiagnosticSeverity::ERROR,
                 Severity::Warning => DiagnosticSeverity::WARNING,

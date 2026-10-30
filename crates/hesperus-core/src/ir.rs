@@ -146,6 +146,7 @@ impl Rule {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Node {
     pub id: String,
     pub kind: NodeKind,
@@ -180,6 +181,7 @@ fn default_true() -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Edge {
     pub from: String,
     pub to: String,
@@ -204,6 +206,7 @@ impl Edge {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Constraint {
     pub rule: Rule,
     pub from: String,
@@ -213,12 +216,14 @@ pub struct Constraint {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileEntry {
     pub path: String,
     pub root: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Ir {
     pub hesperus: String,
     #[serde(default)]
@@ -316,7 +321,17 @@ impl Ir {
                 return Err(format!("`{}` is a system below the root", clip(&n.id)));
             }
         }
-        let no_control = |s: &str| !s.chars().any(|c| (c.is_control() && c != '\t') || c == '\u{E000}');
+        let no_control = |s: &str| !s.chars().any(|c| (c.is_control() && c != '\t' && c != '\n') || c == '\u{E000}');
+        if let Some(g) = &self.generated {
+            if g.is_empty() || !no_control(g) || g.contains('\n') {
+                return Err("`generated` must be a non-empty single-line string".into());
+            }
+        }
+        if let Some(first) = self.files.first() {
+            if first.root != self.root {
+                return Err(format!("the first file `{}` must be the master (root `{}`)", clip(&first.path), clip(&self.root)));
+            }
+        }
         let evidence_ok = |e: &str| e.rfind(':').map(|i| i > 0 && !e[i + 1..].is_empty() && e[i + 1..].bytes().all(|b| b.is_ascii_digit())).unwrap_or(false);
         for n in &self.nodes {
             for text in [n.label.as_deref(), n.desc.as_deref(), n.host.as_deref(), n.engine.as_deref()].into_iter().flatten().chain(n.src.iter().map(|s| s.as_str())).chain(n.at.iter().map(|s| s.as_str())) {
@@ -396,11 +411,6 @@ impl Ir {
             }
             if i > 0 && root.kind != NodeKind::Subsystem {
                 return Err(format!("file `{}` has root `{}`, a {}; an imported file's root is a subsystem", clip(&f.path), clip(&f.root), root.kind.as_str()));
-            }
-        }
-        if let Some(first) = self.files.first() {
-            if first.root != self.root {
-                return Err(format!("the first file `{}` must be the master (root `{}`)", clip(&first.path), clip(&self.root)));
             }
         }
         Ok(())
