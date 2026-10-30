@@ -64,6 +64,9 @@ enum Cmd {
         /// Extractor command; default `$HESPERUS_TS`, else `hesperus-ts` on PATH
         #[arg(long)]
         extractor: Option<String>,
+        /// Node executable used to run a `.js` extractor (default `$HESPERUS_NODE`, else `node`)
+        #[arg(long)]
+        node: Option<String>,
     },
     /// Compare intent and actual
     Diff {
@@ -87,7 +90,7 @@ fn main() {
         Cmd::Fmt { paths, check } => fmt(&paths, check),
         Cmd::Ir { file, locations } => ir(&file, locations),
         Cmd::Print { ir, out } => print_ir(&ir, out.as_deref()),
-        Cmd::Emit { lang, repo, intent, out, extractor } => emit(&lang, &repo, intent.as_deref(), out.as_deref(), extractor.as_deref()),
+        Cmd::Emit { lang, repo, intent, out, extractor, node } => emit(&lang, &repo, intent.as_deref(), out.as_deref(), extractor.as_deref(), node.as_deref()),
         Cmd::Diff { intent, actual, json, all, depth } => diff(&intent, &actual, json, all, depth),
     };
     std::process::exit(code);
@@ -299,7 +302,7 @@ fn print_ir(ir_path: &Path, out: Option<&Path>) -> i32 {
     0
 }
 
-fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extractor: Option<&str>) -> i32 {
+fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extractor: Option<&str>, node: Option<&str>) -> i32 {
     if lang != "ts" {
         eprintln!("hesp emit: unknown language `{lang}`; v1 ships the `ts` extractor");
         return 2;
@@ -320,14 +323,15 @@ fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extr
             String::new()
         }
     };
+    let node_exe = node.map(|s| s.to_string()).or_else(|| std::env::var("HESPERUS_NODE").ok()).unwrap_or_else(|| "node".into());
     let command: Vec<String> = match extractor.map(|s| s.to_string()).or_else(|| std::env::var("HESPERUS_TS").ok()) {
         Some(cmd) => {
-            // a bare script path runs under node; anything else is a command line
-            let words: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
-            if words.len() == 1 && (cmd.ends_with(".js") || cmd.ends_with(".mjs") || cmd.ends_with(".cjs")) {
-                vec!["node".into(), cmd]
+            // a script path (which may contain spaces) runs under node; anything else is a command line
+            let script = cmd.ends_with(".js") || cmd.ends_with(".mjs") || cmd.ends_with(".cjs");
+            if script && (!cmd.contains(char::is_whitespace) || Path::new(&cmd).is_file()) {
+                vec![node_exe, cmd]
             } else {
-                words
+                cmd.split_whitespace().map(|s| s.to_string()).collect()
             }
         }
         None => vec!["hesperus-ts".into()],

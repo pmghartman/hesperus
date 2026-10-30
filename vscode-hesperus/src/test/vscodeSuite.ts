@@ -9,11 +9,13 @@ export async function run(): Promise<void> {
   const doc = await vscode.workspace.openTextDocument(path.join(folder.uri.fsPath, "phosphorus.hesp"));
   assert.equal(doc.languageId, "hesperus");
   await vscode.window.showTextDocument(doc);
-  // point the extension at the binaries this checkout built
+  // with binaries bundled under bin/ the defaults work; otherwise point at this checkout's build
   const repo = path.resolve(__dirname, "..", "..", "..");
+  const fs = await import("node:fs");
+  const bundled = fs.existsSync(path.join(repo, "vscode-hesperus", "bin", "hesp"));
   const cfg = vscode.workspace.getConfiguration("hesperus");
-  await cfg.update("hespPath", path.join(repo, "target", "release", "hesp"), vscode.ConfigurationTarget.Global);
-  await cfg.update("serverPath", path.join(repo, "target", "release", "hesperus-lsp"), vscode.ConfigurationTarget.Global);
+  await cfg.update("hespPath", bundled ? undefined : path.join(repo, "target", "release", "hesp"), vscode.ConfigurationTarget.Global);
+  await cfg.update("serverPath", bundled ? undefined : path.join(repo, "target", "release", "hesperus-lsp"), vscode.ConfigurationTarget.Global);
   const ext = vscode.extensions.getExtension("pmghartman.vscode-hesperus");
   assert.ok(ext, "extension found");
   await ext.activate();

@@ -10,6 +10,7 @@ let client: LanguageClient | undefined;
 let panel: vscode.WebviewPanel | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
+  extensionRoot = context.extensionUri.fsPath;
   await startServer(context);
   context.subscriptions.push(
     vscode.commands.registerCommand("hesperus.openViewer", () => openViewer(context)),
@@ -38,12 +39,41 @@ function config<T>(key: string, fallback: T): T {
   return v === undefined || v === "" ? fallback : v;
 }
 
+let extensionRoot = "";
+
+/**
+ * Where a tool lives: an explicit setting wins; otherwise the copy bundled in the
+ * extension (`bin/hesp`, `bin/hesperus-lsp`, `extractor/cli.js`) when present; otherwise
+ * the bare name, found on PATH.
+ */
+export function resolveTool(root: string, setting: string | undefined, bundled: string, fallback: string, exists: (p: string) => boolean = fs.existsSync): string {
+  if (setting && setting !== fallback) return setting;
+  const exe = process.platform === "win32" && !bundled.endsWith(".js") ? `${bundled}.exe` : bundled;
+  const candidate = path.join(root, exe);
+  return exists(candidate) ? candidate : fallback;
+}
+
+function hespPath(): string {
+  return resolveTool(extensionRoot, vscode.workspace.getConfiguration("hesperus").get<string>("hespPath"), "bin/hesp", "hesp");
+}
+function serverPath(): string {
+  return resolveTool(extensionRoot, vscode.workspace.getConfiguration("hesperus").get<string>("serverPath"), "bin/hesperus-lsp", "hesperus-lsp");
+}
+/** The extractor entry, or "" when neither a setting nor the bundle provides one. */
+function extractorPath(): string {
+  return resolveTool(extensionRoot, vscode.workspace.getConfiguration("hesperus").get<string>("extractorPath"), "extractor/cli.js", "");
+}
+/** Run `.js` extractors with the extension host's own Node, so users need no Node install. */
+function nodeEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, ELECTRON_RUN_AS_NODE: "1", HESPERUS_NODE: process.execPath };
+}
+
 function workspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
 async function startServer(context: vscode.ExtensionContext) {
-  const command = config("serverPath", "hesperus-lsp");
+  const command = serverPath();
   const serverOptions: ServerOptions = { command, args: [] };
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ scheme: "file", language: "hesperus" }],
@@ -61,7 +91,7 @@ async function startServer(context: vscode.ExtensionContext) {
 
 function run(cmd: string, args: string[], cwd: string, input?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = cp.spawn(cmd, args, { cwd, env: process.env });
+    const child = cp.spawn(cmd, args, { cwd, env: nodeEnv() });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (d) => (stdout += d));
@@ -113,7 +143,7 @@ async function loadData(context: vscode.ExtensionContext): Promise<any> {
     return { type: "data", error: "No intent file. Open a .hesp file or set hesperus.intent.", intent: null, actual: null, unified: null, locations: {} };
   }
   lastMaster = master;
-  const hesp = config("hespPath", "hesp");
+  const hesp = hespPath();
   const intentRes = await run(hesp, ["ir", "--locations", master], root);
   if (intentRes.code === 127) {
     return { type: "data", error: `Cannot run \`${hesp}\`: ${intentRes.stderr.trim()}. Set hesperus.hespPath.`, intent: null, actual: null, unified: null, locations: {}, intentPath: master };
@@ -230,9 +260,9 @@ async function emit(context: vscode.ExtensionContext) {
   }
   const repo = config("sourceRoot", root);
   const args = ["emit", "--lang", "ts", repo, "--intent", master, "--out", path.resolve(root, config("actualDir", ".hesperus/actual"))];
-  const extractor = config("extractorPath", "");
-  if (extractor) args.push("--extractor", extractor);
-  const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Hesperus: emitting actual from code" }, () => run(config("hespPath", "hesp"), args, root));
+  const extractor = extractorPath();
+  if (extractor) args.push("--extractor", extractor, "--node", process.execPath);
+  const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Hesperus: emitting actual from code" }, () => run(hespPath(), args, root));
   if (res.code !== 0) {
     vscode.window.showErrorMessage(`Hesperus: emit failed: ${res.stderr.trim()}`);
     return;

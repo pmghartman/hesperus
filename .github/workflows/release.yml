@@ -1,0 +1,53 @@
+# Builds a self-contained .vsix per platform when a version tag is pushed, attaches
+# them to the GitHub release, and publishes to the Marketplace and Open VSX when the
+# VSCE_PAT / OVSX_PAT secrets exist. Nothing runs on ordinary pushes.
+name: release
+on:
+  push:
+    tags: ["v*"]
+jobs:
+  package:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            target: darwin-arm64
+          - os: macos-13
+            target: darwin-x64
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: windows-latest
+            target: win32-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bash scripts/package-vsix.sh ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix-${{ matrix.target }}
+          path: vscode-hesperus/*.vsix
+  release:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.vsix
+      - if: ${{ env.VSCE_PAT != '' }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: for f in dist/*.vsix; do npx @vscode/vsce publish --packagePath "$f"; done
+      - if: ${{ env.OVSX_PAT != '' }}
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: for f in dist/*.vsix; do npx ovsx publish "$f" -p "$OVSX_PAT"; done

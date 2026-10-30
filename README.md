@@ -42,7 +42,11 @@ system shop "Web shop" {
 | `skill/SKILL.md` | teaches agents the syntax and the workflow |
 | `examples/phosphorus` | the intent description of [Phosphorus](https://github.com/pmghartman/phosphorus), the first test codebase |
 
-## Use
+## Install the extension
+
+A release `.vsix` is self-contained: it carries `hesp`, `hesperus-lsp` and the extractor for its platform, and runs the extractor with VS Code's own Node, so nothing else needs installing. Download the one for your platform from the GitHub release (or build it with `scripts/package-vsix.sh`), then in VS Code: Extensions → `…` → Install from VSIX. The settings `hesperus.hespPath`, `hesperus.serverPath` and `hesperus.extractorPath` override the bundled copies when set.
+
+## Use from the command line
 
 ```bash
 cargo build --release                      # hesp, hesperus-lsp in target/release
@@ -65,6 +69,6 @@ cargo test --workspace                      # core goldens, differ goldens, LSP 
 (cd vscode-hesperus && npm install && npm test && npm run package)   # viewer render tests, .vsix
 ```
 
-Golden files are updated with `UPDATE_GOLDEN=1`. Design choices and their alternatives are in [docs/DECISIONS.md](docs/DECISIONS.md).
+Golden files are updated with `UPDATE_GOLDEN=1`. `scripts/package-vsix.sh [target]` builds the self-contained extension package for the host (or the named VS Code target); pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the four platform packages, attaches them to the GitHub release, and publishes them to the Marketplace and Open VSX when the `VSCE_PAT` / `OVSX_PAT` secrets exist. Design choices and their alternatives are in [docs/DECISIONS.md](docs/DECISIONS.md).
 
 Apache-2.0.

@@ -107,3 +107,4 @@ test("cycles do not break ranking", () => {
   assert.ok(xs["c.a"] < xs["c.b"] && xs["c.b"] < xs["c.d"]);
   assert.equal(l.edges.length, 3);
 });
+
