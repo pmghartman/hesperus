@@ -23,6 +23,8 @@ export interface Match {
   symbol?: string[];
   /** Name at the call site (method, function, constructor, tag). Absent: any. */
   callee?: string[];
+  /** Regular expression the call-site name must match (for families like the fs read and write functions). */
+  calleeMatch?: string;
   /** Regular expression the receiver text (or compare subject) must match; `.+` means "has a receiver", `<none>` means a bare call. */
   receiver?: string;
   /** What argument 0 (or the compare literal / tagged head) must be: a route (`/...`), a url, sql, or an object literal holding `key`. */
@@ -96,11 +98,11 @@ export const RULES: Rule[] = [
   { id: "ws.bun-serve-option", when: { fact: "call", module: ["<global>"], symbol: ["Bun", "Deno"], callee: ["serve"], arg0: "object", key: "websocket" }, effect: { target: "ingress", protocol: "ws" }, group: "ws" },
   { id: "ws.server-import", when: { fact: "import", module: WS_SERVER }, effect: { target: "ingress", protocol: "ws" }, fallback: true, group: "ws" },
   // ---- WebSocket clients → external by host / own ingress / unresolved
-  { id: "ws.client-global", when: { fact: "new", module: ["<global>"], symbol: ["WebSocket"] }, effect: { target: "by-url", edge: "ws" }, group: "ws" },
+  { id: "ws.client-global", when: { fact: "new", module: ["<global>"], symbol: ["WebSocket"], callee: ["WebSocket"] }, effect: { target: "by-url", edge: "ws" }, group: "ws" },
   { id: "ws.client-ws-package", when: { fact: "new", module: ["ws", "isomorphic-ws"], callee: ["WebSocket", "default"] }, effect: { target: "by-url", edge: "ws" }, group: "ws" },
   { id: "ws.client-socketio", when: { fact: "call", module: ["socket.io-client"], symbol: ["default", "io"] }, effect: { target: "by-url", edge: "ws" }, group: "ws" },
   // ---- outbound HTTP → external by host / own ingress / unresolved
-  { id: "http.fetch-global", when: { fact: "call", module: ["<global>"], symbol: ["fetch"] }, effect: { target: "by-url", edge: "http" }, group: "http" },
+  { id: "http.fetch-global", when: { fact: "call", module: ["<global>"], symbol: ["fetch"], callee: ["fetch"] }, effect: { target: "by-url", edge: "http" }, group: "http" },
   { id: "http.fetch-package", when: { fact: "call", module: ["node-fetch", "cross-fetch", "isomorphic-fetch", "undici"], callee: ["fetch", "request", "default"] }, effect: { target: "by-url", edge: "http" }, group: "http" },
   { id: "http.axios", when: { fact: "call", module: ["axios"], callee: ["axios", "get", "post", "put", "patch", "delete", "head", "request"] }, effect: { target: "by-url", edge: "http" }, group: "http" },
   { id: "http.got-ky", when: { fact: "call", module: ["got", "ky", "superagent", "needle", "phin"], callee: ["got", "ky", "get", "post", "put", "patch", "delete", "head", "superagent", "needle", "phin"] }, effect: { target: "by-url", edge: "http" }, group: "http" },
@@ -130,11 +132,11 @@ export const RULES: Rule[] = [
   ).map((r) => ({ ...r, id: r.id.replace("store.postgres", "store.prisma") })),
   ...store("sql", QUERY_BUILDERS, ["select", "selectFrom", "find", "findOne", "findAll", "findMany", "count"], ["insert", "insertInto", "update", "updateTable", "delete", "deleteFrom", "save", "create", "destroy", "upsert"], ["raw", "query", "execute", "run"]),
   // ---- filesystem and processes → hardware, io
-  { id: "io.fs-call", when: { fact: "call", module: FS }, effect: { target: "hardware", name: "filesystem", label: "Filesystem" }, group: "fs" },
+  { id: "io.fs-call", when: { fact: "call", module: FS, calleeMatch: "^(read|write|append|open|stat|lstat|mkdir|rm|unlink|readdir|exists|copy|rename|access|create|chmod|chown|watch|realpath|truncate|symlink|link|utimes|opendir|cp|mkdtemp|ensure|outputFile|outputJson|readJson|writeJson|move|remove|emptyDir|pathExists)" }, effect: { target: "hardware", name: "filesystem", label: "Filesystem" }, group: "fs" },
   { id: "io.fs-bun", when: { fact: "call", module: ["<global>"], symbol: ["Bun"], callee: ["file", "write"] }, effect: { target: "hardware", name: "filesystem", label: "Filesystem" }, group: "fs" },
   { id: "io.fs-deno", when: { fact: "call", module: ["<global>"], symbol: ["Deno"], callee: ["readTextFile", "readFile", "writeTextFile", "writeFile", "open", "stat", "readDir", "remove", "mkdir"] }, effect: { target: "hardware", name: "filesystem", label: "Filesystem" }, group: "fs" },
   { id: "io.fs-import", when: { fact: "import", module: FS }, effect: { target: "hardware", name: "filesystem", label: "Filesystem" }, fallback: true, group: "fs" },
-  { id: "io.proc-call", when: { fact: "call", module: PROC }, effect: { target: "hardware", name: "processes", label: "OS processes" }, group: "proc" },
+  { id: "io.proc-call", when: { fact: "call", module: PROC, calleeMatch: "^(spawn|exec|execFile|fork|spawnSync|execSync|execFileSync|execa|execaSync|execaCommand|execaCommandSync|\\$|sync)$" }, effect: { target: "hardware", name: "processes", label: "OS processes" }, group: "proc" },
   { id: "io.proc-tagged", when: { fact: "tagged", module: PROC }, effect: { target: "hardware", name: "processes", label: "OS processes" }, group: "proc" },
   { id: "io.proc-bun", when: { fact: "call", module: ["<global>"], symbol: ["Bun"], callee: ["spawn", "spawnSync"] }, effect: { target: "hardware", name: "processes", label: "OS processes" }, group: "proc" },
   { id: "io.proc-deno", when: { fact: "new", module: ["<global>"], symbol: ["Deno"], callee: ["Command", "Deno.Command"] }, effect: { target: "hardware", name: "processes", label: "OS processes" }, group: "proc" },

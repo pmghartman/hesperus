@@ -51,6 +51,7 @@ function matches(rule: Rule, f: Fact): boolean {
   if (w.module !== "<any>" && !w.module.includes(f.origin.module)) return false;
   if (!listHas(w.symbol, f.origin.symbol)) return false;
   if (w.callee && !w.callee.includes(f.name) && !w.callee.includes(`${f.receiver}.${f.name}`)) return false;
+  if (w.calleeMatch && !new RegExp(w.calleeMatch).test(f.name)) return false;
   if (w.receiver === "<none>") {
     if (f.receiver !== null) return false;
   } else if (w.receiver && !(f.receiver !== null && new RegExp(w.receiver).test(f.receiver))) return false;
