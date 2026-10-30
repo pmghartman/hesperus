@@ -319,7 +319,7 @@ impl<'a> Linker<'a> {
         let text = match self.source.read(&path) {
             Ok(t) => t,
             Err(ReadError::Missing(_)) => {
-                self.diags.push(Diagnostic::error("E012", imp.span.clone(), format!("import not found: `{}` (looked for {path})", clip(&imp.text))));
+                self.diags.push(Diagnostic::error("E012", imp.span.clone(), format!("import not found: `{}` (looked for {})", clip(&imp.text), crate::diag::clip_to(&path, 200))));
                 return;
             }
             Err(ReadError::NotUtf8(at)) => {

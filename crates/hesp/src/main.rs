@@ -248,6 +248,10 @@ fn print_ir(ir_path: &Path, out: Option<&Path>) -> i32 {
         }
     };
     let files = hesperus_core::print::print(&ir);
+    if files.is_empty() {
+        eprintln!("hesp print: the IR has no files to print");
+        return 1;
+    }
     match out {
         Some(dir) => {
             if let Err(e) = write_files(&files, dir) {
@@ -341,18 +345,29 @@ fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extr
         return 1;
     }
     let files = hesperus_core::print::print(&actual);
-    let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".hesperus/actual"));
-    if let Err(e) = write_files(&files, &out_dir) {
-        eprintln!("hesp emit: {e}");
+    let Some((master_rel, _)) = files.first() else {
+        eprintln!("hesp emit: extractor output has no files to print");
         return 1;
+    };
+    let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".hesperus/actual"));
+    // what we are about to write must itself check clean: print to memory and load it from there first
+    struct Mem(Vec<(String, String)>, PathBuf);
+    impl hesperus_core::Source for Mem {
+        fn read(&self, path: &str) -> Result<String, hesperus_core::lower::ReadError> {
+            let rel = Path::new(path).strip_prefix(&self.1).ok().map(|p| path_str(p));
+            self.0.iter().find(|(r, _)| Some(hesperus_core::lower::normalize(r)) == rel).map(|(_, t)| t.clone()).ok_or_else(|| hesperus_core::lower::ReadError::Missing("not emitted".into()))
+        }
     }
-    // what we wrote must itself check clean
-    let master = out_dir.join(&files[0].0);
-    let check = load_from_disk(&path_str(&master));
+    let base = PathBuf::from("/__hesp_emit__");
+    let check = hesperus_core::load(&path_str(&base.join(master_rel)), &Mem(files.clone(), base.clone()));
     if check.has_errors() {
         let src = |p: &str| check.text_of(p).map(|s| s.to_string());
         eprint!("{}", render(&check.diags, &src));
-        eprintln!("hesp emit: emitted files do not check clean (extractor bug)");
+        eprintln!("hesp emit: emitted files would not check clean (extractor bug); nothing was written");
+        return 1;
+    }
+    if let Err(e) = write_files(&files, &out_dir) {
+        eprintln!("hesp emit: {e}");
         return 1;
     }
     0

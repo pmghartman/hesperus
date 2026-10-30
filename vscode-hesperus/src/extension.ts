@@ -124,9 +124,13 @@ async function loadData(context: vscode.ExtensionContext): Promise<any> {
   const actualMaster = path.join(actualDir, path.basename(master));
   let actual: any = null;
   let unified: any = null;
+  let actualLocations: Record<string, string> = {};
   if (fs.existsSync(actualMaster)) {
-    const a = await run(hesp, ["ir", actualMaster], root);
-    if (a.code === 0) actual = JSON.parse(a.stdout);
+    const a = await run(hesp, ["ir", "--locations", actualMaster], root);
+    if (a.code === 0) {
+      actual = JSON.parse(a.stdout);
+      actualLocations = actual.locations ?? {};
+    }
     const u = await run(hesp, ["diff", "--json", master, actualMaster], root);
     if (u.code === 0 || u.code === 1) {
       try {
@@ -137,7 +141,7 @@ async function loadData(context: vscode.ExtensionContext): Promise<any> {
     }
   }
   const locations: Record<string, string> = intent?.locations ?? {};
-  return { type: "data", error, intent, actual, unified, intentPath: master, locations, masterDir: path.dirname(master) };
+  return { type: "data", error, intent, actual, unified, intentPath: master, locations, actualLocations, masterDir: path.dirname(master), actualDir: path.dirname(actualMaster) };
 }
 
 async function openViewer(context: vscode.ExtensionContext) {
@@ -156,13 +160,16 @@ async function openViewer(context: vscode.ExtensionContext) {
         panel?.webview.postMessage(d);
       } else if (msg.type === "openDefinition") {
         const d = await loadData(context);
-        const loc: string | undefined = d?.locations?.[msg.id];
+        // the intent declaration when there is one, else the generated file that holds the node
+        const intentLoc: string | undefined = d?.locations?.[msg.id];
+        const actualLoc: string | undefined = d?.actualLocations?.[msg.id];
+        const loc = intentLoc ?? actualLoc;
         if (!loc) {
-          vscode.window.showInformationMessage(`Hesperus: ${msg.id} is not declared in the intent (actual-only).`);
+          vscode.window.showInformationMessage(`Hesperus: no .hesp file declares ${msg.id}.`);
           return;
         }
         const [file, line] = splitLoc(loc);
-        const abs = path.isAbsolute(file) ? file : path.resolve(d.masterDir, file);
+        const abs = path.isAbsolute(file) ? file : path.resolve(intentLoc ? d.masterDir : d.actualDir, file);
         await openAt(abs, line);
       } else if (msg.type === "openSource") {
         const sourceRoot = config("sourceRoot", workspaceRoot() ?? "");

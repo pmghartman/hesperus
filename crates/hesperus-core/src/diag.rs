@@ -140,11 +140,14 @@ pub fn nearest<'a>(word: &str, candidates: impl IntoIterator<Item = &'a str>) ->
 
 /// Keep quoted source text in messages short.
 pub fn clip(s: &str) -> String {
-    const MAX: usize = 80;
-    if s.chars().count() <= MAX {
+    clip_to(s, 80)
+}
+
+pub fn clip_to(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
         s.to_string()
     } else {
-        let head: String = s.chars().take(MAX - 1).collect();
+        let head: String = s.chars().take(max - 1).collect();
         format!("{head}…")
     }
 }

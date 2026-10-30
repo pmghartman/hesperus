@@ -272,7 +272,81 @@ impl Ir {
             return Err(format!("IR version {} is not {}", ir.hesperus, VERSION));
         }
         ir.canonicalize();
+        ir.validate()?;
         Ok(ir)
+    }
+
+    /// Structural checks an IR must pass before it is printed: valid ids, a root node,
+    /// consistent parents, known endpoints, no children under boundaries, file roots that exist.
+    pub fn validate(&self) -> Result<(), String> {
+        use std::collections::HashMap;
+        let clip = |s: &str| crate::diag::clip(s);
+        let valid_ident = |s: &str| crate::lexer::is_valid_ident(s);
+        let mut by_id: HashMap<&str, &Node> = HashMap::new();
+        for n in &self.nodes {
+            if n.id.split('.').any(|seg| !valid_ident(seg)) {
+                return Err(format!("node id `{}` is not a dotted path of identifiers", clip(&n.id)));
+            }
+            if by_id.insert(&n.id, n).is_some() {
+                return Err(format!("duplicate node id `{}`", clip(&n.id)));
+            }
+            let expected_parent = n.id.rfind('.').map(|i| &n.id[..i]);
+            if n.parent.as_deref() != expected_parent {
+                return Err(format!("node `{}` has parent {:?}, expected {:?}", clip(&n.id), n.parent, expected_parent));
+            }
+            if n.name != n.id.rsplit('.').next().unwrap_or("") {
+                return Err(format!("node `{}` has name `{}`", clip(&n.id), clip(&n.name)));
+            }
+        }
+        if self.nodes.is_empty() || !by_id.contains_key(self.root.as_str()) {
+            return Err(format!("root `{}` is not among the nodes", clip(&self.root)));
+        }
+        for n in &self.nodes {
+            if n.id != self.root && !Ir::is_within(&n.id, &self.root) {
+                return Err(format!("node `{}` is outside the root `{}`", clip(&n.id), clip(&self.root)));
+            }
+            if let Some(p) = &n.parent {
+                match by_id.get(p.as_str()) {
+                    None => return Err(format!("node `{}` has a parent `{}` that does not exist", clip(&n.id), clip(p))),
+                    Some(parent) if !parent.kind.is_container() => return Err(format!("`{}` is a {} and cannot contain `{}`", clip(p), parent.kind.as_str(), clip(&n.id))),
+                    _ => {}
+                }
+            }
+            if n.kind == NodeKind::System && n.id != self.root {
+                return Err(format!("`{}` is a system below the root", clip(&n.id)));
+            }
+        }
+        for e in &self.edges {
+            for end in [&e.from, &e.to] {
+                if !by_id.contains_key(end.as_str()) {
+                    return Err(format!("edge `{} -> {}` names a node that does not exist", clip(&e.from), clip(&e.to)));
+                }
+            }
+            if e.from == e.to {
+                return Err(format!("edge `{} -> {}` connects a node to itself", clip(&e.from), clip(&e.to)));
+            }
+        }
+        for c in &self.constraints {
+            for end in [&c.from, &c.to] {
+                if !by_id.contains_key(end.as_str()) {
+                    return Err(format!("constraint `{} -> {}` names a node that does not exist", clip(&c.from), clip(&c.to)));
+                }
+            }
+        }
+        for f in &self.files {
+            if !by_id.contains_key(f.root.as_str()) {
+                return Err(format!("file `{}` has a root `{}` that does not exist", clip(&f.path), clip(&f.root)));
+            }
+            if !f.path.ends_with(".hesp") {
+                return Err(format!("file `{}` does not end in .hesp", clip(&f.path)));
+            }
+        }
+        if let Some(first) = self.files.first() {
+            if first.root != self.root {
+                return Err(format!("the first file `{}` must be the master (root `{}`)", clip(&first.path), clip(&self.root)));
+            }
+        }
+        Ok(())
     }
 
     pub fn node(&self, id: &str) -> Option<&Node> {

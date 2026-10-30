@@ -111,6 +111,25 @@ fn fmt_never_rewrites_a_generated_file() {
 }
 
 #[test]
+fn emit_refuses_bad_extractor_output_without_writing() {
+    let dir = scratch("emitbad");
+    let out_dir = dir.join("out");
+    for bad in [
+        r#"{"hesperus":"0.1","generated":"x","root":"a","files":[],"nodes":[],"edges":[],"constraints":[]}"#,
+        r#"{"hesperus":"0.1","generated":"x","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null}],"edges":[{"from":"a","to":"a.nope","kind":"calls"}]}"#,
+        r#"{"hesperus":"0.1","generated":"x","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null},{"id":"a.b c","kind":"component","name":"b c","parent":"a"}],"edges":[]}"#,
+    ] {
+        let script = dir.join("ext.js");
+        std::fs::write(&script, format!("process.stdout.write({});", serde_json::to_string(bad).unwrap())).unwrap();
+        let out = hesp().args(["emit", "--lang", "ts"]).arg(&dir).arg("--out").arg(&out_dir).arg("--extractor").arg(format!("node {}", script.display())).output().unwrap();
+        assert_eq!(out.status.code(), Some(1), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(String::from_utf8_lossy(&out.stderr).contains("not valid IR"), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(!out_dir.exists(), "nothing written for {bad}");
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn emit_requires_a_known_language_and_an_extractor() {
     let out = hesp().args(["emit", "--lang", "go", "."]).output().unwrap();
     assert_eq!(out.status.code(), Some(2));

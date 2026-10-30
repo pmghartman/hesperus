@@ -469,3 +469,29 @@ fn review_regressions_4() {
     let p = check("hesperus 0.1\n\ndesc: \"x\"\nsystem s {\n  component a\n}\n");
     assert_eq!(codes(&p.diags), vec!["E039"]);
 }
+
+/// Regressions from the fifth review.
+#[test]
+fn review_regressions_5() {
+    let check = |text: &str| load("r.hesp", &MemSource(HashMap::from([("r.hesp".to_string(), text.to_string())])));
+    // an IR without its root node, with a dangling edge, or with a bad id is refused before printing
+    let bad = |json: &str| hesperus_core::Ir::from_json(json).unwrap_err();
+    assert!(bad(r#"{"hesperus":"0.1","root":"a","files":[],"nodes":[],"edges":[]}"#).contains("root"));
+    assert!(bad(r#"{"hesperus":"0.1","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null}],"edges":[{"from":"a","to":"a.x","kind":"calls"}]}"#).contains("does not exist"));
+    assert!(bad(r#"{"hesperus":"0.1","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null},{"id":"a.b c","kind":"component","name":"b c","parent":"a"}],"edges":[]}"#).contains("identifiers"));
+    assert!(bad(r#"{"hesperus":"0.1","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null},{"id":"a.import","kind":"component","name":"import","parent":"a"}],"edges":[]}"#).contains("identifiers"));
+    assert!(bad(r#"{"hesperus":"0.1","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null},{"id":"a.s","kind":"store","name":"s","parent":"a"},{"id":"a.s.x","kind":"component","name":"x","parent":"a.s"}],"edges":[]}"#).contains("cannot contain"));
+    assert!(hesperus_core::Ir::from_json(r#"{"hesperus":"0.1","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null}],"edges":[]}"#).is_ok());
+    // E004's fix and E012's path stay bounded
+    let p = check(&format!("hesperus 0.1\n\nsystem s {{\n  component a \"{}\n}}\n", "x".repeat(100_000)));
+    assert!(p.diags.iter().all(|d| d.fix.as_ref().map(|f| f.len() < 400).unwrap_or(true) && d.message.len() < 400));
+    let p = check(&format!("hesperus 0.1\n\nsystem s {{\n  import \"./{}.hesp\"\n}}\n", "x".repeat(100_000)));
+    assert!(p.diags.iter().all(|d| d.message.len() < 400), "{}", p.diags[0].message.len());
+    // the private-use sentinel is rejected rather than read as an escaped dollar
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a \"\u{E000}\"\n}\n");
+    assert_eq!(codes(&p.diags), vec!["E003"]);
+    // control characters are escaped in messages
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a\u{0}b\n}\n");
+    assert!(p.diags.iter().any(|d| d.message.contains("\\u{0}")), "{:?}", p.diags);
+    assert!(p.diags.iter().all(|d| !d.message.contains('\u{0}')));
+}

@@ -141,13 +141,22 @@ pub fn lex(file: &str, text: &str) -> (Vec<Token>, Vec<Diagnostic>) {
                         i += 1;
                         continue;
                     }
-                    // copy one UTF-8 character
-                    let ch_len = text[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
-                    val.push_str(&text[i..i + ch_len]);
+                    // copy one UTF-8 character; the private-use sentinel for `\$` may not appear literally
+                    let c = text[i..].chars().next().unwrap_or(' ');
+                    let ch_len = c.len_utf8();
+                    if c == ESCAPED_DOLLAR {
+                        diags.push(Diagnostic::error("E003", Span::new(file, i, i + ch_len), "private-use character U+E000 is not allowed in a string").with_fix(""));
+                    } else {
+                        val.push_str(&text[i..i + ch_len]);
+                    }
                     i += ch_len;
                 }
                 if !closed {
-                    diags.push(Diagnostic::error("E004", Span::new(file, s, i), "unterminated string").with_fix(format!("{}\"", &text[s..i])));
+                    let mut d = Diagnostic::error("E004", Span::new(file, s, i), "unterminated string; add a closing `\"`");
+                    if i - s <= 200 {
+                        d = d.with_fix(format!("{}\"", &text[s..i]));
+                    }
+                    diags.push(d);
                 }
                 push(&mut toks, Tok::Str(val), s, i);
             }
@@ -198,8 +207,10 @@ pub fn lex(file: &str, text: &str) -> (Vec<Token>, Vec<Diagnostic>) {
                 push(&mut toks, Tok::Ident(text[s..i].to_string()), s, i);
             }
             _ => {
-                let ch_len = text[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
-                diags.push(Diagnostic::error("E003", Span::new(file, i, i + ch_len), format!("unexpected character `{}`", &text[i..i + ch_len])).with_fix(""));
+                let c = text[i..].chars().next().unwrap_or(' ');
+                let ch_len = c.len_utf8();
+                let shown: String = if c.is_control() || c == ESCAPED_DOLLAR { c.escape_unicode().to_string() } else { c.to_string() };
+                diags.push(Diagnostic::error("E003", Span::new(file, i, i + ch_len), format!("unexpected character `{shown}`")).with_fix(""));
                 i += ch_len;
             }
         }

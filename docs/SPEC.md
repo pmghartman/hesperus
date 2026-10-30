@@ -14,7 +14,7 @@ Every fenced block in this document tagged `hesp` is parsed by the test suite. A
 - **Comments**: `#` to end of line, including after the version line and after a closing `}`. Comments are never semantic: the formatter keeps them (except inside a multi-line list, where it drops them), the IR drops them.
 - **Newlines** terminate statements. A block's `{` stays on its statement's line; `}` stands on its own line.
 - **Identifiers**: `[A-Za-z_][A-Za-z0-9_-]*`, where every `-` must be followed by an identifier character (so `a->b` lexes as `a`, `->`, `b`). Case-sensitive. Reserved words cannot be identifiers: `hesperus generated import require forbid let template each in true false`. Kind names are not reserved: `store`, `network` or `host` are ordinary node names.
-- **Strings**: double-quoted. Escapes: `\"` `\\` `\n` `\t` `\$`. Strings cannot span lines.
+- **Strings**: double-quoted. Escapes: `\"` `\\` `\n` `\t` `\$`. Strings cannot span lines. The private-use character U+E000 is reserved by the implementation and rejected in source (E003).
 - **Version number**: the token after `hesperus` on line one, `MAJOR.MINOR`.
 - **Interpolation**: inside a `template` or `each` body, `$name` or `${name}` in an identifier, path segment or string is replaced by the bound value (section 7). Outside those bodies, `$` is an error (E028).
 
