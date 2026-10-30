@@ -1,0 +1,34 @@
+hesperus 0.1
+
+subsystem host "This machine: install, config, processes" {
+  src: "packages/host/**"
+
+  component cli "The phosphorus command" {
+    src: "packages/host/cli/**"
+  }
+  component config "Host configuration" {
+    src: "packages/host/config/**"
+  }
+  component envfile "The env file" {
+    src: "packages/host/envfile/**"
+  }
+  component host "Platform install and service" {
+    src: "packages/host/host/**"
+  }
+  component procs "Child processes" {
+    src: "packages/host/procs/**"
+  }
+  component reconfig "Live reconfiguration" {
+    src: "packages/host/reconfig/**"
+  }
+  component stats "CPU, memory, disk" {
+    src: "packages/host/stats/**"
+  }
+
+  cli -> config: calls
+  cli -> envfile: calls
+  host -> cli: calls
+  host -> envfile: calls
+  host -> procs: calls
+  stats -> procs: calls
+}

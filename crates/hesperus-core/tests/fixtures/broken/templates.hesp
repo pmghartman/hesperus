@@ -1,0 +1,29 @@
+hesperus 0.1
+
+let names = [a, b, 3]
+let names = [c]
+
+template later(x) {
+  component $x
+  early(x)
+}
+
+template early(x) {
+  component ${x}_svc
+  component $y
+  component $x-
+}
+
+system t {
+  early(ok)
+  early(a, b)
+  missing(a)
+  each n in nothing {
+    component $n
+  }
+  each n in names {
+    component $n
+  }
+  component $loose
+  later(z)
+}

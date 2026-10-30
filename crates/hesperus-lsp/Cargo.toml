@@ -1,0 +1,19 @@
+[package]
+name = "hesperus-lsp"
+description = "Hesperus language server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "hesperus-lsp"
+path = "src/main.rs"
+
+[dependencies]
+hesperus-core = { path = "../hesperus-core" }
+serde_json.workspace = true
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["full"] }
+
+[dev-dependencies]

@@ -1,0 +1,3 @@
+fixtures/broken/noroot.hesp:1:1: error[E015]: a file must hold exactly one root node (a system or subsystem)
+fixtures/broken/noroot.hesp:1:10: error[E002]: unsupported version 0.2; this tool speaks 0.1
+  help: replace with `0.1`

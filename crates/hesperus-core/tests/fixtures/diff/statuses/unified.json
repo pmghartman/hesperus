@@ -1,0 +1,578 @@
+{
+  "hesperus": "0.1",
+  "root": "shop",
+  "depth": null,
+  "summary": {
+    "match": 9,
+    "intent_only": 2,
+    "actual_only": 6,
+    "conflict": 2,
+    "violations": 3
+  },
+  "nodes": [
+    {
+      "id": "shop",
+      "kind": "system",
+      "name": "shop",
+      "parent": null,
+      "status": "match",
+      "intent": {
+        "id": "shop",
+        "kind": "system",
+        "name": "shop",
+        "parent": null,
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "shop",
+        "kind": "system",
+        "name": "shop",
+        "parent": null,
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "shop.api",
+      "kind": "component",
+      "name": "api",
+      "parent": "shop",
+      "status": "match",
+      "intent": {
+        "id": "shop.api",
+        "kind": "component",
+        "name": "api",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "shop.api",
+        "kind": "component",
+        "name": "api",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "shop.db",
+      "kind": "store",
+      "name": "db",
+      "parent": "shop",
+      "status": "conflict",
+      "intent": {
+        "id": "shop.db",
+        "kind": "store",
+        "name": "db",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": "postgres",
+        "at": []
+      },
+      "actual": {
+        "id": "shop.db",
+        "kind": "store",
+        "name": "db",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": "sqlite",
+        "at": []
+      },
+      "conflicts": [
+        {
+          "property": "engine",
+          "intent": "postgres",
+          "actual": "sqlite"
+        }
+      ]
+    },
+    {
+      "id": "shop.edge",
+      "kind": "ingress",
+      "name": "edge",
+      "parent": "shop",
+      "status": "conflict",
+      "intent": {
+        "id": "shop.edge",
+        "kind": "ingress",
+        "name": "edge",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": "http",
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "shop.edge",
+        "kind": "ingress",
+        "name": "edge",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": "ws",
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": [
+        {
+          "property": "protocol",
+          "intent": "http",
+          "actual": "ws"
+        }
+      ]
+    },
+    {
+      "id": "shop.filesystem",
+      "kind": "hardware",
+      "name": "filesystem",
+      "parent": "shop",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "id": "shop.filesystem",
+        "kind": "hardware",
+        "name": "filesystem",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "shop.payments",
+      "kind": "external",
+      "name": "payments",
+      "parent": "shop",
+      "status": "match",
+      "intent": {
+        "id": "shop.payments",
+        "kind": "external",
+        "name": "payments",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": "http",
+        "host": "api.stripe.com",
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "shop.payments",
+        "kind": "external",
+        "name": "payments",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": "http",
+        "host": "api.stripe.com",
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "shop.recommendations",
+      "kind": "component",
+      "name": "recommendations",
+      "parent": "shop",
+      "status": "intent-only",
+      "intent": {
+        "id": "shop.recommendations",
+        "kind": "component",
+        "name": "recommendations",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": null,
+      "conflicts": []
+    },
+    {
+      "id": "shop.unresolved",
+      "kind": "network",
+      "name": "unresolved",
+      "parent": "shop",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "id": "shop.unresolved",
+        "kind": "network",
+        "name": "unresolved",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    },
+    {
+      "id": "shop.web",
+      "kind": "component",
+      "name": "web",
+      "parent": "shop",
+      "status": "match",
+      "intent": {
+        "id": "shop.web",
+        "kind": "component",
+        "name": "web",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "actual": {
+        "id": "shop.web",
+        "kind": "component",
+        "name": "web",
+        "parent": "shop",
+        "label": null,
+        "desc": null,
+        "src": [],
+        "protocol": null,
+        "host": null,
+        "engine": null,
+        "at": []
+      },
+      "conflicts": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "shop.api",
+      "to": "shop.db",
+      "kind": "reads",
+      "status": "match",
+      "intent": {
+        "from": "shop.api",
+        "to": "shop.db",
+        "kind": "reads",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "shop.api",
+        "to": "shop.db",
+        "kind": "reads",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "shop.api",
+      "to": "shop.db",
+      "kind": "writes",
+      "status": "match",
+      "intent": {
+        "from": "shop.api",
+        "to": "shop.db",
+        "kind": "writes",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "shop.api",
+        "to": "shop.db",
+        "kind": "writes",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "shop.api",
+      "to": "shop.filesystem",
+      "kind": "io",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "from": "shop.api",
+        "to": "shop.filesystem",
+        "kind": "io",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "actual-only": 1
+      }
+    },
+    {
+      "from": "shop.api",
+      "to": "shop.payments",
+      "kind": "http",
+      "status": "match",
+      "intent": {
+        "from": "shop.api",
+        "to": "shop.payments",
+        "kind": "http",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "shop.api",
+        "to": "shop.payments",
+        "kind": "http",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "shop.api",
+      "to": "shop.recommendations",
+      "kind": "calls",
+      "status": "intent-only",
+      "intent": {
+        "from": "shop.api",
+        "to": "shop.recommendations",
+        "kind": "calls",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": null,
+      "count": 1,
+      "statuses": {
+        "intent-only": 1
+      }
+    },
+    {
+      "from": "shop.api",
+      "to": "shop.unresolved",
+      "kind": "http",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "from": "shop.api",
+        "to": "shop.unresolved",
+        "kind": "http",
+        "label": null,
+        "desc": null,
+        "resolved": false,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "actual-only": 1
+      }
+    },
+    {
+      "from": "shop.edge",
+      "to": "shop.api",
+      "kind": "http",
+      "status": "match",
+      "intent": {
+        "from": "shop.edge",
+        "to": "shop.api",
+        "kind": "http",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "shop.edge",
+        "to": "shop.api",
+        "kind": "http",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "shop.web",
+      "to": "shop.api",
+      "kind": "http",
+      "status": "match",
+      "intent": {
+        "from": "shop.web",
+        "to": "shop.api",
+        "kind": "http",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "actual": {
+        "from": "shop.web",
+        "to": "shop.api",
+        "kind": "http",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "match": 1
+      }
+    },
+    {
+      "from": "shop.web",
+      "to": "shop.db",
+      "kind": "reads",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "from": "shop.web",
+        "to": "shop.db",
+        "kind": "reads",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "actual-only": 1
+      }
+    },
+    {
+      "from": "shop.web",
+      "to": "shop.payments",
+      "kind": "http",
+      "status": "actual-only",
+      "intent": null,
+      "actual": {
+        "from": "shop.web",
+        "to": "shop.payments",
+        "kind": "http",
+        "label": null,
+        "desc": null,
+        "resolved": true,
+        "at": []
+      },
+      "count": 1,
+      "statuses": {
+        "actual-only": 1
+      }
+    }
+  ],
+  "constraints": [
+    {
+      "rule": "forbid",
+      "from": "shop.web",
+      "to": "shop.db",
+      "kind": null,
+      "satisfied": false,
+      "witnesses": [
+        "shop.web -> shop.db: reads"
+      ]
+    },
+    {
+      "rule": "forbid",
+      "from": "shop.web",
+      "to": "shop.payments",
+      "kind": "http",
+      "satisfied": false,
+      "witnesses": [
+        "shop.web -> shop.payments: http"
+      ]
+    },
+    {
+      "rule": "require",
+      "from": "shop.api",
+      "to": "shop.db",
+      "kind": "writes",
+      "satisfied": true,
+      "witnesses": [
+        "shop.api -> shop.db: writes"
+      ]
+    },
+    {
+      "rule": "require",
+      "from": "shop.recommendations",
+      "to": "shop.db",
+      "kind": "reads",
+      "satisfied": false,
+      "witnesses": []
+    }
+  ]
+}

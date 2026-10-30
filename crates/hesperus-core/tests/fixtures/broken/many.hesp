@@ -1,0 +1,29 @@
+hesperus 0.1
+
+system shop {
+  componet api
+  component web "Storefront" {
+    sources: "web/**"
+    protocol: http
+  }
+  store db {
+    engine: postgres
+  }
+  ingress edge {
+    protocol: htp
+    component inner
+  }
+  component api
+  system nested
+
+  web -> ap: http
+  web -> db: reads
+  web -> db: reads
+  api -> db: invokes
+  api -> api: calls
+  api -> db: writes {
+    src: "x"
+  }
+
+  forbid web -> nowhere
+}

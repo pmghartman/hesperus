@@ -1,0 +1,47 @@
+hesperus 0.1
+
+subsystem mesh "Hosts finding and syncing each other" {
+  src: "packages/mesh/**"
+
+  component appfeed "Signed app feeds" {
+    src: "packages/mesh/appfeed/**"
+  }
+  component elector "Leader election" {
+    src: "packages/mesh/elector/**"
+  }
+  component git "The mesh's Forgejo" {
+    src: "packages/mesh/git/**"
+  }
+  component minisign "Signature checks" {
+    src: "packages/mesh/minisign/**"
+  }
+  component peers "Peer discovery and exchange" {
+    src: "packages/mesh/peers/**"
+  }
+  component services "Services and game servers" {
+    src: "packages/mesh/services/**"
+  }
+  component store "The replicated JSON store" {
+    src: "packages/mesh/store/**"
+  }
+  component update "Self-update" {
+    src: "packages/mesh/update/**"
+  }
+  component users "Accounts and presence" {
+    src: "packages/mesh/users/**"
+  }
+  component webapps "Installable web apps" {
+    src: "packages/mesh/webapps/**"
+  }
+
+  appfeed -> minisign: calls
+  git -> elector: calls
+  git -> peers: calls
+  peers -> services: calls
+  peers -> store: calls
+  update -> peers: calls
+  users -> store: calls
+  webapps -> appfeed: calls
+  webapps -> minisign: calls
+  webapps -> store: calls
+}

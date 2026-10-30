@@ -1,0 +1,29 @@
+hesperus 0.1
+
+system shop {
+  component api
+  component recommendations
+  component web
+  ingress edge {
+    protocol: http
+  }
+  store db {
+    engine: "postgres"
+  }
+  external payments {
+    protocol: http
+    host: "api.stripe.com"
+  }
+
+  api -> db: reads
+  api -> db: writes
+  api -> payments: http
+  api -> recommendations: calls
+  edge -> api: http
+  web -> api: http
+
+  forbid web -> db
+  forbid web -> payments: http
+  require api -> db: writes
+  require recommendations -> db: reads
+}

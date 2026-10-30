@@ -1,0 +1,14 @@
+hesperus 0.1
+
+subsystem server "The HTTP server on every host" {
+  src: "packages/server/**"
+
+  component server "Routes, sockets, state" {
+    src: "packages/server/server/**"
+  }
+  component webstatic "Static assets" {
+    src: "packages/server/webstatic/**"
+  }
+
+  server -> webstatic: calls
+}

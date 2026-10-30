@@ -1,0 +1,11 @@
+hesperus 0.1
+system g {
+  -> x
+  : y
+  component "quoted"
+  component ok { { }
+  ok -> ok.
+  component @bad
+  }
+}
+}

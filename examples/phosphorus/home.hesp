@@ -1,0 +1,18 @@
+hesperus 0.1
+
+subsystem home "One home folder across machines" {
+  src: "packages/home/**"
+
+  component collab "Collaborative editing" {
+    src: "packages/home/collab/**"
+  }
+  component files "Shares and file access" {
+    src: "packages/home/files/**"
+  }
+  component mirror "Mirrored copies" {
+    src: "packages/home/mirror/**"
+  }
+
+  collab -> files: calls
+  mirror -> files: calls
+}

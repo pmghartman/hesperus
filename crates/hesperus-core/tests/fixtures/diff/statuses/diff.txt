@@ -1,0 +1,27 @@
+shop: 9 match, 2 intent-only, 6 actual-only, 2 conflict, 3 violations
+nodes
+ = shop                                    match
+ = shop.api                                match
+ ! shop.db                                 conflict engine intent=postgres actual=sqlite
+ ! shop.edge                               conflict protocol intent=http actual=ws
+ + shop.filesystem                         actual-only
+ = shop.payments                           match
+ - shop.recommendations                    intent-only
+ + shop.unresolved                         actual-only
+ = shop.web                                match
+edges
+ = shop.api -> shop.db: reads              match
+ = shop.api -> shop.db: writes             match
+ + shop.api -> shop.filesystem: io         actual-only
+ = shop.api -> shop.payments: http         match
+ - shop.api -> shop.recommendations: calls intent-only
+ + shop.api -> shop.unresolved: http       actual-only unresolved
+ = shop.edge -> shop.api: http             match
+ = shop.web -> shop.api: http              match
+ + shop.web -> shop.db: reads              actual-only
+ + shop.web -> shop.payments: http         actual-only
+constraints
+ x  forbid shop.web -> shop.db violated by shop.web -> shop.db: reads
+ x  forbid shop.web -> shop.payments: http violated by shop.web -> shop.payments: http
+ ok require shop.api -> shop.db: writes by shop.api -> shop.db: writes
+ x  require shop.recommendations -> shop.db: reads not found in actual

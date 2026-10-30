@@ -1,0 +1,22 @@
+app: 14 match, 2 intent-only, 3 actual-only, 0 conflict, 0 violations
+nodes
+ = app                              match
+ = app.a                            match
+ = app.a.a1                         match
+ = app.a.a2                         match
+ = app.a.deep                       match
+ = app.a.deep.d1                    match
+ = app.b                            match
+ = app.b.b1                         match
+ = app.b.b2                         match
+ = app.db                           match
+edges
+ = app.a.a1 -> app.b.b1: calls      match
+ - app.a.a1 -> app.b.b2: calls      intent-only
+ = app.a.a2 -> app.b.b1: calls      match
+ + app.a.a2 -> app.b.b2: http       actual-only
+ = app.a.deep.d1 -> app.b.b1: calls match
+ + app.b.b1 -> app.a.a1: calls      actual-only
+ = app.b.b1 -> app.db: reads        match
+ + app.b.b1 -> app.db: writes       actual-only
+ - app.b.b2 -> app.db: writes       intent-only

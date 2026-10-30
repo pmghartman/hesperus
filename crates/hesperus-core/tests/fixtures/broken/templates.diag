@@ -1,0 +1,11 @@
+fixtures/broken/templates.hesp:3:20: error[E009]: list items are identifiers or strings, not number
+fixtures/broken/templates.hesp:4:5: error[E027]: `names` is defined twice
+fixtures/broken/templates.hesp:8:3: error[E019]: `early` may only call templates defined earlier in the file
+fixtures/broken/templates.hesp:13:13: error[E020]: undefined variable `$y`
+  help: replace with `$x`
+fixtures/broken/templates.hesp:14:15: error[E003]: unexpected character `-`
+  help: replace with ``
+fixtures/broken/templates.hesp:19:3: error[E018]: `early` takes 1 argument(s), 2 given
+fixtures/broken/templates.hesp:20:3: error[E017]: undefined template `missing`
+fixtures/broken/templates.hesp:21:13: error[E020]: undefined list `nothing`
+fixtures/broken/templates.hesp:27:13: error[E028]: `$loose` outside a template or `each` body

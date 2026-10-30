@@ -1,0 +1,330 @@
+//! Golden tests: SPEC examples round-trip, broken fixtures produce the expected
+//! diagnostics, the formatter is idempotent, and the differ covers every status.
+//! Set UPDATE_GOLDEN=1 to rewrite the expected files.
+
+use hesperus_core::diag::{render, Diagnostic, Severity};
+use hesperus_core::format::format_file;
+use hesperus_core::lower::{load, Source};
+use hesperus_core::parser::parse;
+use hesperus_core::print::print;
+use hesperus_core::project::{format_text, load_from_disk};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+
+fn root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+}
+
+fn fixtures() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+}
+
+struct MemSource(HashMap<String, String>);
+impl Source for MemSource {
+    fn read(&self, path: &str) -> Option<String> {
+        self.0.get(path).cloned()
+    }
+}
+
+fn check_golden(path: &Path, actual: &str) {
+    if std::env::var("UPDATE_GOLDEN").is_ok() {
+        std::fs::write(path, actual).unwrap();
+        return;
+    }
+    let expected = std::fs::read_to_string(path).unwrap_or_else(|_| panic!("missing golden {}; run with UPDATE_GOLDEN=1", path.display()));
+    if expected != actual {
+        panic!("golden mismatch for {}\n--- expected\n{}\n--- actual\n{}", path.display(), expected, actual);
+    }
+}
+
+fn codes(diags: &[Diagnostic]) -> Vec<&str> {
+    let mut v: Vec<&str> = diags.iter().filter(|d| d.severity == Severity::Error).map(|d| d.code).collect();
+    v.sort();
+    v.dedup();
+    v
+}
+
+/// A fenced block from SPEC.md.
+struct Fence {
+    info: String,
+    body: String,
+}
+
+fn spec_fences() -> Vec<Fence> {
+    let text = std::fs::read_to_string(root().join("docs/SPEC.md")).unwrap();
+    let mut out = Vec::new();
+    let mut cur: Option<Fence> = None;
+    for line in text.lines() {
+        if let Some(f) = &mut cur {
+            if line.starts_with("```") {
+                out.push(cur.take().unwrap());
+            } else {
+                f.body.push_str(line);
+                f.body.push('\n');
+            }
+        } else if let Some(info) = line.strip_prefix("```") {
+            if info.starts_with("hesp") {
+                cur = Some(Fence { info: info.to_string(), body: String::new() });
+            } else {
+                cur = Some(Fence { info: String::from("skip"), body: String::new() });
+            }
+        }
+    }
+    out.into_iter().filter(|f| f.info != "skip").collect()
+}
+
+/// Every SPEC example parses, lowers, and prints to its canonical form; errors match.
+#[test]
+fn spec_examples_round_trip() {
+    let fences = spec_fences();
+    assert!(fences.len() >= 10, "SPEC.md should hold examples");
+    let mut i = 0;
+    let mut checked = 0;
+    while i < fences.len() {
+        let f = &fences[i];
+        let attrs: Vec<&str> = f.info.split_whitespace().collect();
+        if attrs.contains(&"fragment") {
+            i += 1;
+            continue;
+        }
+        if let Some(err) = attrs.iter().find_map(|a| a.strip_prefix("error=")) {
+            let mut expected: Vec<&str> = err.split(',').collect();
+            expected.sort();
+            let project = load("example.hesp", &MemSource(HashMap::from([("example.hesp".to_string(), f.body.clone())])));
+            assert_eq!(codes(&project.diags), expected, "error codes for example:\n{}\n{}", f.body, render(&project.diags, &|_| Some(f.body.clone())));
+            i += 1;
+            checked += 1;
+            continue;
+        }
+        if let Some(first) = attrs.iter().find_map(|a| a.strip_prefix("file=")) {
+            // multi-file example: consecutive file= fences
+            let mut files = HashMap::new();
+            files.insert(first.to_string(), f.body.clone());
+            let master = first.to_string();
+            let mut j = i + 1;
+            while j < fences.len() {
+                let a: Vec<&str> = fences[j].info.split_whitespace().collect();
+                match a.iter().find_map(|a| a.strip_prefix("file=")) {
+                    Some(name) => {
+                        files.insert(name.to_string(), fences[j].body.clone());
+                        j += 1;
+                    }
+                    None => break,
+                }
+            }
+            let project = load(&master, &MemSource(files.clone()));
+            assert!(!project.has_errors(), "multi-file example has errors:\n{}", render(&project.diags, &|p| files.get(p).cloned()));
+            let printed = print(&project.ir);
+            assert_eq!(printed.len(), files.len());
+            for (path, text) in &printed {
+                assert_eq!(files.get(path).unwrap(), text, "canonical print of {path} differs");
+            }
+            // IR fixed point
+            let again = load(&master, &MemSource(printed.into_iter().collect()));
+            assert_eq!(again.ir, project.ir);
+            i = j;
+            checked += 1;
+            continue;
+        }
+        // single file, optionally followed by a canonical form
+        let canonical = fences.get(i + 1).filter(|n| n.info.split_whitespace().any(|a| a == "canonical")).map(|n| n.body.clone()).unwrap_or_else(|| f.body.clone());
+        let project = load("example.hesp", &MemSource(HashMap::from([("example.hesp".to_string(), f.body.clone())])));
+        assert!(!project.has_errors(), "example has errors:\n{}\n{}", f.body, render(&project.diags, &|_| Some(f.body.clone())));
+        let printed = print(&project.ir);
+        assert_eq!(printed.len(), 1);
+        assert_eq!(printed[0].1, canonical, "canonical print differs for example:\n{}", f.body);
+        // the canonical text is a fixed point of the printer and lowers to the same IR
+        let again = load("example.hesp", &MemSource(HashMap::from([("example.hesp".to_string(), canonical.clone())])));
+        assert!(!again.has_errors());
+        assert_eq!(again.ir, project.ir, "canonical form lowers to a different IR");
+        assert_eq!(print(&again.ir)[0].1, canonical);
+        // and the IR itself survives JSON
+        let json = project.ir.to_json();
+        let back = hesperus_core::Ir::from_json(&json).unwrap();
+        assert_eq!(back, project.ir);
+        assert_eq!(back.to_json(), json);
+        i += if canonical != f.body { 2 } else { 1 };
+        checked += 1;
+    }
+    assert!(checked >= 9, "checked {checked} examples");
+}
+
+/// fmt(fmt(x)) == fmt(x) for every example, fixture and the Phosphorus intent;
+/// and formatting never changes the IR.
+#[test]
+fn formatter_is_idempotent_and_meaning_preserving() {
+    let mut inputs: Vec<(String, String)> = Vec::new();
+    for f in spec_fences() {
+        if !f.info.contains("error") && !f.info.contains("fragment") {
+            inputs.push(("spec".into(), f.body));
+        }
+    }
+    for p in hesperus_core::project::find_hesp_files(&root().join("examples")) {
+        inputs.push((p.display().to_string(), std::fs::read_to_string(&p).unwrap()));
+    }
+    inputs.push(("messy".into(), MESSY.to_string()));
+    assert!(inputs.len() > 10);
+    for (name, text) in inputs {
+        let (once, diags) = format_text("x.hesp", &text);
+        assert!(!diags.iter().any(|d| d.severity == Severity::Error), "{name}: {diags:?}");
+        let (twice, _) = format_text("x.hesp", &once);
+        assert_eq!(once, twice, "formatter not idempotent on {name}");
+        if !text.contains("import") {
+            let a = load("x.hesp", &MemSource(HashMap::from([("x.hesp".to_string(), text.clone())])));
+            let b = load("x.hesp", &MemSource(HashMap::from([("x.hesp".to_string(), once.clone())])));
+            assert_eq!(a.ir, b.ir, "formatting changed the IR of {name}");
+        }
+    }
+    let (formatted, _) = format_text("x.hesp", MESSY);
+    check_golden(&fixtures().join("messy.formatted.hesp"), &formatted);
+}
+
+const MESSY: &str = "hesperus 0.1\n\n\n# leading comment\n\nlet   xs=[a,b,\n  \"c\"]\ntemplate t(p){\n\n  component   $p \"L $p\"  {\n    desc  :\"d\"\n\n\n  }\n}\nsystem   s  \"The   system\"   { # trailing on brace\n    src:   [\"a/**\",\"b\"]\n  t(q)   # call\n  each x in xs { component $x }\n\n\n\n  component a   # trailing\n  # between\n  component   b{\n  }\n  a   ->   b   : calls   \"lbl\"   {\n    at: [\"f.ts:1\"]\n  }\n  forbid   a->b\n  # last\n}\n# eof comment\n";
+
+/// Broken fixtures: every error, with span and fix, matches the golden `.diag` file.
+#[test]
+fn broken_fixtures_report_all_errors() {
+    let dir = fixtures().join("broken");
+    for name in ["many", "unterminated", "templates", "noroot", "tworoots", "imports", "garbage"] {
+        let path = dir.join(format!("{name}.hesp"));
+        let project = load_from_disk(&path.display().to_string());
+        assert!(project.has_errors(), "{name} should have errors");
+        let src = |p: &str| project.text_of(p).map(|s| s.to_string());
+        let mut text = render(&project.diags, &src);
+        // keep paths relative in the golden
+        text = text.replace(&dir.display().to_string(), "fixtures/broken");
+        check_golden(&dir.join(format!("{name}.diag")), &text);
+    }
+}
+
+/// The parser and expander never panic on malformed input.
+#[test]
+fn malformed_input_never_panics() {
+    let seeds: Vec<String> = spec_fences().into_iter().map(|f| f.body).chain([MESSY.to_string()]).collect();
+    let tokens = ["{", "}", "[", "]", "(", ")", ":", ",", ".", "->", "\"", "$", "#", "\n", "import", "each", "template", "let", "=", "system", "x", "\\", "\u{e9}", "\t"];
+    let mut rng = 0x9e3779b97f4a7c15u64;
+    let mut next = || {
+        rng ^= rng << 13;
+        rng ^= rng >> 7;
+        rng ^= rng << 17;
+        rng
+    };
+    let mut runs = 0;
+    for seed in &seeds {
+        for _ in 0..40 {
+            let mut text = seed.clone();
+            for _ in 0..(1 + next() % 4) {
+                let bytes = text.len().max(1);
+                let mut pos = (next() as usize) % bytes;
+                while !text.is_char_boundary(pos) {
+                    pos -= 1;
+                }
+                match next() % 3 {
+                    0 => text.insert_str(pos, tokens[(next() as usize) % tokens.len()]),
+                    1 => {
+                        let mut end = (pos + 1 + (next() as usize) % 8).min(text.len());
+                        while !text.is_char_boundary(end) {
+                            end += 1;
+                        }
+                        text.replace_range(pos..end, "");
+                    }
+                    _ => {
+                        let t = tokens[(next() as usize) % tokens.len()];
+                        let mut end = (pos + 1).min(text.len());
+                        while !text.is_char_boundary(end) {
+                            end += 1;
+                        }
+                        text.replace_range(pos..end, t);
+                    }
+                }
+            }
+            let project = load("fuzz.hesp", &MemSource(HashMap::from([("fuzz.hesp".to_string(), text.clone())])));
+            let _ = format_text("fuzz.hesp", &text);
+            if !project.has_errors() {
+                let _ = print(&project.ir);
+            }
+            runs += 1;
+        }
+    }
+    assert!(runs > 300);
+}
+
+/// Differ goldens: all four statuses, forbidden and required edges, nested containers, aggregation.
+#[test]
+fn differ_goldens() {
+    for name in ["statuses", "nested", "aggregate"] {
+        let dir = fixtures().join("diff").join(name);
+        let intent = load_from_disk(&dir.join("intent.hesp").display().to_string());
+        let actual = load_from_disk(&dir.join("actual.hesp").display().to_string());
+        assert!(!intent.has_errors(), "{name} intent: {}", render(&intent.diags, &|p| intent.text_of(p).map(|s| s.to_string())));
+        assert!(!actual.has_errors(), "{name} actual: {}", render(&actual.diags, &|p| actual.text_of(p).map(|s| s.to_string())));
+        let u = hesperus_core::diff::diff(&intent.ir, &actual.ir);
+        check_golden(&dir.join("unified.json"), &u.to_json());
+        check_golden(&dir.join("diff.txt"), &hesperus_core::diff::render(&u, true));
+        if name == "aggregate" {
+            let d1 = hesperus_core::diff::aggregate(&u, 1);
+            check_golden(&dir.join("depth1.txt"), &hesperus_core::diff::render(&d1, true));
+            check_golden(&dir.join("depth1.json"), &d1.to_json());
+            let d2 = hesperus_core::diff::aggregate(&u, 2);
+            check_golden(&dir.join("depth2.txt"), &hesperus_core::diff::render(&d2, true));
+        }
+        if name == "statuses" {
+            use hesperus_core::diff::Status;
+            let st = |id: &str| u.nodes.iter().find(|n| n.id == id).map(|n| n.status).unwrap();
+            assert_eq!(st("shop.api"), Status::Match);
+            assert_eq!(st("shop.recommendations"), Status::IntentOnly);
+            assert_eq!(st("shop.filesystem"), Status::ActualOnly);
+            assert_eq!(st("shop.db"), Status::Conflict);
+            assert_eq!(st("shop.edge"), Status::Conflict);
+            assert_eq!(u.summary.violations, 3);
+        }
+    }
+}
+
+/// The printer places every edge in the lowest common ancestor and the result re-parses.
+#[test]
+fn printer_places_edges_at_lca() {
+    let text = "hesperus 0.1\n\nsystem s {\n  subsystem a {\n    component x\n    component y\n  }\n  subsystem b {\n    component z\n  }\n\n  a.x -> a.y: calls\n  a.x -> b.z: calls\n  s -> b: calls\n  a -> a.x: calls\n}\n";
+    let project = load("s.hesp", &MemSource(HashMap::from([("s.hesp".to_string(), text.to_string())])));
+    assert!(!project.has_errors(), "{}", render(&project.diags, &|_| Some(text.to_string())));
+    let printed = print(&project.ir);
+    let expected = "hesperus 0.1\n\nsystem s {\n  subsystem a {\n    component x\n    component y\n\n    x -> y: calls\n  }\n  subsystem b {\n    component z\n  }\n\n  s -> b: calls\n  a -> a.x: calls\n  a.x -> b.z: calls\n}\n";
+    assert_eq!(printed[0].1, expected);
+    let again = load("s.hesp", &MemSource(HashMap::from([("s.hesp".to_string(), expected.to_string())])));
+    assert_eq!(again.ir, project.ir);
+}
+
+/// Shadowed names: `server.server` style ids still print paths that resolve correctly.
+#[test]
+fn printer_avoids_shadowed_paths() {
+    let text = "hesperus 0.1\n\nsystem p {\n  subsystem server {\n    component server\n    component other\n  }\n  subsystem mesh {\n    component peers\n  }\n\n  server -> mesh: calls\n  server -> server.server: calls\n  server.server -> mesh.peers: calls\n  server.other -> server.server: calls\n}\n";
+    let project = load("p.hesp", &MemSource(HashMap::from([("p.hesp".to_string(), text.to_string())])));
+    assert!(!project.has_errors(), "{}", render(&project.diags, &|_| Some(text.to_string())));
+    let printed = print(&project.ir);
+    let again = load("p.hesp", &MemSource(HashMap::from([("p.hesp".to_string(), printed[0].1.clone())])));
+    assert!(!again.has_errors(), "{}\n{}", printed[0].1, render(&again.diags, &|_| Some(printed[0].1.clone())));
+    assert_eq!(again.ir, project.ir, "{}", printed[0].1);
+}
+
+#[test]
+fn ast_formatter_keeps_templates_and_comments() {
+    let parsed = parse("x.hesp", MESSY);
+    assert!(parsed.diags.is_empty(), "{:?}", parsed.diags);
+    let out = format_file(&parsed.file);
+    assert!(out.contains("template t(p) {"));
+    assert!(out.contains("# leading comment"));
+    assert!(out.contains("component a # trailing"));
+    assert!(out.contains("# eof comment"));
+}
+
+#[test]
+fn path_helpers() {
+    use hesperus_core::lower::{join, normalize, relative};
+    assert_eq!(normalize("a/./b/../c"), "a/c");
+    assert_eq!(normalize("../x/./y"), "../x/y");
+    assert_eq!(join("examples/p", "./mesh.hesp"), "examples/p/mesh.hesp");
+    assert_eq!(join("examples/p", "../q/x.hesp"), "examples/q/x.hesp");
+    assert_eq!(relative("examples/p", "examples/p/mesh.hesp"), "./mesh.hesp");
+    assert_eq!(relative("examples/p", "examples/q/x.hesp"), "../q/x.hesp");
+    assert_eq!(relative("", "sub/a.hesp"), "./sub/a.hesp");
+}

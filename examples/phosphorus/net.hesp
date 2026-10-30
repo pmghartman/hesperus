@@ -1,0 +1,21 @@
+hesperus 0.1
+
+subsystem net "Sockets, the reverse proxy, terminals" {
+  src: "packages/net/**"
+
+  component gamedns "DNS for game servers" {
+    src: "packages/net/gamedns/**"
+  }
+  component proxy "The ingress and reverse proxy" {
+    src: "packages/net/proxy/**"
+  }
+  component term "Terminal sessions over ssh" {
+    src: "packages/net/term/**"
+  }
+  component wsock "One websocket, either side" {
+    src: "packages/net/wsock/**"
+  }
+
+  proxy -> wsock: calls
+  term -> wsock: calls
+}

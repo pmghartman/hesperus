@@ -1,0 +1,12 @@
+hesperus 0.1
+
+subsystem chat "Mesh chat" {
+  src: "packages/chat/**"
+
+  component chatmedia "Chat attachments" {
+    src: "packages/chat/chatmedia/**"
+  }
+  component web-md "Markdown rendering" {
+    src: "packages/chat/web-md/**"
+  }
+}

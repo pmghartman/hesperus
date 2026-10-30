@@ -1,0 +1,11 @@
+hesperus 0.1
+
+system shop {
+  component api "Public API
+  component web {
+    desc: "ok" extra
+  }
+  component other {
+
+  api -> web
+}

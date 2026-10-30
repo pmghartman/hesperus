@@ -1,0 +1,4 @@
+fixtures/broken/unterminated.hesp:3:13: error[E003]: unclosed `{`
+fixtures/broken/unterminated.hesp:4:17: error[E004]: unterminated string
+  help: replace with `"Public API"`
+fixtures/broken/unterminated.hesp:6:16: error[E003]: expected end of line, found `extra`

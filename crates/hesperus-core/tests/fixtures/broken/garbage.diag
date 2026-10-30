@@ -1,0 +1,8 @@
+fixtures/broken/garbage.hesp:3:3: error[E003]: unexpected `->` at the start of a statement
+fixtures/broken/garbage.hesp:4:3: error[E003]: unexpected `:` at the start of a statement
+fixtures/broken/garbage.hesp:5:3: error[E003]: `component` needs a node name: `component name`
+fixtures/broken/garbage.hesp:6:18: error[E003]: unexpected `{`; a block needs a node or edge before it
+fixtures/broken/garbage.hesp:7:12: error[E003]: expected a node name after `.`, found end of line
+fixtures/broken/garbage.hesp:8:13: error[E003]: unexpected character `@`
+  help: replace with ``
+fixtures/broken/garbage.hesp:11:1: error[E003]: unexpected `}`
