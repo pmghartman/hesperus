@@ -1,0 +1,52 @@
+:root { --match: #4c8a3d; --intent-only: #b8860b; --actual-only: #c0392b; --conflict: #8e44ad; --none: var(--vscode-editor-foreground, #ccc); }
+body { margin: 0; font-family: var(--vscode-font-family, sans-serif); color: var(--vscode-editor-foreground); background: var(--vscode-editor-background); }
+#app { display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto 1fr auto auto; height: 100vh; }
+header { grid-column: 1 / 3; display: flex; gap: 8px; align-items: center; padding: 6px 10px; border-bottom: 1px solid var(--vscode-panel-border, #444); flex-wrap: wrap; }
+button.tab { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); border: 0; padding: 4px 10px; border-radius: 4px; cursor: pointer; }
+button.tab.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); }
+button.tab:disabled { opacity: 0.4; cursor: default; }
+.crumbs a { color: var(--vscode-textLink-foreground); text-decoration: none; }
+.crumbs .sep { margin: 0 6px; opacity: 0.6; }
+.summary { margin-left: auto; opacity: 0.8; font-size: 12px; }
+.canvas { overflow: auto; padding: 8px; }
+aside { border-left: 1px solid var(--vscode-panel-border, #444); padding: 8px 12px; overflow: auto; font-size: 12px; }
+aside h2 { font-size: 13px; margin: 4px 0; }
+aside h3 { font-size: 12px; margin: 10px 0 4px; opacity: 0.8; }
+aside ul { padding-left: 14px; margin: 0; }
+aside a { color: var(--vscode-textLink-foreground); }
+footer { grid-column: 1 / 3; display: flex; gap: 16px; align-items: center; padding: 4px 10px; border-top: 1px solid var(--vscode-panel-border, #444); font-size: 11px; }
+.legend { display: flex; gap: 14px; list-style: none; margin: 0; padding: 0; }
+.legend .swatch { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: middle; background: var(--none); }
+.legend .swatch.dashed { background: none; border: 2px dashed var(--none); width: 10px; height: 8px; }
+.legend .status-match .swatch { background: var(--match); }
+.legend .status-intent-only .swatch { background: var(--intent-only); }
+.legend .status-actual-only .swatch { background: var(--actual-only); }
+.legend .status-conflict .swatch { background: var(--conflict); }
+.hint { opacity: 0.6; }
+.constraints { grid-column: 1 / 3; list-style: none; margin: 0; padding: 4px 10px 8px; font-size: 11px; }
+.constraints .violated { color: var(--actual-only); }
+.constraints .ok { opacity: 0.7; }
+svg.hesperus-graph { font-size: 12px; }
+svg .node rect { fill: var(--vscode-editorWidget-background, #2b2b2b); stroke: var(--none); stroke-width: 1.5; }
+svg .node.container rect { stroke-width: 2.5; }
+svg .node.outside rect { stroke-dasharray: 4 3; opacity: 0.7; }
+svg .node text { fill: var(--vscode-editor-foreground); }
+svg .node .name { font-weight: 600; }
+svg .node .sub { opacity: 0.7; font-size: 11px; }
+svg .node .badge { font-size: 11px; opacity: 0.8; }
+svg .node .badge.conflict { fill: var(--conflict); font-weight: 700; }
+svg .node { cursor: pointer; }
+svg .edge path { fill: none; stroke: var(--none); stroke-width: 1.5; }
+svg .edge.unresolved path { stroke-dasharray: 5 4; }
+svg .edge-label { fill: var(--vscode-editor-foreground); opacity: 0.75; font-size: 10px; }
+svg marker path { fill: var(--none); }
+svg .status-match rect, svg .edge.status-match path, svg marker.status-match path { stroke: var(--match); }
+svg marker.status-match path { fill: var(--match); }
+svg .status-intent-only rect, svg .edge.status-intent-only path { stroke: var(--intent-only); }
+svg marker.status-intent-only path { fill: var(--intent-only); }
+svg .status-actual-only rect, svg .edge.status-actual-only path { stroke: var(--actual-only); }
+svg marker.status-actual-only path { fill: var(--actual-only); }
+svg .status-conflict rect, svg .edge.status-conflict path { stroke: var(--conflict); }
+svg marker.status-conflict path { fill: var(--conflict); }
+aside .status-match { color: var(--match); } aside .status-intent-only { color: var(--intent-only); } aside .status-actual-only { color: var(--actual-only); } aside .status-conflict { color: var(--conflict); }
+.empty, .muted { opacity: 0.7; padding: 12px; }

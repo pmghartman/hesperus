@@ -18,6 +18,10 @@ Every choice made without Patrick in the room, with the options weighed. Review 
 
 `a -> b` is legal and means `a -> b: calls`; the canonical form always prints the kind. One default keeps hand-written files short while the IR stays explicit.
 
+## Kind names are not reserved
+
+`store`, `network`, `host`, `system` are legal node names: real codebases (Phosphorus has a `store` package) use them, and the parser can tell `store x` (a node) from `store -> x` (an edge) by the next token. Only the structural words (`hesperus generated import require forbid let template each in true false`) are reserved.
+
 ## Node kinds
 
 **Chosen**: `system subsystem component` (containers) and `ingress egress store external network hardware` (boundaries). Closed set.
@@ -94,13 +98,18 @@ Flat sorted arrays of nodes (with `parent`) and edges, keyed by fully qualified 
 - WebSockets: `ws` (`WebSocketServer`), `socket.io`, Bun `upgrade(`/`websocket:` → `ingress ws`; `new WebSocket(url)` → `external` by host or `unresolved`.
 - fs (`fs`, `node:fs`, `fs/promises`, `Bun.file/write`) → `hardware filesystem`, `io`; `child_process` (`spawn exec execFile fork`), `Bun.spawn` → `hardware processes`, `io`.
 - Unbound files: `subsystem unbound` with one component per directory (first two path segments, `_`-joined; `root` for top-level files).
-- Evidence lists are capped at 20 entries per node or edge, sorted.
+- Loopback hosts (`localhost`, `127.0.0.1`, `0.0.0.0`, `[::1]`, `*.localhost`) count as the repository's own server and attach to its `ingress`, not to an `external`.
+- Evidence lists are capped at 20 entries per node or edge, sorted by path and then numeric line (both the TypeScript and Rust canonicalizers use this order).
 
 ## Dependencies
 
 Rust: `serde`/`serde_json` (IR), `clap` (CLI), `tower-lsp` + `tokio` (LSP; the brief names tower-lsp), `ropey`? no — line/column maps are computed from the source directly. No `insta`: golden files are plain files with `UPDATE_GOLDEN=1`. No `jsonschema` crate: schema conformance is checked in the TypeScript tests with `ajv` against `docs/ir.schema.json`, covering Rust-produced IR too.
 TypeScript: `ts-morph` (the brief names it), `ajv` (dev, schema validation), `typescript` (dev, build), `@types/node` (dev). The glob matcher is written in-house (about 60 lines) rather than adding `picomatch`, so one function owns binding semantics on both sides of the test.
 Extension: `vscode-languageclient` (LSP client), `@vscode/vsce` (packaging, dev), `@types/vscode` (dev), `esbuild` (bundling the extension, dev). The viewer uses no graph library: a deterministic layered layout is written in `viewer/layout.ts` and tested with golden JSON, because dagre/elk are either unmaintained or non-trivially deterministic across versions.
+
+## Extension tests
+
+The viewer's model, layout and renderer are pure TypeScript with no DOM or `vscode` dependency, so the webview render test for the three modes runs under plain `node --test` with golden SVGs. An activation smoke test inside a real VS Code (`npm run test:vscode`, `@vscode/test-electron`) exists but is not part of `npm test`: it downloads VS Code, and the Definition of done asks for tests that run anywhere.
 
 ## Layout placement
 

@@ -1,0 +1,201 @@
+{
+  "hesperus": "0.1",
+  "generated": null,
+  "root": "mesh",
+  "files": [
+    {
+      "path": "intent.hesp",
+      "root": "mesh"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "mesh",
+      "kind": "system",
+      "name": "mesh",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "mesh.peers",
+      "kind": "subsystem",
+      "name": "peers",
+      "parent": "mesh",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "mesh.peers.accept",
+      "kind": "component",
+      "name": "accept",
+      "parent": "mesh.peers",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "mesh.peers.dial",
+      "kind": "component",
+      "name": "dial",
+      "parent": "mesh.peers",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "mesh.peers.link",
+      "kind": "ingress",
+      "name": "link",
+      "parent": "mesh.peers",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": "ws",
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "mesh.store",
+      "kind": "subsystem",
+      "name": "store",
+      "parent": "mesh",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "mesh.store.index",
+      "kind": "component",
+      "name": "index",
+      "parent": "mesh.store",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "mesh.store.log",
+      "kind": "component",
+      "name": "log",
+      "parent": "mesh.store",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "mesh.web",
+      "kind": "subsystem",
+      "name": "web",
+      "parent": "mesh",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "mesh.web.ui",
+      "kind": "component",
+      "name": "ui",
+      "parent": "mesh.web",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "mesh.peers.accept",
+      "to": "mesh.store.log",
+      "kind": "writes",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": []
+    },
+    {
+      "from": "mesh.peers.dial",
+      "to": "mesh.store.log",
+      "kind": "reads",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": []
+    },
+    {
+      "from": "mesh.peers.link",
+      "to": "mesh.peers.accept",
+      "kind": "ws",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": []
+    },
+    {
+      "from": "mesh.web.ui",
+      "to": "mesh.peers.link",
+      "kind": "ws",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": []
+    }
+  ],
+  "constraints": [
+    {
+      "rule": "forbid",
+      "from": "mesh.web",
+      "to": "mesh.store",
+      "kind": null
+    }
+  ],
+  "locations": {
+    "mesh": "crates/hesperus-core/tests/fixtures/diff/nested/intent.hesp:3",
+    "mesh.peers": "crates/hesperus-core/tests/fixtures/diff/nested/intent.hesp:4",
+    "mesh.peers.accept": "crates/hesperus-core/tests/fixtures/diff/nested/intent.hesp:5",
+    "mesh.peers.dial": "crates/hesperus-core/tests/fixtures/diff/nested/intent.hesp:6",
+    "mesh.peers.link": "crates/hesperus-core/tests/fixtures/diff/nested/intent.hesp:7",
+    "mesh.store": "crates/hesperus-core/tests/fixtures/diff/nested/intent.hesp:13",
+    "mesh.store.index": "crates/hesperus-core/tests/fixtures/diff/nested/intent.hesp:15",
+    "mesh.store.log": "crates/hesperus-core/tests/fixtures/diff/nested/intent.hesp:14",
+    "mesh.web": "crates/hesperus-core/tests/fixtures/diff/nested/intent.hesp:17",
+    "mesh.web.ui": "crates/hesperus-core/tests/fixtures/diff/nested/intent.hesp:18"
+  }
+}
