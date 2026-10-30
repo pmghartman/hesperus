@@ -188,18 +188,30 @@
     maxRows = Math.max(maxRows, view.outside.length);
     const width = (view.outside.length ? outsideX + NODE_W : PAD + ranks.length * (NODE_W + GAP_X) - GAP_X) + PAD;
     const height = PAD + Math.max(maxRows, 1) * (NODE_H + GAP_Y) - GAP_Y + PAD;
-    const edges = view.edges.filter((e) => pos.has(e.from) && pos.has(e.to)).map((e) => {
+    const visible = view.edges.filter((e) => pos.has(e.from) && pos.has(e.to));
+    const pairKey = (e) => [e.from, e.to].sort().join("\0");
+    const groups = /* @__PURE__ */ new Map();
+    for (const e of visible) groups.set(pairKey(e), (groups.get(pairKey(e)) ?? 0) + 1);
+    const seen = /* @__PURE__ */ new Map();
+    const edges = visible.map((e) => {
       const a = pos.get(e.from);
       const b = pos.get(e.to);
+      const k = pairKey(e);
+      const n = groups.get(k);
+      const i = seen.get(k) ?? 0;
+      seen.set(k, i + 1);
+      const dy = (i - (n - 1) / 2) * 14;
       const forward = a.x < b.x;
       const sameCol = a.x === b.x;
-      const start = sameCol ? [a.x + a.w, a.y + a.h / 2] : forward ? [a.x + a.w, a.y + a.h / 2] : [a.x, a.y + a.h / 2];
-      const end = sameCol ? [b.x + b.w, b.y + b.h / 2] : forward ? [b.x, b.y + b.h / 2] : [b.x + b.w, b.y + b.h / 2];
+      const ay = a.y + a.h / 2 + dy;
+      const by = b.y + b.h / 2 + dy;
+      const start = sameCol ? [a.x + a.w, ay] : forward ? [a.x + a.w, ay] : [a.x, ay];
+      const end = sameCol ? [b.x + b.w, by] : forward ? [b.x, by] : [b.x + b.w, by];
       if (sameCol) {
-        const bulge = GAP_X / 2 + 8;
+        const bulge = GAP_X / 2 + 8 + i * 8;
         return { edge: e, points: [start, [start[0] + bulge, start[1]], [end[0] + bulge, end[1]], end] };
       }
-      const midX = (start[0] + end[0]) / 2;
+      const midX = (start[0] + end[0]) / 2 + (i - (n - 1) / 2) * 12;
       return { edge: e, points: [start, [midX, start[1]], [midX, end[1]], end] };
     });
     return { width, height, nodes: placed, edges };
