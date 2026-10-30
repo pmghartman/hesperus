@@ -4,7 +4,7 @@ import { Fact, FileFacts } from "./facts.js";
 import { Effect, Rule, RULES } from "./rules.js";
 
 export type Finding =
-  | { kind: "import"; spec: string; line: number; rule: null }
+  | { kind: "import"; spec: string | null; line: number; rule: null }
   | { kind: "ingress"; protocol: "http" | "ws"; line: number; detail: string; rule: string }
   | { kind: "by-url"; edge: "http" | "ws"; url: string | null; line: number; rule: string }
   | { kind: "store"; engine: string; access: "reads" | "writes" | "unknown"; line: number; rule: string }
@@ -36,7 +36,7 @@ function listHas(list: string[] | undefined, v: string): boolean {
 
 function matches(rule: Rule, f: Fact): boolean {
   const w = rule.when;
-  if (f.kind === "import") return w.fact === "import" && !f.typeOnly && w.module !== "<any>" && w.module.includes(f.spec);
+  if (f.kind === "import") return w.fact === "import" && !f.typeOnly && f.spec !== null && w.module !== "<any>" && w.module.includes(f.spec);
   if (f.kind === "compare") {
     if (w.fact !== "compare") return false;
     if (w.receiver && !new RegExp(w.receiver).test(f.subject)) return false;

@@ -4,10 +4,10 @@
 
 import { cmp, VEdge, VNode, View } from "./model.js";
 
-export const NODE_W = 184;
-export const NODE_H = 56;
-export const GAP_X = 72;
-export const GAP_Y = 24;
+export const NODE_W = 208;
+export const NODE_H = 60;
+export const GAP_X = 84;
+export const GAP_Y = 28;
 export const PAD = 24;
 
 export interface Placed {

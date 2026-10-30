@@ -54,9 +54,10 @@ enum Cmd {
         lang: String,
         /// The repository to describe
         repo: PathBuf,
-        /// The intent master file, whose bindings tell the extractor how to group code
+        /// The intent master file, whose bindings tell the extractor how to group code;
+        /// without it every file lands in the `unbound` bucket
         #[arg(long)]
-        intent: PathBuf,
+        intent: Option<PathBuf>,
         /// Where to write actual files (default `.hesperus/actual`)
         #[arg(long)]
         out: Option<PathBuf>,
@@ -86,7 +87,7 @@ fn main() {
         Cmd::Fmt { paths, check } => fmt(&paths, check),
         Cmd::Ir { file, locations } => ir(&file, locations),
         Cmd::Print { ir, out } => print_ir(&ir, out.as_deref()),
-        Cmd::Emit { lang, repo, intent, out, extractor } => emit(&lang, &repo, &intent, out.as_deref(), extractor.as_deref()),
+        Cmd::Emit { lang, repo, intent, out, extractor } => emit(&lang, &repo, intent.as_deref(), out.as_deref(), extractor.as_deref()),
         Cmd::Diff { intent, actual, json, all, depth } => diff(&intent, &actual, json, all, depth),
     };
     std::process::exit(code);
@@ -131,7 +132,10 @@ fn fmt(paths: &[PathBuf], check: bool) -> i32 {
     let mut errors = 0;
     for f in files {
         let path = path_str(&f);
-        let text = match std::fs::read_to_string(&f) {
+        let text = match std::fs::read(&f).map_err(|e| e.to_string()).and_then(|b| hesperus_core::lower::decode(b).map_err(|e| match e {
+            hesperus_core::lower::ReadError::NotUtf8(at) => format!("error[E034]: file is not valid UTF-8 at byte {at}"),
+            hesperus_core::lower::ReadError::Missing(m) => m,
+        })) {
             Ok(t) => t,
             Err(e) => {
                 eprintln!("{path}: {e}");
@@ -254,18 +258,27 @@ fn print_ir(ir_path: &Path, out: Option<&Path>) -> i32 {
     0
 }
 
-fn emit(lang: &str, repo: &Path, intent: &Path, out: Option<&Path>, extractor: Option<&str>) -> i32 {
+fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extractor: Option<&str>) -> i32 {
     if lang != "ts" {
         eprintln!("hesp emit: unknown language `{lang}`; v1 ships the `ts` extractor");
         return 2;
     }
-    let project = load_from_disk(&path_str(intent));
-    if project.has_errors() {
-        let src = |p: &str| project.text_of(p).map(|s| s.to_string());
-        eprint!("{}", render(&project.diags, &src));
-        eprintln!("hesp emit: the intent has errors; fix them first");
-        return 1;
-    }
+    let intent_json = match intent {
+        Some(intent) => {
+            let project = load_from_disk(&path_str(intent));
+            if project.has_errors() {
+                let src = |p: &str| project.text_of(p).map(|s| s.to_string());
+                eprint!("{}", render(&project.diags, &src));
+                eprintln!("hesp emit: the intent has errors; fix them first");
+                return 1;
+            }
+            project.ir.to_json()
+        }
+        None => {
+            eprintln!("hesp emit: no --intent given; every file will land in the `unbound` bucket");
+            String::new()
+        }
+    };
     let command: Vec<String> = match extractor.map(|s| s.to_string()).or_else(|| std::env::var("HESPERUS_TS").ok()) {
         Some(cmd) => {
             if cmd.ends_with(".js") || cmd.ends_with(".mjs") || cmd.ends_with(".cjs") {
@@ -286,7 +299,7 @@ fn emit(lang: &str, repo: &Path, intent: &Path, out: Option<&Path>, extractor: O
     };
     {
         let mut stdin = child.stdin.take().unwrap();
-        if stdin.write_all(project.ir.to_json().as_bytes()).is_err() {
+        if stdin.write_all(intent_json.as_bytes()).is_err() {
             eprintln!("hesp emit: extractor closed its input");
             return 1;
         }

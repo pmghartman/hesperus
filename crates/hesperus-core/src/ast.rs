@@ -171,6 +171,8 @@ pub struct CallStmt {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct File {
     pub path: String,
+    /// Comments before the version line.
+    pub leading: Vec<Trivia>,
     pub version: Option<Str>,
     pub generated: Option<Str>,
     /// Top-level statements: definitions and the root node(s).

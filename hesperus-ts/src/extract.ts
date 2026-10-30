@@ -94,6 +94,12 @@ export function extract(repoRoot: string, opts: ExtractOptions): Ir {
       const at = `${f}:${fd.line}`;
       switch (fd.kind) {
         case "import": {
+          if (fd.spec === null) {
+            // a dynamic import of something we cannot name
+            const id = boundary("network", { name: "unresolved" }, "unresolved", { label: "Unresolved targets" });
+            addEdge(from, id, "calls", at, false);
+            break;
+          }
           const target = ws.resolve(f, fd.spec);
           if (!target) break;
           const to = owner.get(target);
@@ -127,7 +133,7 @@ export function extract(repoRoot: string, opts: ExtractOptions): Ir {
             const id = boundary("ingress", { protocol: edgeKind }, edgeKind, { protocol: edgeKind, label: edgeKind === "http" ? "HTTP" : "WebSocket" });
             addEdge(from, id, edgeKind, at);
           } else {
-            const id = boundary("network", { name: "unresolved" }, "unresolved", { label: "Unresolved network targets" });
+            const id = boundary("network", { name: "unresolved" }, "unresolved", { label: "Unresolved targets" });
             addEdge(from, id, edgeKind, at, false);
           }
           break;

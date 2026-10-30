@@ -151,7 +151,11 @@ pub fn render(diags: &[Diagnostic], sources: &dyn Fn(&str) -> Option<String>) ->
         };
         out.push_str(&format!("{}:{}:{}: {}[{}]: {}\n", d.span.file, line, col, sev, d.code, d.message));
         if let Some(fix) = &d.fix {
-            out.push_str(&format!("  help: replace with `{}`\n", fix));
+            if fix.is_empty() {
+                out.push_str("  help: remove it\n");
+            } else {
+                out.push_str(&format!("  help: replace with `{}`\n", fix.replace('\n', "\\n")));
+            }
         }
     }
     out

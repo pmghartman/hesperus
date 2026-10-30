@@ -4,7 +4,7 @@ fixtures/broken/templates.hesp:8:3: error[E019]: `early` may only call templates
 fixtures/broken/templates.hesp:13:13: error[E020]: undefined variable `$y`
   help: replace with `$x`
 fixtures/broken/templates.hesp:14:15: error[E003]: unexpected character `-`
-  help: replace with ``
+  help: remove it
 fixtures/broken/templates.hesp:19:3: error[E018]: `early` takes 1 argument(s), 2 given
 fixtures/broken/templates.hesp:20:3: error[E017]: undefined template `missing`
 fixtures/broken/templates.hesp:21:13: error[E020]: undefined list `nothing`

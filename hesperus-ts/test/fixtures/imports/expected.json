@@ -92,6 +92,19 @@
       "at": []
     },
     {
+      "id": "app.unresolved",
+      "kind": "network",
+      "name": "unresolved",
+      "parent": "app",
+      "label": "Unresolved targets",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
       "id": "app.util",
       "kind": "component",
       "name": "util",
@@ -129,6 +142,17 @@
       "at": [
         "src/api/handler.ts:2",
         "src/api/handler.ts:6"
+      ]
+    },
+    {
+      "from": "app.api",
+      "to": "app.unresolved",
+      "kind": "calls",
+      "label": null,
+      "desc": null,
+      "resolved": false,
+      "at": [
+        "src/api/handler.ts:12"
       ]
     },
     {

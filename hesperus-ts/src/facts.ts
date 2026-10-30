@@ -19,7 +19,8 @@ export interface Arg {
 }
 
 export type Fact =
-  | { kind: "import"; spec: string; typeOnly: boolean; line: number }
+  /** `spec` is null for a dynamic import whose specifier is not static. */
+  | { kind: "import"; spec: string | null; typeOnly: boolean; line: number }
   | {
       kind: "call" | "new" | "tagged";
       /** Function or method name at the site (`query` in `pool.query`, `fetch` in `fetch(`). */
@@ -126,10 +127,8 @@ function collect(sf: SourceFile): FileFacts {
       const args = n.getArguments();
       if (callee.getKind() === SyntaxKind.ImportKeyword || (Node.isIdentifier(callee) && callee.getText() === "require")) {
         const spec = staticText(args[0], origins, sf);
-        if (spec) {
-          if (!modules.has(spec)) modules.set(spec, line(n));
-          facts.push({ kind: "import", spec, typeOnly: false, line: line(n) });
-        }
+        if (spec && !modules.has(spec)) modules.set(spec, line(n));
+        facts.push({ kind: "import", spec, typeOnly: false, line: line(n) });
         return;
       }
       const { name, receiver } = split(callee);

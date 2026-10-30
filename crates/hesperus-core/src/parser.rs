@@ -10,6 +10,9 @@ pub struct Parsed {
     pub diags: Vec<Diagnostic>,
 }
 
+/// Deepest block nesting the parser accepts; deeper files get E035 instead of a stack overflow.
+pub const MAX_NESTING: usize = 64;
+
 pub fn parse(path: &str, text: &str) -> Parsed {
     let (toks, mut diags) = lex(path, text);
     let mut p = Parser { file: path.to_string(), toks, pos: 0, diags: Vec::new(), depth: 0 };
@@ -154,11 +157,12 @@ impl Parser {
     }
 
     fn file(&mut self) -> File {
-        let mut file = File { path: self.file.clone(), version: None, generated: None, items: Vec::new(), trailing: Vec::new() };
-        // version line
+        let mut file = File { path: self.file.clone(), leading: Vec::new(), version: None, generated: None, items: Vec::new(), trailing: Vec::new() };
+        // version line, possibly after comments
         let lead = self.trivia();
         let mut first_trivia = lead;
         if matches!(self.peek(), Tok::Ident(s) if s == "hesperus") {
+            file.leading = first_trivia.iter().filter(|t| matches!(t, Trivia::Comment(_))).cloned().collect();
             let t = self.bump();
             match self.peek().clone() {
                 Tok::Number(n) => {
@@ -229,6 +233,14 @@ impl Parser {
         let open = self.bump(); // `{`
         self.depth += 1;
         let start = open.start;
+        if self.depth > MAX_NESTING {
+            self.error("E035", Span::new(&self.file, start, open.end), format!("blocks nest deeper than {MAX_NESTING} levels"));
+            self.depth -= 1;
+            // consume the rest of this block without building it
+            self.pos -= 1;
+            self.skip_block();
+            return Block { items: Vec::new(), open_comment: None, trailing: Vec::new(), span: Span::new(&self.file, start, self.cur().end) };
+        }
         let mut items = Vec::new();
         let mut open_comment = None;
         if let Tok::Comment(c) = self.peek().clone() {
@@ -529,7 +541,8 @@ impl Parser {
         let open = self.bump();
         let mut items = Vec::new();
         loop {
-            while self.at(&Tok::Newline) {
+            // comments inside a list are dropped (the formatter cannot place them)
+            while matches!(self.peek(), Tok::Newline | Tok::Comment(_)) {
                 self.bump();
             }
             if self.at(&Tok::RBracket) {
@@ -542,7 +555,7 @@ impl Parser {
             }
             let v = self.value()?;
             items.push(v);
-            while self.at(&Tok::Newline) {
+            while matches!(self.peek(), Tok::Newline | Tok::Comment(_)) {
                 self.bump();
             }
             match self.peek() {

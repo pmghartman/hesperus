@@ -68,7 +68,7 @@
       "kind": "network",
       "name": "unresolved",
       "parent": "rt",
-      "label": "Unresolved network targets",
+      "label": "Unresolved targets",
       "desc": null,
       "src": [],
       "protocol": null,

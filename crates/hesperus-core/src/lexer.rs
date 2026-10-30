@@ -59,11 +59,16 @@ pub fn is_valid_ident(s: &str) -> bool {
     prev != '-' && !crate::ast::RESERVED.contains(&s)
 }
 
+/// Stands in for `\$` inside string values between the lexer and the expander, so an
+/// escaped dollar is distinguishable from a backslash followed by a dollar.
+pub const ESCAPED_DOLLAR: char = '\u{E000}';
+
 pub fn lex(file: &str, text: &str) -> (Vec<Token>, Vec<Diagnostic>) {
     let bytes = text.as_bytes();
     let mut toks = Vec::new();
     let mut diags = Vec::new();
-    let mut i = 0;
+    // a UTF-8 byte order mark is accepted and ignored
+    let mut i = if text.starts_with('\u{FEFF}') { 3 } else { 0 };
     let n = bytes.len();
     let push = |toks: &mut Vec<Token>, tok, s, e| toks.push(Token { tok, start: s, end: e });
     while i < n {
@@ -111,24 +116,26 @@ pub fn lex(file: &str, text: &str) -> (Vec<Token>, Vec<Diagnostic>) {
                         break;
                     }
                     if ch == '\\' {
-                        if i + 1 < n {
-                            let e = bytes[i + 1] as char;
+                        if let Some(e) = text[i + 1..].chars().next() {
+                            if e == '\n' {
+                                break;
+                            }
                             match e {
                                 '"' => val.push('"'),
                                 '\\' => val.push('\\'),
                                 'n' => val.push('\n'),
                                 't' => val.push('\t'),
-                                '$' => val.push_str("\\$"),
+                                '$' => val.push(ESCAPED_DOLLAR),
                                 _ => {
                                     diags.push(Diagnostic::error(
                                         "E029",
-                                        Span::new(file, i, i + 2),
+                                        Span::new(file, i, i + 1 + e.len_utf8()),
                                         format!("bad string escape `\\{}`; valid escapes are \\\" \\\\ \\n \\t \\$", e),
                                     ).with_fix(e.to_string()));
                                     val.push(e);
                                 }
                             }
-                            i += 2;
+                            i += 1 + e.len_utf8();
                             continue;
                         }
                         i += 1;

@@ -10,8 +10,8 @@ Every fenced block in this document tagged `hesp` is parsed by the test suite. A
 
 ## 1. Lexical structure
 
-- **Encoding**: UTF-8, `\n` line endings. The formatter rewrites `\r\n` to `\n`.
-- **Comments**: `#` to end of line. Comments are never semantic: the formatter keeps them, the IR drops them.
+- **Encoding**: UTF-8, `\n` line endings. The formatter rewrites `\r\n` to `\n`; a leading byte order mark is accepted and removed. A file that is not valid UTF-8 is E034.
+- **Comments**: `#` to end of line. Comments are never semantic: the formatter keeps them (except inside a multi-line list, where it drops them), the IR drops them.
 - **Newlines** terminate statements. A block's `{` stays on its statement's line; `}` stands on its own line.
 - **Identifiers**: `[A-Za-z_][A-Za-z0-9_-]*`, where every `-` must be followed by an identifier character (so `a->b` lexes as `a`, `->`, `b`). Case-sensitive. Reserved words cannot be identifiers: `hesperus generated import require forbid let template each in true false`. Kind names are not reserved: `store`, `network` or `host` are ordinary node names.
 - **Strings**: double-quoted. Escapes: `\"` `\\` `\n` `\t` `\$`. Strings cannot span lines.
@@ -55,7 +55,7 @@ An edge block may only contain properties (`desc`, `at`, `resolved`). A node blo
 
 ## 3. Files, roots and imports
 
-Every file begins with `hesperus 0.1`. A file holds `let` and `template` definitions followed by exactly one root node (E015). The master file's root is a `system`; `system` may appear nowhere else (E031).
+Every file begins with `hesperus 0.1`. A file holds `let` and `template` definitions followed by exactly one root node (E015). The master file's root is a `system`; `system` may appear nowhere else (E031). A subsystem file can also be checked on its own, in which case its root is the project's root. Blocks nest at most 64 levels deep (E035).
 
 `import "relative/path.hesp"` inside a container's block splices the imported file's root node in as a child of that container. The imported root must be a `subsystem` (E014). Paths are relative to the importing file and use `/`. A file may be imported once per project (E013 also covers cycles). Definitions (`let`, `template`) are file-local.
 
@@ -94,7 +94,7 @@ subsystem catalog "Product catalog" {
 
 ## 4. Nodes and identifiers
 
-A node is `kind name "optional label" { ... }`. The **label** is free text shown in the viewer and never diffed. The node's **id** is its fully qualified path: the names of its ancestors and itself joined by `.`, so `search` above has id `shop.catalog.search`. Ids must be unique (E010); the differ matches on them.
+A node is `kind name "optional label" { ... }`. The **label** is free text shown in the viewer and never diffed. The node's **id** is its fully qualified path: the names of its ancestors and itself joined by `.`, so `search` above has id `shop.catalog.search`. Ids must be unique (E010); the differ matches on them. A child of the root may not share the root's name (E033), so that the root's name always means the root in a path.
 
 Kinds form a closed set:
 
@@ -232,7 +232,7 @@ Hesperus has no loops over anything unbounded, no conditionals and no recursion.
 
 - `let name = [a, b, "c"]` binds a name to a finite list of identifiers and strings. Lists hold at most 256 items (E021).
 - `template name(p1, p2) { items }` defines a parameterized body. Templates are called as `name(arg, ...)` inside a block; the body is spliced in with each `$p` replaced by the argument. Arguments are identifiers, strings or lists; a list argument may only be iterated by `each` (E009). Arity must match (E018).
-- `each x in list { items }` splices the body once per element with `$x` bound to it. The list is a literal or a `let` name. A bound variable is passed on as an argument by writing it `$x`; a bare identifier is a literal name.
+- `each x in list { items }` splices the body once per element with `$x` bound to it. The list is a literal, a `let` name, or a list parameter of the enclosing template (`parts` or `$parts`). A bound variable is passed on as an argument by writing it `$x`; a bare identifier is a literal name.
 
 A template body may call only templates defined **earlier in the file** (E019), so expansion always terminates. Bodies nest at most 4 levels deep and a file expands to at most 10,000 statements (E021). Interpolated identifiers must be valid identifiers after substitution (E022). Definitions live at the top of the file, before the root node, and are local to it.
 
@@ -413,6 +413,9 @@ The parser recovers at the next newline or `}` and reports every error it finds.
 | E030 | boundary nodes cannot contain nodes |
 | E031 | `system` only at the root of the master file |
 | E032 | duplicate edge |
+| E033 | a child of the root shares the root's name |
+| E034 | file is not valid UTF-8 |
+| E035 | blocks nest deeper than 64 levels |
 
 ```hesp error=E005,E007,E011
 hesperus 0.1

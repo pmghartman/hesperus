@@ -22,6 +22,7 @@ struct Expander<'a> {
     diags: Vec<Diagnostic>,
     count: usize,
     exhausted: bool,
+    placeholders: usize,
 }
 
 pub struct Expanded {
@@ -31,7 +32,7 @@ pub struct Expanded {
 }
 
 pub fn expand(file: &File) -> Expanded {
-    let mut ex = Expander { lets: HashMap::new(), templates: HashMap::new(), diags: Vec::new(), count: 0, exhausted: false };
+    let mut ex = Expander { lets: HashMap::new(), templates: HashMap::new(), diags: Vec::new(), count: 0, exhausted: false, placeholders: 0 };
     let mut roots = Vec::new();
     let mut root_spans = Vec::new();
     for (i, item) in file.items.iter().enumerate() {
@@ -115,11 +116,17 @@ impl<'a> Expander<'a> {
         if !self.tick(&n.name.span) {
             return None;
         }
-        let name = self.ident(&n.name, env)?;
+        let name = self.ident(&n.name, env);
         let label = match &n.label {
             Some(l) => Some(self.string(l, env)),
             None => None,
         };
+        // keep going with a placeholder name when interpolation failed, so the errors
+        // inside the block are still reported (the file has errors either way)
+        let name = name.unwrap_or_else(|| {
+            self.placeholders += 1;
+            Ident { text: format!("_invalid_{}", self.placeholders), span: n.name.span.clone() }
+        });
         let block = n.block.as_ref().map(|b| self.block(b, env, depth, before));
         Some(NodeStmt { kind: n.kind.clone(), name, label, block })
     }
@@ -193,7 +200,7 @@ impl<'a> Expander<'a> {
                         }
                         items.clone()
                     }
-                    EachSource::Name(name) => match env.get(&name.text) {
+                    EachSource::Name(name) => match env.get(name.text.trim_start_matches('$').trim_start_matches('{').trim_end_matches('}')) {
                         Some(Bound::List(items)) => items.clone(),
                         Some(Bound::Text(_)) => {
                             self.diags.push(Diagnostic::error("E009", name.span.clone(), format!("`{}` is a value, not a list", name.text)));
@@ -307,7 +314,7 @@ impl<'a> Expander<'a> {
 
     fn string(&mut self, s: &Str, env: &HashMap<String, Bound>) -> Str {
         let text = self.interpolate(&s.text, &s.span, env).unwrap_or_else(|| s.text.clone());
-        Str { text: text.replace("\\$", "$"), span: s.span.clone() }
+        Str { text: text.replace(crate::lexer::ESCAPED_DOLLAR, "$"), span: s.span.clone() }
     }
 
     fn ident(&mut self, i: &Ident, env: &HashMap<String, Bound>) -> Option<Ident> {
@@ -340,12 +347,6 @@ impl<'a> Expander<'a> {
         let mut i = 0;
         while i < chars.len() {
             let c = chars[i];
-            if c == '\\' && i + 1 < chars.len() && chars[i + 1] == '$' {
-                out.push('\\');
-                out.push('$');
-                i += 2;
-                continue;
-            }
             if c != '$' {
                 out.push(c);
                 i += 1;

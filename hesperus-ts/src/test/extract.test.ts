@@ -8,6 +8,7 @@ import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
+import type { TestContext } from "node:test";
 import { extract } from "../extract.js";
 import { compileGlob, globMatch } from "../glob.js";
 import { classifyUrl, sqlAccess } from "../heuristics.js";
@@ -59,10 +60,14 @@ test("imports: edges follow every resolution path, type-only imports are ignored
   const keys = ir.edges.map((e) => `${e.from} -> ${e.to}: ${e.kind}`);
   assert.deepEqual(keys, [
     "app.api -> app.lib: calls",
+    "app.api -> app.unresolved: calls",
     "app.api -> app.util: calls",
     "app.api -> app.web: calls",
     "app.unbound.scripts -> app.lib: calls",
   ]);
+  const dyn = ir.edges.find((e) => e.to === "app.unresolved")!;
+  assert.equal(dyn.resolved, false);
+  assert.deepEqual(dyn.at, ["src/api/handler.ts:12"]);
   const apiWeb = ir.edges.find((e) => e.from === "app.api" && e.to === "app.web")!;
   // the namespace import and the dynamic import, not the type import
   assert.deepEqual(apiWeb.at, ["src/api/handler.ts:5", "src/api/handler.ts:8"]);
@@ -193,14 +198,21 @@ test("url and sql classification, unbound naming", () => {
   assert.equal(unboundComponent("a/b.ts"), "a");
 });
 
-test("the Phosphorus intent and actual IR validate against the schema (when hesp and the repo are present)", () => {
+test("the Phosphorus intent and actual IR validate against the schema (when hesp and the repo are present)", (t: TestContext) => {
   const hesp = process.env.HESP_BIN ?? path.join(repoRoot, "target", "debug", "hesp");
-  const phosphorus = process.env.PHOSPHORUS_REPO ?? path.resolve(repoRoot, "..", "..", "..", "phosphorus");
-  if (!fs.existsSync(hesp)) return;
+  // a sibling of the checkout, or of the main repository when this is a worktree under .claude/worktrees
+  const phosphorus = process.env.PHOSPHORUS_REPO ?? [path.resolve(repoRoot, "..", "phosphorus"), path.resolve(repoRoot, "..", "..", "..", "..", "phosphorus")].find((p) => fs.existsSync(p)) ?? path.resolve(repoRoot, "..", "phosphorus");
+  if (!fs.existsSync(hesp)) {
+    t.skip(`no hesp binary at ${hesp}; set HESP_BIN`);
+    return;
+  }
   const intentJson = execFileSync(hesp, ["ir", path.join(repoRoot, "examples", "phosphorus", "phosphorus.hesp")], { encoding: "utf8" });
   const intent = JSON.parse(intentJson) as Ir;
   checkSchema(intent, "phosphorus intent IR");
-  if (!fs.existsSync(phosphorus)) return;
+  if (!fs.existsSync(phosphorus)) {
+    t.skip(`no Phosphorus checkout at ${phosphorus}; set PHOSPHORUS_REPO`);
+    return;
+  }
   const actual = extract(phosphorus, { intent });
   checkSchema(actual, "phosphorus actual IR");
   assert.ok(actual.nodes.length > 40);

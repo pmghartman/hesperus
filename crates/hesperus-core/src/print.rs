@@ -32,6 +32,7 @@ pub fn print(ir: &Ir) -> Vec<(String, String)> {
         let stmt = ctx.node_stmt(root, &f.path);
         let file = File {
             path: f.path.clone(),
+            leading: vec![],
             version: Some(Str { text: VERSION.into(), span: Span::default() }),
             generated: ir.generated.as_ref().map(|g| Str { text: g.clone(), span: Span::default() }),
             items: vec![stmt],
@@ -71,7 +72,7 @@ fn ident(s: &str) -> Ident {
 }
 fn string(s: &str) -> Str {
     // a literal `$` must survive the lexer's interpolation: escape it
-    Str { text: s.replace('$', "\\$"), span: Span::default() }
+    Str { text: s.replace('$', &crate::lexer::ESCAPED_DOLLAR.to_string()), span: Span::default() }
 }
 fn stmt(kind: StmtKind, blank_before: bool) -> Stmt {
     Stmt { leading: if blank_before { vec![Trivia::Blank] } else { vec![] }, trailing_comment: None, kind, span: Span::default() }

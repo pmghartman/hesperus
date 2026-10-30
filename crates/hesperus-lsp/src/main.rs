@@ -77,7 +77,7 @@ impl Backend {
         // importer map
         let mut importers: HashMap<String, Vec<String>> = HashMap::new();
         for c in &candidates {
-            let Some(text) = source.read(c) else { continue };
+            let Ok(text) = source.read(c) else { continue };
             let parsed = hesperus_core::parser::parse(c, &text);
             for imp in imports_of(&parsed.file) {
                 let target = join(dirname(c), &imp);
@@ -173,7 +173,7 @@ impl Backend {
 
     fn text_and_offset(&self, uri: &Url, pos: Position) -> Option<(String, String, usize)> {
         let path = uri_to_path(uri)?;
-        let text = self.source().read(&path)?;
+        let text = self.source().read(&path).ok()?;
         let index = LineIndex::new(&text);
         let offset = index.offset_utf16(pos.line, pos.character);
         Some((path, text, offset))
@@ -501,7 +501,7 @@ impl LanguageServer for Backend {
 
     async fn formatting(&self, params: DocumentFormattingParams) -> Result<Option<Vec<TextEdit>>> {
         let Some(path) = uri_to_path(&params.text_document.uri) else { return Ok(None) };
-        let Some(text) = self.source().read(&path) else { return Ok(None) };
+        let Ok(text) = self.source().read(&path) else { return Ok(None) };
         let (formatted, diags) = format_text(&path, &text);
         if diags.iter().any(|d| d.severity == Severity::Error) || formatted == text {
             return Ok(None);

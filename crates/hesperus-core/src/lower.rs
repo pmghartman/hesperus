@@ -8,9 +8,22 @@ use crate::ir::*;
 use crate::parser::parse;
 use std::collections::{BTreeMap, HashSet};
 
+/// Why a file could not be read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReadError {
+    Missing(String),
+    /// Byte offset of the first invalid sequence.
+    NotUtf8(usize),
+}
+
 /// Where files come from: disk, or an in-memory map (the language server).
 pub trait Source {
-    fn read(&self, path: &str) -> Option<String>;
+    fn read(&self, path: &str) -> Result<String, ReadError>;
+}
+
+/// Decode bytes, reporting where UTF-8 breaks instead of failing silently.
+pub fn decode(bytes: Vec<u8>) -> Result<String, ReadError> {
+    String::from_utf8(bytes).map_err(|e| ReadError::NotUtf8(e.utf8_error().valid_up_to()))
 }
 
 pub struct Loaded {
@@ -159,9 +172,13 @@ pub fn load(master: &str, source: &dyn Source) -> Project {
         ids: HashSet::new(),
     };
     let text = match source.read(&master) {
-        Some(t) => t,
-        None => {
-            lk.diags.push(Diagnostic::error("E012", Span::new(&master, 0, 0), format!("cannot read `{master}`")));
+        Ok(t) => t,
+        Err(ReadError::Missing(why)) => {
+            lk.diags.push(Diagnostic::error("E012", Span::new(&master, 0, 0), format!("cannot read `{master}`: {why}")));
+            return lk.finish(master);
+        }
+        Err(ReadError::NotUtf8(at)) => {
+            lk.diags.push(Diagnostic::error("E034", Span::new(&master, at, at + 1), "file is not valid UTF-8"));
             return lk.finish(master);
         }
     };
@@ -289,9 +306,13 @@ impl<'a> Linker<'a> {
             return;
         }
         let text = match self.source.read(&path) {
-            Some(t) => t,
-            None => {
+            Ok(t) => t,
+            Err(ReadError::Missing(_)) => {
                 self.diags.push(Diagnostic::error("E012", imp.span.clone(), format!("import not found: `{}` (looked for {path})", imp.text)));
+                return;
+            }
+            Err(ReadError::NotUtf8(at)) => {
+                self.diags.push(Diagnostic::error("E034", Span::new(&path, at, at + 1), format!("`{}` is not valid UTF-8", imp.text)));
                 return;
             }
         };
@@ -489,10 +510,11 @@ impl<'a> Linker<'a> {
                 let dotted = path.dotted();
                 let mut ids: Vec<&str> = self.ids.iter().map(|s| s.as_str()).collect();
                 ids.sort();
-                let suggestion = nearest_id(&dotted, &ids, scope);
+                let suggestion = if dotted.len() <= 200 { nearest_id(&dotted, &ids, scope) } else { None };
+                let shown = clip(&dotted);
                 let msg = match &suggestion {
-                    Some(s) => format!("cannot resolve `{dotted}` from `{scope}`; did you mean `{s}`?"),
-                    None => format!("cannot resolve `{dotted}` from `{scope}`"),
+                    Some(s) => format!("cannot resolve `{shown}` from `{}`; did you mean `{}`?", clip(scope), clip(s)),
+                    None => format!("cannot resolve `{shown}` from `{}`", clip(scope)),
                 };
                 let mut d = Diagnostic::error("E011", path.span.clone(), msg);
                 d.fix = suggestion;
@@ -541,6 +563,17 @@ fn nearest_id(dotted: &str, ids: &[&str], scope: &str) -> Option<String> {
         }
     }
     best.map(|(_, _, id)| id)
+}
+
+/// Keep quoted source text in messages short.
+fn clip(s: &str) -> String {
+    const MAX: usize = 80;
+    if s.chars().count() <= MAX {
+        s.to_string()
+    } else {
+        let head: String = s.chars().take(MAX - 1).collect();
+        format!("{head}…")
+    }
 }
 
 fn article(kind: &str) -> String {

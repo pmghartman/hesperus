@@ -1,15 +1,18 @@
 //! Disk access and the conveniences the CLI and language server share.
 
 use crate::diag::Diagnostic;
-use crate::lower::{load, Project, Source};
+use crate::lower::{decode, load, Project, ReadError, Source};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 pub struct FsSource;
 
 impl Source for FsSource {
-    fn read(&self, path: &str) -> Option<String> {
-        std::fs::read_to_string(path).ok()
+    fn read(&self, path: &str) -> Result<String, ReadError> {
+        match std::fs::read(path) {
+            Ok(bytes) => decode(bytes),
+            Err(e) => Err(ReadError::Missing(e.to_string())),
+        }
     }
 }
 
@@ -19,11 +22,11 @@ pub struct OverlaySource {
 }
 
 impl Source for OverlaySource {
-    fn read(&self, path: &str) -> Option<String> {
+    fn read(&self, path: &str) -> Result<String, ReadError> {
         if let Some(t) = self.overlay.get(path) {
-            return Some(t.clone());
+            return Ok(t.clone());
         }
-        std::fs::read_to_string(path).ok()
+        FsSource.read(path)
     }
 }
 

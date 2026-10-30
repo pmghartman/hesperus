@@ -5,6 +5,11 @@ use crate::ast::*;
 
 pub fn format_file(file: &File) -> String {
     let mut w = Writer { out: String::new(), indent: 0 };
+    for t in &file.leading {
+        if let Trivia::Comment(c) = t {
+            w.line(c);
+        }
+    }
     w.line(&format!("hesperus {}", file.version.as_ref().map(|v| v.text.as_str()).unwrap_or("0.1")));
     if let Some(g) = &file.generated {
         w.line(&format!("generated {}", quote(&g.text)));
@@ -42,10 +47,7 @@ pub fn quote(s: &str) -> String {
         let c = chars[i];
         match c {
             '"' => out.push_str("\\\""),
-            '\\' if i + 1 < chars.len() && chars[i + 1] == '$' => {
-                out.push_str("\\$");
-                i += 1;
-            }
+            crate::lexer::ESCAPED_DOLLAR => out.push_str("\\$"),
             '\\' => out.push_str("\\\\"),
             '\n' => out.push_str("\\n"),
             '\t' => out.push_str("\\t"),
@@ -106,23 +108,19 @@ impl Writer {
     }
     fn stmt(&mut self, s: &Stmt) {
         let text = self.stmt_head(&s.kind);
-        let mut trailing = s.trailing_comment.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-        if let Some(b) = block_of(&s.kind) {
-            if let Some(c) = &b.open_comment {
-                trailing = format!(" {c}");
-            }
-        }
+        let trailing = s.trailing_comment.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+        let open = block_of(&s.kind).and_then(|b| b.open_comment.as_ref()).map(|c| format!(" {c}")).unwrap_or_default();
         match block_of(&s.kind) {
             Some(b) if !b.items.is_empty() || b.trailing.iter().any(|t| matches!(t, Trivia::Comment(_))) || b.open_comment.is_some() => {
-                self.line(&format!("{text} {{{trailing}"));
+                self.line(&format!("{text} {{{open}"));
                 self.indent += 1;
                 self.block_items(b);
                 self.indent -= 1;
-                self.line("}");
+                self.line(&format!("}}{trailing}"));
             }
             Some(_) if matches!(s.kind, StmtKind::Template(_) | StmtKind::Each(_)) => {
-                self.line(&format!("{text} {{{trailing}"));
-                self.line("}");
+                self.line(&format!("{text} {{{open}"));
+                self.line(&format!("}}{trailing}"));
             }
             _ => self.line(&format!("{text}{trailing}")),
         }

@@ -21,8 +21,8 @@ fn fixtures() -> PathBuf {
 
 struct MemSource(HashMap<String, String>);
 impl Source for MemSource {
-    fn read(&self, path: &str) -> Option<String> {
-        self.0.get(path).cloned()
+    fn read(&self, path: &str) -> Result<String, hesperus_core::lower::ReadError> {
+        self.0.get(path).cloned().ok_or_else(|| hesperus_core::lower::ReadError::Missing("not in map".into()))
     }
 }
 
@@ -327,4 +327,64 @@ fn path_helpers() {
     assert_eq!(relative("examples/p", "examples/p/mesh.hesp"), "./mesh.hesp");
     assert_eq!(relative("examples/p", "examples/q/x.hesp"), "../q/x.hesp");
     assert_eq!(relative("", "sub/a.hesp"), "./sub/a.hesp");
+}
+
+/// Regressions from the independent review: no panics, every error positioned, comments kept.
+#[test]
+fn review_regressions() {
+    let check = |text: &str| load("r.hesp", &MemSource(HashMap::from([("r.hesp".to_string(), text.to_string())])));
+    // a backslash before a multibyte character must not panic
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a {\n    desc: \"\\é\"\n  }\n}\n");
+    assert_eq!(codes(&p.diags), vec!["E029"]);
+    // deep nesting is an error, not a stack overflow
+    let mut deep = String::from("hesperus 0.1\n\nsystem s {\n");
+    for i in 0..3000 {
+        deep.push_str(&format!("component n{i} {{\n"));
+    }
+    for _ in 0..3001 {
+        deep.push_str("}\n");
+    }
+    let p = check(&deep);
+    assert!(p.diags.iter().any(|d| d.code == "E035"), "{:?}", codes(&p.diags));
+    let _ = format_text("r.hesp", &deep);
+    // invalid UTF-8 is E034 with a position
+    struct Bad;
+    impl Source for Bad {
+        fn read(&self, _: &str) -> Result<String, hesperus_core::lower::ReadError> {
+            hesperus_core::lower::decode(b"hesperus 0.1\n\nsystem s {\n  component a \"\xff\"\n}\n".to_vec())
+        }
+    }
+    let p = load("bad.hesp", &Bad);
+    assert_eq!(codes(&p.diags), vec!["E034"]);
+    assert_eq!(p.diags[0].span.start, 40);
+    // comments after `}` and before the version line survive formatting
+    let src = "# first\nhesperus 0.1\n\nsystem s {\n  component a { # open\n    desc: \"d\"\n  } # close\n} # end\n";
+    let (out, diags) = format_text("r.hesp", src);
+    assert!(diags.is_empty(), "{diags:?}");
+    assert_eq!(out, src);
+    // `\\$` is a backslash and a dollar; `\$` is an escaped dollar
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a \"x\\$y\"\n}\n");
+    assert!(!p.has_errors());
+    assert_eq!(p.ir.node("s.a").unwrap().label.as_deref(), Some("x$y"));
+    assert_eq!(print(&p.ir)[0].1, "hesperus 0.1\n\nsystem s {\n  component a \"x\\$y\"\n}\n");
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a \"x\\\\$y\"\n}\n");
+    assert_eq!(codes(&p.diags), vec!["E028"]);
+    // a BOM is accepted
+    let p = check("\u{FEFF}hesperus 0.1\n\nsystem s {\n  component a\n}\n");
+    assert!(!p.has_errors(), "{:?}", p.diags);
+    // `each` over a list parameter written with `$`
+    let p = check("hesperus 0.1\n\ntemplate t(parts) {\n  each p in $parts {\n    component $p\n  }\n}\n\nsystem s {\n  t([a, b])\n}\n");
+    assert!(!p.has_errors(), "{:?}", p.diags);
+    assert!(p.ir.node("s.b").is_some());
+    // a node whose name fails to expand still has its block checked
+    let p = check("hesperus 0.1\n\nsystem s {\n  component $nope {\n    sources: \"x\"\n    inner -> nowhere: calls\n  }\n}\n");
+    assert_eq!(codes(&p.diags), vec!["E007", "E011", "E028"]);
+    // comments inside a multi-line list are allowed (and dropped)
+    let p = check("hesperus 0.1\n\nsystem s {\n  src: [\n    \"a/**\", # first\n    # second\n    \"b/**\",\n  ]\n}\n");
+    assert!(!p.has_errors(), "{:?}", p.diags);
+    assert_eq!(p.ir.node("s").unwrap().src, vec!["a/**", "b/**"]);
+    // long paths do not produce unbounded messages
+    let long = format!("hesperus 0.1\n\nsystem s {{\n  component a\n\n  a -> {}: calls\n}}\n", vec!["x"; 20000].join("."));
+    let p = check(&long);
+    assert!(p.diags.iter().all(|d| d.message.len() < 400), "{}", p.diags[0].message.len());
 }

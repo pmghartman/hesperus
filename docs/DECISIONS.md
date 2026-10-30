@@ -85,6 +85,14 @@ Flat sorted arrays of nodes (with `parent`) and edges, keyed by fully qualified 
 `hesp emit --lang ts <repo>` runs the Node extractor as a subprocess (`--extractor <command>`, else `$HESPERUS_TS`, else `hesperus-ts` on `PATH`), feeding it the intent IR on stdin and reading actual IR from stdout, then prints `.hesp` files. Rust never parses TypeScript; TypeScript never prints `.hesp`.
 **Option rejected**: a Node addon or embedding a JS engine in Rust (heavy, non-deterministic across platforms); writing actual files from TypeScript (two printers to keep byte-identical).
 
+## `hesp emit` without `--intent`
+
+`hesp emit --lang ts <repo>` runs without an intent: the extractor then has no bindings, every file lands in the `unbound` bucket, and the root is named after the repository directory. It prints a note saying so. The useful form passes `--intent <master>`; the brief's bare form still works.
+
+## One unresolved sink
+
+Edges whose target cannot be identified statically all point at `network unresolved` with `resolved: false`: outbound HTTP or WebSocket calls with dynamic URLs, and dynamic `import(expr)` / `require(expr)` with a non-literal specifier (a `calls` edge). One sink keeps the actual graph readable; the edge kind says what the code tried to do.
+
 ## Actual output location
 
 `.hesperus/actual/` under the directory `hesp emit` is run in (`--out` overrides), never inside the analyzed repository unless that is the current directory. Keeps the tool from writing into someone else's checkout.
@@ -116,7 +124,7 @@ These are the rows of the table, summarized:
 ## Dependencies
 
 Rust: `serde`/`serde_json` (IR), `clap` (CLI), `tower-lsp` + `tokio` (LSP; the brief names tower-lsp), `ropey`? no — line/column maps are computed from the source directly. No `insta`: golden files are plain files with `UPDATE_GOLDEN=1`. No `jsonschema` crate: schema conformance is checked in the TypeScript tests with `ajv` against `docs/ir.schema.json`, covering Rust-produced IR too.
-TypeScript: `ts-morph` (the brief names it), `ajv` (dev, schema validation), `typescript` (dev, build), `@types/node` (dev). The glob matcher is written in-house (about 60 lines) rather than adding `picomatch`, so one function owns binding semantics on both sides of the test.
+TypeScript: `ts-morph` (the brief names it), `ajv` (dev, schema validation of every IR the tests produce against `docs/ir.schema.json`), `typescript` (dev, build), `@types/node` (dev). The glob matcher is written in-house (about 60 lines) rather than adding `picomatch`, so one function owns binding semantics on both sides of the test.
 Extension: `vscode-languageclient` (LSP client), `@vscode/vsce` (packaging, dev), `@types/vscode` (dev), `esbuild` (bundling the extension, dev). The viewer uses no graph library: a deterministic layered layout is written in `viewer/layout.ts` and tested with golden JSON, because dagre/elk are either unmaintained or non-trivially deterministic across versions.
 
 ## Extension tests
