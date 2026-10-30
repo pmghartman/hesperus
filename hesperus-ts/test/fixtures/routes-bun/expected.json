@@ -1,0 +1,104 @@
+{
+  "hesperus": "0.1",
+  "generated": "hesperus-ts",
+  "root": "bunapp",
+  "files": [
+    {
+      "path": "bunapp.hesp",
+      "root": "bunapp"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "bunapp",
+      "kind": "system",
+      "name": "bunapp",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "bunapp.http",
+      "kind": "ingress",
+      "name": "http",
+      "parent": "bunapp",
+      "label": "HTTP",
+      "desc": null,
+      "src": [],
+      "protocol": "http",
+      "host": null,
+      "engine": null,
+      "at": [
+        "src/index.ts:2",
+        "src/index.ts:7",
+        "src/index.ts:8",
+        "src/index.ts:10",
+        "src/index.ts:12"
+      ]
+    },
+    {
+      "id": "bunapp.srv",
+      "kind": "component",
+      "name": "srv",
+      "parent": "bunapp",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "bunapp.ws",
+      "kind": "ingress",
+      "name": "ws",
+      "parent": "bunapp",
+      "label": "WebSocket",
+      "desc": null,
+      "src": [],
+      "protocol": "ws",
+      "host": null,
+      "engine": null,
+      "at": [
+        "src/index.ts:2",
+        "src/index.ts:15"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "bunapp.http",
+      "to": "bunapp.srv",
+      "kind": "http",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/index.ts:2",
+        "src/index.ts:7",
+        "src/index.ts:8",
+        "src/index.ts:10",
+        "src/index.ts:12"
+      ]
+    },
+    {
+      "from": "bunapp.ws",
+      "to": "bunapp.srv",
+      "kind": "ws",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/index.ts:2",
+        "src/index.ts:15"
+      ]
+    }
+  ],
+  "constraints": []
+}

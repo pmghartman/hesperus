@@ -1,0 +1,88 @@
+{
+  "hesperus": "0.1",
+  "generated": null,
+  "root": "app",
+  "files": [
+    {
+      "path": "app.hesp",
+      "root": "app"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "app",
+      "kind": "system",
+      "name": "app",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.api",
+      "kind": "component",
+      "name": "api",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/api/**"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.lib",
+      "kind": "component",
+      "name": "lib",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/lib/**"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.web",
+      "kind": "component",
+      "name": "web",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/web/**"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.util",
+      "kind": "component",
+      "name": "util",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [
+        "packages/util/**"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    }
+  ],
+  "edges": [],
+  "constraints": []
+}

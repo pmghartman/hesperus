@@ -1,0 +1,223 @@
+{
+  "hesperus": "0.1",
+  "generated": "hesperus-ts",
+  "root": "app",
+  "files": [
+    {
+      "path": "app.hesp",
+      "root": "app"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "app",
+      "kind": "system",
+      "name": "app",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.api_github_com",
+      "kind": "external",
+      "name": "api_github_com",
+      "parent": "app",
+      "label": "api.github.com",
+      "desc": null,
+      "src": [],
+      "protocol": "http",
+      "host": "api.github.com",
+      "engine": null,
+      "at": [
+        "src/client.ts:5",
+        "src/client.ts:6"
+      ]
+    },
+    {
+      "id": "app.api_openai_com",
+      "kind": "external",
+      "name": "api_openai_com",
+      "parent": "app",
+      "label": "api.openai.com",
+      "desc": null,
+      "src": [],
+      "protocol": "http",
+      "host": "api.openai.com",
+      "engine": null,
+      "at": [
+        "src/client.ts:13"
+      ]
+    },
+    {
+      "id": "app.client",
+      "kind": "component",
+      "name": "client",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.example_org",
+      "kind": "external",
+      "name": "example_org",
+      "parent": "app",
+      "label": "example.org",
+      "desc": null,
+      "src": [],
+      "protocol": "http",
+      "host": "example.org",
+      "engine": null,
+      "at": [
+        "src/client.ts:9"
+      ]
+    },
+    {
+      "id": "app.hooks_slack_com",
+      "kind": "external",
+      "name": "hooks_slack_com",
+      "parent": "app",
+      "label": "hooks.slack.com",
+      "desc": null,
+      "src": [],
+      "protocol": "http",
+      "host": "hooks.slack.com",
+      "engine": null,
+      "at": [
+        "src/client.ts:8"
+      ]
+    },
+    {
+      "id": "app.payments",
+      "kind": "external",
+      "name": "payments",
+      "parent": "app",
+      "label": "api.stripe.com",
+      "desc": null,
+      "src": [],
+      "protocol": "http",
+      "host": "api.stripe.com",
+      "engine": null,
+      "at": [
+        "src/client.ts:7"
+      ]
+    },
+    {
+      "id": "app.unresolved",
+      "kind": "network",
+      "name": "unresolved",
+      "parent": "app",
+      "label": "Unresolved network targets",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.web",
+      "kind": "ingress",
+      "name": "web",
+      "parent": "app",
+      "label": "HTTP",
+      "desc": null,
+      "src": [],
+      "protocol": "http",
+      "host": null,
+      "engine": null,
+      "at": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "app.client",
+      "to": "app.api_github_com",
+      "kind": "http",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/client.ts:5",
+        "src/client.ts:6"
+      ]
+    },
+    {
+      "from": "app.client",
+      "to": "app.api_openai_com",
+      "kind": "http",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/client.ts:13"
+      ]
+    },
+    {
+      "from": "app.client",
+      "to": "app.example_org",
+      "kind": "http",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/client.ts:9"
+      ]
+    },
+    {
+      "from": "app.client",
+      "to": "app.hooks_slack_com",
+      "kind": "http",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/client.ts:8"
+      ]
+    },
+    {
+      "from": "app.client",
+      "to": "app.payments",
+      "kind": "http",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/client.ts:7"
+      ]
+    },
+    {
+      "from": "app.client",
+      "to": "app.unresolved",
+      "kind": "http",
+      "label": null,
+      "desc": null,
+      "resolved": false,
+      "at": [
+        "src/client.ts:12"
+      ]
+    },
+    {
+      "from": "app.client",
+      "to": "app.web",
+      "kind": "http",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/client.ts:10",
+        "src/client.ts:11"
+      ]
+    }
+  ],
+  "constraints": []
+}

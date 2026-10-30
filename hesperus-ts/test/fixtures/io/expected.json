@@ -1,0 +1,140 @@
+{
+  "hesperus": "0.1",
+  "generated": "hesperus-ts",
+  "root": "tool",
+  "files": [
+    {
+      "path": "tool.hesp",
+      "root": "tool"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "tool",
+      "kind": "system",
+      "name": "tool",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "tool.bun",
+      "kind": "component",
+      "name": "bun",
+      "parent": "tool",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "tool.files",
+      "kind": "component",
+      "name": "files",
+      "parent": "tool",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "tool.filesystem",
+      "kind": "hardware",
+      "name": "filesystem",
+      "parent": "tool",
+      "label": "Filesystem",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "tool.processes",
+      "kind": "hardware",
+      "name": "processes",
+      "parent": "tool",
+      "label": "OS processes",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "tool.procs",
+      "kind": "component",
+      "name": "procs",
+      "parent": "tool",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    }
+  ],
+  "edges": [
+    {
+      "from": "tool.bun",
+      "to": "tool.filesystem",
+      "kind": "io",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/bun.ts:1"
+      ]
+    },
+    {
+      "from": "tool.bun",
+      "to": "tool.processes",
+      "kind": "io",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/bun.ts:2"
+      ]
+    },
+    {
+      "from": "tool.files",
+      "to": "tool.filesystem",
+      "kind": "io",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/files.ts:3",
+        "src/files.ts:4",
+        "src/import-only.ts:1"
+      ]
+    },
+    {
+      "from": "tool.procs",
+      "to": "tool.processes",
+      "kind": "io",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/procs.ts:2"
+      ]
+    }
+  ],
+  "constraints": []
+}

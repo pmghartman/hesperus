@@ -1,0 +1,324 @@
+{
+  "hesperus": "0.1",
+  "generated": "hesperus-ts",
+  "root": "app",
+  "files": [
+    {
+      "path": "app.hesp",
+      "root": "app"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "app",
+      "kind": "system",
+      "name": "app",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data",
+      "kind": "subsystem",
+      "name": "data",
+      "parent": "app",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data.cache",
+      "kind": "component",
+      "name": "cache",
+      "parent": "app.data",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data.db",
+      "kind": "store",
+      "name": "db",
+      "parent": "app.data",
+      "label": "postgres",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": "postgres",
+      "at": [
+        "src/orm.ts:3",
+        "src/orm.ts:4",
+        "src/pg.ts:4",
+        "src/pg.ts:5",
+        "src/pg.ts:6"
+      ]
+    },
+    {
+      "id": "app.data.local",
+      "kind": "component",
+      "name": "local",
+      "parent": "app.data",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data.mongo",
+      "kind": "component",
+      "name": "mongo",
+      "parent": "app.data",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data.orm",
+      "kind": "component",
+      "name": "orm",
+      "parent": "app.data",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.data.pg",
+      "kind": "component",
+      "name": "pg",
+      "parent": "app.data",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.mongodb",
+      "kind": "store",
+      "name": "mongodb",
+      "parent": "app",
+      "label": "mongodb",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": "mongodb",
+      "at": [
+        "src/mongo.ts:5",
+        "src/mongo.ts:6"
+      ]
+    },
+    {
+      "id": "app.mysql",
+      "kind": "store",
+      "name": "mysql",
+      "parent": "app",
+      "label": "mysql",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": "mysql",
+      "at": [
+        "src/imported-only.ts:1"
+      ]
+    },
+    {
+      "id": "app.redis",
+      "kind": "store",
+      "name": "redis",
+      "parent": "app",
+      "label": "redis",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": "redis",
+      "at": [
+        "src/cache.ts:3",
+        "src/cache.ts:4"
+      ]
+    },
+    {
+      "id": "app.sqlite",
+      "kind": "store",
+      "name": "sqlite",
+      "parent": "app",
+      "label": "sqlite",
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": "sqlite",
+      "at": [
+        "src/local.ts:3",
+        "src/local.ts:4"
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "app.data",
+      "to": "app.mysql",
+      "kind": "reads",
+      "label": null,
+      "desc": null,
+      "resolved": false,
+      "at": [
+        "src/imported-only.ts:1"
+      ]
+    },
+    {
+      "from": "app.data",
+      "to": "app.mysql",
+      "kind": "writes",
+      "label": null,
+      "desc": null,
+      "resolved": false,
+      "at": [
+        "src/imported-only.ts:1"
+      ]
+    },
+    {
+      "from": "app.data.cache",
+      "to": "app.redis",
+      "kind": "reads",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/cache.ts:3"
+      ]
+    },
+    {
+      "from": "app.data.cache",
+      "to": "app.redis",
+      "kind": "writes",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/cache.ts:4"
+      ]
+    },
+    {
+      "from": "app.data.local",
+      "to": "app.sqlite",
+      "kind": "reads",
+      "label": null,
+      "desc": null,
+      "resolved": false,
+      "at": [
+        "src/local.ts:3"
+      ]
+    },
+    {
+      "from": "app.data.local",
+      "to": "app.sqlite",
+      "kind": "writes",
+      "label": null,
+      "desc": null,
+      "resolved": false,
+      "at": [
+        "src/local.ts:3",
+        "src/local.ts:4"
+      ]
+    },
+    {
+      "from": "app.data.mongo",
+      "to": "app.mongodb",
+      "kind": "reads",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/mongo.ts:5"
+      ]
+    },
+    {
+      "from": "app.data.mongo",
+      "to": "app.mongodb",
+      "kind": "writes",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/mongo.ts:6"
+      ]
+    },
+    {
+      "from": "app.data.orm",
+      "to": "app.data.db",
+      "kind": "reads",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/orm.ts:3"
+      ]
+    },
+    {
+      "from": "app.data.orm",
+      "to": "app.data.db",
+      "kind": "writes",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/orm.ts:4"
+      ]
+    },
+    {
+      "from": "app.data.pg",
+      "to": "app.data.db",
+      "kind": "reads",
+      "label": null,
+      "desc": null,
+      "resolved": false,
+      "at": [
+        "src/pg.ts:4",
+        "src/pg.ts:6"
+      ]
+    },
+    {
+      "from": "app.data.pg",
+      "to": "app.data.db",
+      "kind": "writes",
+      "label": null,
+      "desc": null,
+      "resolved": false,
+      "at": [
+        "src/pg.ts:5",
+        "src/pg.ts:6"
+      ]
+    }
+  ],
+  "constraints": []
+}

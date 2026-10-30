@@ -1,0 +1,87 @@
+{
+  "hesperus": "0.1",
+  "generated": null,
+  "root": "tool",
+  "files": [
+    {
+      "path": "tool.hesp",
+      "root": "tool"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "tool",
+      "kind": "system",
+      "name": "tool",
+      "parent": null,
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "tool.files",
+      "kind": "component",
+      "name": "files",
+      "parent": "tool",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/files.ts",
+        "src/import-only.ts"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "tool.procs",
+      "kind": "component",
+      "name": "procs",
+      "parent": "tool",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/procs.ts"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "tool.bun",
+      "kind": "component",
+      "name": "bun",
+      "parent": "tool",
+      "label": null,
+      "desc": null,
+      "src": [
+        "src/bun.ts"
+      ],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "tool.disk",
+      "kind": "hardware",
+      "name": "disk",
+      "parent": "tool",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    }
+  ],
+  "edges": [],
+  "constraints": []
+}

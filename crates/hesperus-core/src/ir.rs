@@ -245,13 +245,11 @@ impl Ir {
         for n in &mut self.nodes {
             n.src.sort();
             n.src.dedup();
-            n.at.sort();
-            n.at.dedup();
+            sort_evidence(&mut n.at);
         }
         self.edges.sort_by(|a, b| a.key().cmp(&b.key()));
         for e in &mut self.edges {
-            e.at.sort();
-            e.at.dedup();
+            sort_evidence(&mut e.at);
         }
         self.constraints.sort_by(|a, b| (a.rule, &a.from, &a.to, a.kind).cmp(&(b.rule, &b.from, &b.to, b.kind)));
         // files: master first, then by path
@@ -312,4 +310,19 @@ impl Ir {
         }
         common.join(".")
     }
+}
+
+/// `path:line` entries sort by path, then by numeric line.
+pub fn sort_evidence(at: &mut Vec<String>) {
+    fn split(s: &str) -> (&str, u64, &str) {
+        match s.rfind(':') {
+            Some(i) => match s[i + 1..].parse::<u64>() {
+                Ok(n) => (&s[..i], n, s),
+                Err(_) => (s, 0, s),
+            },
+            None => (s, 0, s),
+        }
+    }
+    at.sort_by(|a, b| split(a).cmp(&split(b)));
+    at.dedup();
 }

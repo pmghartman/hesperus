@@ -126,7 +126,7 @@ Boundary kinds (the last six) cannot contain nodes (E030).
 
 Unknown keys are E007; keys on the wrong kind are E008; wrong value types are E009; an unknown protocol is E023.
 
-`src` is a **binding**: a list of path globs (`*`, `**`, `?`, `{a,b}`) relative to the repository root. The extractor assigns every source file to the bound node whose glob has the longest literal prefix match; files that match nothing go to the `unbound` subsystem. Bindings are intent-only; the extractor copies none of them into actual files.
+`src` is a **binding**: a list of path globs (`*`, `**`, `?`, `{a,b}`) relative to the repository root. The extractor assigns every source file to the bound node whose glob has the longest literal prefix match (ties: the deeper node, then the longer pattern); files that match nothing go to the `unbound` subsystem. Bindings are intent-only; the extractor copies none of them into actual files.
 
 `at` is **evidence**: `"path:line"` into the repository, written by extractors so viewers can jump to source. The differ ignores it.
 
