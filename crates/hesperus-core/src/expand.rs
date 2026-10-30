@@ -67,22 +67,22 @@ pub fn expand(file: &File) -> Expanded {
                 root_spans.push(item.span.clone());
             }
             StmtKind::Import(s) => {
-                ex.diags.push(Diagnostic::error("E003", s.span.clone(), "`import` belongs inside a container's block"));
+                ex.diags.push(Diagnostic::error("E039", s.span.clone(), "`import` belongs inside a container's block"));
             }
             StmtKind::Property(p) => {
-                ex.diags.push(Diagnostic::error("E003", p.key.span.clone(), "a property belongs inside a node's block"));
+                ex.diags.push(Diagnostic::error("E039", p.key.span.clone(), "a property belongs inside a node's block"));
             }
             StmtKind::Edge(e) => {
-                ex.diags.push(Diagnostic::error("E003", e.from.span.clone(), "an edge belongs inside a container's block"));
+                ex.diags.push(Diagnostic::error("E039", e.from.span.clone(), "an edge belongs inside a container's block"));
             }
             StmtKind::Constraint(c) => {
-                ex.diags.push(Diagnostic::error("E003", c.rule.span.clone(), "a constraint belongs inside a container's block"));
+                ex.diags.push(Diagnostic::error("E039", c.rule.span.clone(), "a constraint belongs inside a container's block"));
             }
             StmtKind::Each(e) => {
-                ex.diags.push(Diagnostic::error("E003", e.var.span.clone(), "`each` belongs inside a container's block"));
+                ex.diags.push(Diagnostic::error("E039", e.var.span.clone(), "`each` belongs inside a container's block"));
             }
             StmtKind::Call(c) => {
-                ex.diags.push(Diagnostic::error("E003", c.name.span.clone(), "a template call belongs inside a container's block"));
+                ex.diags.push(Diagnostic::error("E039", c.name.span.clone(), "a template call belongs inside a container's block"));
             }
         }
     }
@@ -176,16 +176,16 @@ impl<'a> Expander<'a> {
             }
             StmtKind::Import(i) => {
                 if depth > 0 {
-                    self.diags.push(Diagnostic::error("E003", i.span.clone(), "`import` cannot appear inside a template or `each` body"));
+                    self.diags.push(Diagnostic::error("E039", i.span.clone(), "`import` cannot appear inside a template or `each` body"));
                     return;
                 }
                 out.push(mk(StmtKind::Import(i.clone()), &s.span));
             }
             StmtKind::Let(l) => {
-                self.diags.push(Diagnostic::error("E003", l.name.span.clone(), "`let` belongs at the top of the file, before the root node"));
+                self.diags.push(Diagnostic::error("E039", l.name.span.clone(), "`let` belongs at the top of the file, before the root node"));
             }
             StmtKind::Template(t) => {
-                self.diags.push(Diagnostic::error("E003", t.name.span.clone(), "`template` belongs at the top of the file, before the root node"));
+                self.diags.push(Diagnostic::error("E039", t.name.span.clone(), "`template` belongs at the top of the file, before the root node"));
             }
             StmtKind::Each(e) => {
                 if depth + 1 > MAX_DEPTH {

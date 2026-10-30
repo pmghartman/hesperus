@@ -124,16 +124,29 @@ pub fn edit_distance(a: &str, b: &str) -> usize {
     prev[b.len()]
 }
 
-/// The closest candidate within a small distance, if any.
+/// The closest candidate within a small distance, if any. A candidate must share more
+/// than it differs: the distance has to be below its own length, so one-letter names
+/// are never offered for an unrelated word.
 pub fn nearest<'a>(word: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
     let mut best: Option<(usize, &str)> = None;
     for c in candidates {
         let d = edit_distance(word, c);
-        if d <= 3 && best.map(|(bd, _)| d < bd).unwrap_or(true) {
+        if d <= 3 && d < c.chars().count() && d < word.chars().count().max(1) && best.map(|(bd, _)| d < bd).unwrap_or(true) {
             best = Some((d, c));
         }
     }
     best.map(|(_, c)| c)
+}
+
+/// Keep quoted source text in messages short.
+pub fn clip(s: &str) -> String {
+    const MAX: usize = 80;
+    if s.chars().count() <= MAX {
+        s.to_string()
+    } else {
+        let head: String = s.chars().take(MAX - 1).collect();
+        format!("{head}…")
+    }
 }
 
 /// Render diagnostics as `path:line:col: error[E001]: message` lines.

@@ -1,2 +1,2 @@
 fixtures/broken/tworoots.hesp:7:1: error[E015]: a file must hold exactly one root node; move this into its own file and import it
-fixtures/broken/tworoots.hesp:11:8: error[E003]: `import` belongs inside a container's block
+fixtures/broken/tworoots.hesp:11:8: error[E039]: `import` belongs inside a container's block

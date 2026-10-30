@@ -1,0 +1,106 @@
+//! The `hesp` binary end to end: exit codes, output locations, containment of `--out`.
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+fn hesp() -> Command {
+    Command::new(env!("CARGO_BIN_EXE_hesp"))
+}
+
+fn root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
+}
+
+fn scratch(name: &str) -> PathBuf {
+    let d = std::env::temp_dir().join(format!("hesp-cli-{}-{}", name, std::process::id()));
+    let _ = std::fs::remove_dir_all(&d);
+    std::fs::create_dir_all(&d).unwrap();
+    d
+}
+
+#[test]
+fn check_fmt_ir_and_diff_exit_codes() {
+    let master = root().join("examples/phosphorus/phosphorus.hesp");
+    let out = hesp().args(["check"]).arg(&master).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stdout).contains("ok (57 nodes"));
+    let out = hesp().args(["fmt", "--check"]).arg(root().join("examples")).output().unwrap();
+    assert!(out.status.success());
+    let out = hesp().args(["ir"]).arg(&master).output().unwrap();
+    assert!(out.status.success());
+    let ir: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(ir["root"], "phosphorus");
+    // a broken file: exit 1, every error on stderr with code and position
+    let broken = root().join("crates/hesperus-core/tests/fixtures/broken/many.hesp");
+    let out = hesp().args(["check"]).arg(&broken).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("many.hesp:4:3: error[E005]"), "{err}");
+    assert!(err.matches("error[").count() >= 12, "{err}");
+    // --json diagnostics
+    let out = hesp().args(["check", "--json"]).arg(&broken).output().unwrap();
+    let diags: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(diags.as_array().unwrap().len() >= 12);
+    // diff: exit 1 on a violated constraint, 0 otherwise
+    let fx = root().join("crates/hesperus-core/tests/fixtures/diff");
+    let out = hesp().args(["diff"]).arg(fx.join("statuses/intent.hesp")).arg(fx.join("statuses/actual.hesp")).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stdout).starts_with("shop: 9 match, 2 intent-only, 6 actual-only, 2 conflict, 3 violations"));
+    let out = hesp().args(["diff"]).arg(fx.join("aggregate/intent.hesp")).arg(fx.join("aggregate/actual.hesp")).output().unwrap();
+    assert_eq!(out.status.code(), Some(0));
+    // missing file: exit 1 with E012
+    let out = hesp().args(["check", "/nonexistent/x.hesp"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("E012"));
+}
+
+#[test]
+fn print_writes_only_under_out() {
+    let dir = scratch("print");
+    // an IR whose file layout escapes the master's directory
+    let ir = serde_json::json!({
+        "hesperus": "0.1", "generated": "hesperus-ts", "root": "app",
+        "files": [{"path": "app.hesp", "root": "app"}, {"path": "../shared/core.hesp", "root": "app.core"}],
+        "nodes": [
+            {"id": "app", "kind": "system", "name": "app", "parent": null},
+            {"id": "app.core", "kind": "subsystem", "name": "core", "parent": "app"}
+        ],
+        "edges": [], "constraints": []
+    });
+    let ir_path = dir.join("ir.json");
+    std::fs::write(&ir_path, ir.to_string()).unwrap();
+    let out_dir = dir.join("out");
+    let out = hesp().args(["print"]).arg(&ir_path).arg("--out").arg(&out_dir).output().unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("outside the master's directory"));
+    assert!(!dir.join("shared/core.hesp").exists());
+    // a well-formed layout prints into --out and checks clean
+    let ok = serde_json::json!({
+        "hesperus": "0.1", "generated": "hesperus-ts", "root": "app",
+        "files": [{"path": "app.hesp", "root": "app"}, {"path": "parts/core.hesp", "root": "app.core"}],
+        "nodes": [
+            {"id": "app", "kind": "system", "name": "app", "parent": null},
+            {"id": "app.core", "kind": "subsystem", "name": "core", "parent": "app"},
+            {"id": "app.core.x", "kind": "component", "name": "x", "parent": "app.core"}
+        ],
+        "edges": [{"from": "app.core", "to": "app.core.x", "kind": "calls"}], "constraints": []
+    });
+    std::fs::write(&ir_path, ok.to_string()).unwrap();
+    let out = hesp().args(["print"]).arg(&ir_path).arg("--out").arg(&out_dir).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(out_dir.join("parts/core.hesp").exists());
+    let out = hesp().args(["check"]).arg(out_dir.join("app.hesp")).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let printed = std::fs::read_to_string(out_dir.join("app.hesp")).unwrap();
+    assert!(printed.contains("core -> core.x: calls"), "{printed}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn emit_requires_a_known_language_and_an_extractor() {
+    let out = hesp().args(["emit", "--lang", "go", "."]).output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let out = hesp().args(["emit", "--lang", "ts", ".", "--extractor", "/nonexistent/extractor"]).current_dir(root()).output().unwrap();
+    assert_eq!(out.status.code(), Some(2), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("cannot run extractor"));
+}

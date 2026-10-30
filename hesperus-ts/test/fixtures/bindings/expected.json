@@ -154,6 +154,17 @@
   ],
   "edges": [
     {
+      "from": "sys.mesh",
+      "to": "sys.mesh.peers",
+      "kind": "calls",
+      "label": null,
+      "desc": null,
+      "resolved": true,
+      "at": [
+        "src/mesh/util.ts:1"
+      ]
+    },
+    {
       "from": "sys.mesh.peers",
       "to": "sys.mesh.store",
       "kind": "calls",

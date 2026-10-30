@@ -217,7 +217,11 @@ fn read_ir(path: &Path) -> Result<Ir, String> {
 
 fn write_files(files: &[(String, String)], out: &Path) -> Result<(), String> {
     for (rel, text) in files {
-        let p = out.join(rel);
+        let norm = hesperus_core::lower::normalize(rel);
+        if norm.starts_with("..") || norm.starts_with('/') {
+            return Err(format!("`{rel}` lies outside the master's directory; actual files mirror the intent's layout and are only written under {}", path_str(out)));
+        }
+        let p = out.join(&norm);
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }

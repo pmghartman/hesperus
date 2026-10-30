@@ -2,7 +2,7 @@
 //! every error it finds.
 
 use crate::ast::*;
-use crate::diag::{nearest, Diagnostic, Span};
+use crate::diag::{clip, nearest, Diagnostic, Span};
 use crate::lexer::{lex, Tok, Token};
 
 pub struct Parsed {
@@ -157,7 +157,7 @@ impl Parser {
     }
 
     fn file(&mut self) -> File {
-        let mut file = File { path: self.file.clone(), leading: Vec::new(), version: None, generated: None, items: Vec::new(), trailing: Vec::new() };
+        let mut file = File { path: self.file.clone(), leading: Vec::new(), version: None, version_comment: None, generated: None, generated_comment: None, items: Vec::new(), trailing: Vec::new() };
         // version line, possibly after comments
         let lead = self.trivia();
         let mut first_trivia = lead;
@@ -178,7 +178,7 @@ impl Parser {
                     self.diags.last_mut().unwrap().fix = Some("hesperus 0.1".into());
                 }
             }
-            self.end_statement();
+            file.version_comment = self.end_statement();
             first_trivia = Vec::new();
         } else {
             let span = Span::new(&self.file, 0, 0);
@@ -198,7 +198,7 @@ impl Parser {
                     self.recover();
                 }
             }
-            self.end_statement();
+            file.generated_comment = self.end_statement();
             let mut lead = self.trivia();
             first_trivia.append(&mut lead);
         }
@@ -305,8 +305,8 @@ impl Parser {
                                 let span = self.cur_span();
                                 let fix = nearest(w, NODE_KINDS.iter().copied());
                                 let msg = match fix {
-                                    Some(f) => format!("unknown node kind `{w}`; did you mean `{f}`?"),
-                                    None => format!("unknown node kind `{w}`"),
+                                    Some(f) => format!("unknown node kind `{}`; did you mean `{f}`?", clip(w)),
+                                    None => format!("unknown node kind `{}`", clip(w)),
                                 };
                                 let mut d = Diagnostic::error("E005", span, msg);
                                 d.fix = fix.map(|f| f.to_string());
@@ -316,7 +316,7 @@ impl Parser {
                             }
                             _ => {
                                 let span = self.cur_span();
-                                self.error("E003", span, format!("unexpected `{w}`; expected a node, edge, property or import"));
+                                self.error("E003", span, format!("unexpected `{}`; expected a node, edge, property or import", clip(w)));
                                 self.recover();
                                 None
                             }
@@ -722,8 +722,8 @@ fn tok_text(t: &Tok) -> String {
 
 pub fn describe(t: &Tok) -> String {
     match t {
-        Tok::Ident(s) => format!("`{s}`"),
-        Tok::Str(s) => format!("string \"{s}\""),
+        Tok::Ident(s) => format!("`{}`", clip(s)),
+        Tok::Str(s) => format!("string \"{}\"", clip(s)),
         Tok::Number(n) => format!("number {n}"),
         Tok::Newline => "end of line".into(),
         Tok::Comment(_) => "a comment".into(),

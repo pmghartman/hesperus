@@ -16,5 +16,3 @@ serde_json.workspace = true
 tower-lsp = "0.20"
 tokio = { version = "1", features = ["full"] }
 
-[dev-dependencies]
-serde_json.workspace = true

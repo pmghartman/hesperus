@@ -388,3 +388,27 @@ fn review_regressions() {
     let p = check(&long);
     assert!(p.diags.iter().all(|d| d.message.len() < 400), "{}", p.diags[0].message.len());
 }
+
+/// Regressions from the second review.
+#[test]
+fn review_regressions_2() {
+    let check = |text: &str| load("r.hesp", &MemSource(HashMap::from([("r.hesp".to_string(), text.to_string())])));
+    // comments on the version and generated lines survive
+    let src = "hesperus 0.1 # v\ngenerated \"x\" # g\n\nsystem s {\n  component a\n}\n";
+    assert_eq!(format_text("r.hesp", src).0, src);
+    // `at` entries must be path:line
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a {\n    at: [\"no-line\", \"weird:abc\", \"ok.ts:12\"]\n  }\n}\n");
+    assert_eq!(p.diags.iter().filter(|d| d.code == "E009").count(), 2);
+    // a one-letter id is not offered for an unrelated word, so no fix creates a self-edge
+    let p = check("hesperus 0.1\n\nsystem s {\n  component b\n\n  b -> zz: calls\n}\n");
+    assert_eq!(codes(&p.diags), vec!["E011"]);
+    assert_eq!(p.diags[0].fix, None, "{:?}", p.diags[0]);
+    // self-edge, duplicate property, misplaced definitions have their own codes
+    let p = check("hesperus 0.1\n\nsystem s {\n  component a {\n    desc: \"x\"\n    desc: \"y\"\n    let q = [a]\n  }\n\n  a -> a: calls\n}\n");
+    assert_eq!(codes(&p.diags), vec!["E036", "E037", "E039"]);
+    // huge tokens are clipped in messages
+    let p = check(&format!("hesperus 0.1\n\nsystem s {{\n  {} a\n}}\n", "x".repeat(100_000)));
+    assert!(p.diags.iter().all(|d| d.message.len() < 400));
+    let p = check(&format!("hesperus 0.1\n\nsystem s {{\n  \"{}\"\n}}\n", "x".repeat(100_000)));
+    assert!(p.diags.iter().all(|d| d.message.len() < 400));
+}

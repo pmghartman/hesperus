@@ -11,7 +11,7 @@ Every fenced block in this document tagged `hesp` is parsed by the test suite. A
 ## 1. Lexical structure
 
 - **Encoding**: UTF-8, `\n` line endings. The formatter rewrites `\r\n` to `\n`; a leading byte order mark is accepted and removed. A file that is not valid UTF-8 is E034.
-- **Comments**: `#` to end of line. Comments are never semantic: the formatter keeps them (except inside a multi-line list, where it drops them), the IR drops them.
+- **Comments**: `#` to end of line, including after the version line and after a closing `}`. Comments are never semantic: the formatter keeps them (except inside a multi-line list, where it drops them), the IR drops them.
 - **Newlines** terminate statements. A block's `{` stays on its statement's line; `}` stands on its own line.
 - **Identifiers**: `[A-Za-z_][A-Za-z0-9_-]*`, where every `-` must be followed by an identifier character (so `a->b` lexes as `a`, `->`, `b`). Case-sensitive. Reserved words cannot be identifiers: `hesperus generated import require forbid let template each in true false`. Kind names are not reserved: `store`, `network` or `host` are ordinary node names.
 - **Strings**: double-quoted. Escapes: `\"` `\\` `\n` `\t` `\$`. Strings cannot span lines.
@@ -126,7 +126,7 @@ Boundary kinds (the last six) cannot contain nodes (E030).
 
 Unknown keys are E007; keys on the wrong kind are E008; wrong value types are E009; an unknown protocol is E023.
 
-`src` is a **binding**: a list of path globs (`*`, `**`, `?`, `{a,b}`) relative to the repository root. The extractor assigns every source file to the bound node whose glob has the longest literal prefix match (ties: the deeper node, then the longer pattern); files that match nothing go to the `unbound` subsystem. Bindings are intent-only; the extractor copies none of them into actual files.
+`src` is a **binding**: a list of path globs (`*`, `**`, `?`, `{a,b}`) relative to the repository root. The extractor assigns every source file to the bound node whose glob has the longest literal prefix match (ties: the deeper node, then the longer pattern); files that match nothing go to the `unbound` subsystem. Bindings are intent-only; the extractor copies none of them into actual files, except that each component of the synthesized `unbound` subsystem carries the directory glob it was grouped by, so a reader can turn it into a binding.
 
 `at` is **evidence**: `"path:line"` into the repository, written by extractors so viewers can jump to source. The differ ignores it.
 
@@ -184,7 +184,7 @@ system mesh {
 }
 ```
 
-In canonical form an edge is printed in the block of the lowest common ancestor of its two endpoints, with both paths relative to that block. The example above is already canonical.
+In canonical form an edge is printed in the block of the lowest common ancestor of its two endpoints, with both paths relative to that block; when one endpoint *is* that ancestor (an edge between a container and something inside it), the edge is printed one block up, in the ancestor's parent, where the container's name is unambiguous. The example above is already canonical.
 
 ## 6. Edges and constraints
 
@@ -199,7 +199,7 @@ In canonical form an edge is printed in the block of the lowest common ancestor 
 | `ws` | a WebSocket connection |
 | `io` | filesystem, process or device I/O |
 
-An edge's identity is `(from, to, kind)`; the same triple written twice is one edge (E032). Labels and `desc` are free text. `resolved: false` marks an edge an extractor emitted without being able to resolve its target statically; its target is then usually the `network` node `unresolved`.
+An edge's identity is `(from, to, kind)`; the same triple written twice is one edge (E032). An edge cannot connect a node to itself (E036). A property may be set once per block (E037). Labels and `desc` are free text. `resolved: false` marks an edge an extractor emitted without being able to resolve its target statically; its target is then usually the `network` node `unresolved`.
 
 Constraints are checked by the differ against the **actual** graph. `forbid a -> b` fails if any actual edge runs from `a` or a descendant of `a` to `b` or a descendant of `b`; with `: kind` only edges of that kind count. `require a -> b` fails if no such edge exists. A violated constraint makes `hesp diff` exit 1.
 
@@ -357,14 +357,14 @@ The printer (IR → text) emits exactly one layout:
 2. The root node. Inside every block, in this order and separated by one blank line between non-empty groups: properties (`desc`, `src`, `protocol`, `host`, `engine`, `resolved`, `at`), imports sorted by path, child nodes, edges, constraints.
 3. Child nodes sorted by kind in the order `system subsystem component ingress egress store external network hardware`, then by name. Edges sorted by `(from, to, kind)`; constraints by `(rule, from, to, kind)`.
 4. A one-item list prints as a bare value; an empty block prints no braces; the edge kind is always explicit.
-5. Nodes live in the file whose root is their nearest file-root ancestor; edges and constraints live in the file of their lowest common ancestor and use the shortest relative paths from there.
+5. Nodes live in the file whose root is their nearest file-root ancestor; edges and constraints live in the block of their lowest common ancestor (its parent when an endpoint is the ancestor itself) and use the shortest relative paths from there.
 6. Two-space indentation, `\n` line endings, one trailing newline.
 
 A template-free file whose statements already follow this order is its own canonical form.
 
 ## 11. IR
 
-The IR is JSON as described by `ir.schema.json`. Canonical IR has keys in schema order, two-space indentation, nodes sorted by `id`, edges by `(from, to, kind)`, constraints by `(rule, from, to, kind)`, `src` and `at` lists sorted, a trailing newline. Every node carries `id`, `kind`, `name`, `parent`, `label`, `desc`, `src`, `protocol`, `host`, `engine`, `at`; every edge `from`, `to`, `kind`, `label`, `desc`, `resolved`, `at`; the document carries `hesperus`, `generated`, `root`, `files`, `nodes`, `edges`, `constraints`. `files` records which node is the root of which file so the printer can split the graph back into the same files.
+The IR is JSON as described by `ir.schema.json`. Canonical IR has keys in schema order, two-space indentation, nodes sorted by `id`, edges by `(from, to, kind)`, constraints by `(rule, from, to, kind)`, `src` and `at` lists sorted, a trailing newline. Every node carries `id`, `kind`, `name`, `parent`, `label`, `desc`, `src`, `protocol`, `host`, `engine`, `at`; every edge `from`, `to`, `kind`, `label`, `desc`, `resolved`, `at`; the document carries `hesperus`, `generated`, `root`, `files`, `nodes`, `edges`, `constraints`. `files` records which node is the root of which file so the printer can split the graph back into the same files. `hesp ir --locations` adds an optional `locations` map from node id to `path:line` of its declaration, for editors; it is not part of the canonical IR and the printer ignores it.
 
 ## 12. The unified graph
 
@@ -416,6 +416,10 @@ The parser recovers at the next newline or `}` and reports every error it finds.
 | E033 | a child of the root shares the root's name |
 | E034 | file is not valid UTF-8 |
 | E035 | blocks nest deeper than 64 levels |
+| E036 | an edge connects a node to itself |
+| E037 | property set twice |
+| E038 | a hand-written file imports a generated one |
+| E039 | statement in the wrong place (`let`/`template` inside a block, `import` inside a template or `each` body, a node item at the top level) |
 
 ```hesp error=E005,E007,E011
 hesperus 0.1

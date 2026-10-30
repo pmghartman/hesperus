@@ -1,1 +1,2 @@
-export const u = 1;
+import { dial } from "./peers/dial";
+export const u = () => dial();

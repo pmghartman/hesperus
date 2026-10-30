@@ -55,7 +55,7 @@ HESPERUS_TS=$PWD/hesperus-ts/dist/cli.js \
 hesp diff examples/phosphorus/phosphorus.hesp .hesperus/actual/phosphorus.hesp
 ```
 
-`hesp emit` writes `.hesperus/actual/*.hesp`, one file per intent file, with a `generated` header; `hesp diff` exits 1 when a `require` or `forbid` constraint is violated. `hesp ir` prints the IR; `hesp diff --json` prints the unified graph; `--depth N` aggregates edges to the nodes at that depth.
+`hesp emit` writes `.hesperus/actual/*.hesp`, mirroring the intent's files (a subsystem file whose bindings matched no code is left out), with a `generated` header; `hesp diff` exits 1 when a `require` or `forbid` constraint is violated. `hesp ir` prints the IR; `hesp diff --json` prints the unified graph; `--depth N` aggregates edges to the nodes at that depth.
 
 ## Develop
 

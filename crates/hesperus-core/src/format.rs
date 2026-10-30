@@ -10,9 +10,11 @@ pub fn format_file(file: &File) -> String {
             w.line(c);
         }
     }
-    w.line(&format!("hesperus {}", file.version.as_ref().map(|v| v.text.as_str()).unwrap_or("0.1")));
+    let vc = file.version_comment.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+    w.line(&format!("hesperus {}{vc}", file.version.as_ref().map(|v| v.text.as_str()).unwrap_or("0.1")));
     if let Some(g) = &file.generated {
-        w.line(&format!("generated {}", quote(&g.text)));
+        let gc = file.generated_comment.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+        w.line(&format!("generated {}{gc}", quote(&g.text)));
     }
     // one blank line after the header; top-level statements separated by one blank
     // line, except consecutive `let`s, which stay together unless the source spaced them

@@ -153,8 +153,8 @@ test("bindings: specificity, braces, `?`, adoption inside a subsystem, file layo
   assert.deepEqual(ids, ["sys", "sys.mesh", "sys.mesh.ledger", "sys.mesh.peers", "sys.mesh.store", "sys.mesh.tailscale", "sys.web", "sys.web.pair", "sys.web.short", "sys.web.ui"]);
   assert.deepEqual(ir.files, [{ path: "sys.hesp", root: "sys" }, { path: "mesh.hesp", root: "sys.mesh" }, { path: "web.hesp", root: "sys.web" }]);
   const e = ir.edges.map((x) => `${x.from} -> ${x.to}: ${x.kind}`);
-  assert.deepEqual(e, ["sys.mesh.peers -> sys.mesh.store: calls", "sys.mesh.peers -> sys.mesh.tailscale: http", "sys.mesh.store -> sys.mesh.ledger: writes", "sys.web.ui -> sys.web.short: calls"]);
-  // util.ts binds to the subsystem itself and produces no component
+  assert.deepEqual(e, ["sys.mesh -> sys.mesh.peers: calls", "sys.mesh.peers -> sys.mesh.store: calls", "sys.mesh.peers -> sys.mesh.tailscale: http", "sys.mesh.store -> sys.mesh.ledger: writes", "sys.web.ui -> sys.web.short: calls"]);
+  // util.ts binds to the subsystem itself: no component, but its import of a child component is an edge
   assert.ok(!ids.some((i) => i.includes("util")));
 });
 

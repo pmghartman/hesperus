@@ -174,7 +174,10 @@ pub struct File {
     /// Comments before the version line.
     pub leading: Vec<Trivia>,
     pub version: Option<Str>,
+    /// A trailing comment on the version line.
+    pub version_comment: Option<String>,
     pub generated: Option<Str>,
+    pub generated_comment: Option<String>,
     /// Top-level statements: definitions and the root node(s).
     pub items: Vec<Stmt>,
     /// Trivia after the last statement.

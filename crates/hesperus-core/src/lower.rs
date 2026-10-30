@@ -2,7 +2,7 @@
 //! resolve paths, check properties, and build the IR.
 
 use crate::ast::*;
-use crate::diag::{nearest, Diagnostic, Span};
+use crate::diag::{clip, nearest, Diagnostic, Span};
 use crate::expand::expand;
 use crate::ir::*;
 use crate::parser::parse;
@@ -178,7 +178,7 @@ pub fn load(master: &str, source: &dyn Source) -> Project {
             return lk.finish(master);
         }
         Err(ReadError::NotUtf8(at)) => {
-            lk.diags.push(Diagnostic::error("E034", Span::new(&master, at, at + 1), "file is not valid UTF-8"));
+            lk.diags.push(Diagnostic::error("E034", Span::new(&master, at, at + 1), format!("file is not valid UTF-8 at byte {at}")));
             return lk.finish(master);
         }
     };
@@ -259,7 +259,7 @@ impl<'a> Linker<'a> {
                 match &item.kind {
                     StmtKind::Property(p) => {
                         if !seen_keys.insert(p.key.text.clone()) {
-                            self.diags.push(Diagnostic::error("E003", p.key.span.clone(), format!("property `{}` set twice", p.key.text)));
+                            self.diags.push(Diagnostic::error("E037", p.key.span.clone(), format!("property `{}` set twice", p.key.text)));
                             continue;
                         }
                         self.node_property(&mut node, p);
@@ -312,7 +312,7 @@ impl<'a> Linker<'a> {
                 return;
             }
             Err(ReadError::NotUtf8(at)) => {
-                self.diags.push(Diagnostic::error("E034", Span::new(&path, at, at + 1), format!("`{}` is not valid UTF-8", imp.text)));
+                self.diags.push(Diagnostic::error("E034", Span::new(&path, at, at + 1), format!("`{}` is not valid UTF-8 at byte {at}", imp.text)));
                 return;
             }
         };
@@ -327,7 +327,7 @@ impl<'a> Linker<'a> {
         if let Some(g) = &self.files[new_idx].ast.generated {
             if self.ir.generated.is_none() {
                 let g = g.clone();
-                self.diags.push(Diagnostic::error("E003", g.span, "a generated file cannot be imported by a hand-written one"));
+                self.diags.push(Diagnostic::error("E038", g.span, "a generated file cannot be imported by a hand-written one"));
             }
         }
         let entry = self.file_entry_path(&path);
@@ -375,7 +375,10 @@ impl<'a> Linker<'a> {
                 None => self.type_error(&p.value, "a string or a list of strings"),
             },
             "at" => match string_list(&p.value) {
-                Some(l) => node.at = l,
+                Some(l) => {
+                    self.check_evidence(&l, &p.value);
+                    node.at = l;
+                }
                 None => self.type_error(&p.value, "a list of \"path:line\" strings"),
             },
             "host" => match &p.value {
@@ -402,6 +405,16 @@ impl<'a> Linker<'a> {
         }
     }
 
+    /// Evidence entries are `path:line`, as the schema requires.
+    fn check_evidence(&mut self, entries: &[String], v: &Value) {
+        for e in entries {
+            let ok = e.rfind(':').map(|i| i > 0 && !e[i + 1..].is_empty() && e[i + 1..].bytes().all(|b| b.is_ascii_digit())).unwrap_or(false);
+            if !ok {
+                self.diags.push(Diagnostic::error("E009", v.span().clone(), format!("`at` entries are \"path:line\"; `{}` is not", clip(e))));
+            }
+        }
+    }
+
     fn type_error(&mut self, v: &Value, expected: &str) {
         let mut d = Diagnostic::error("E009", v.span().clone(), format!("expected {expected}, found {}", v.type_name()));
         if let (Value::Ident(i), true) = (v, expected.starts_with("a string")) {
@@ -425,7 +438,7 @@ impl<'a> Linker<'a> {
                 None => EdgeKind::Calls,
             };
             if from == to {
-                self.diags.push(Diagnostic::error("E003", pe.span.clone(), format!("an edge cannot connect `{from}` to itself")));
+                self.diags.push(Diagnostic::error("E036", pe.span.clone(), format!("an edge cannot connect `{from}` to itself")));
                 continue;
             }
             if !seen.insert((from.clone(), to.clone(), kind)) {
@@ -440,7 +453,7 @@ impl<'a> Linker<'a> {
                     match &item.kind {
                         StmtKind::Property(p) => {
                             if !seen_keys.insert(p.key.text.clone()) {
-                                self.diags.push(Diagnostic::error("E003", p.key.span.clone(), format!("property `{}` set twice", p.key.text)));
+                                self.diags.push(Diagnostic::error("E037", p.key.span.clone(), format!("property `{}` set twice", p.key.text)));
                                 continue;
                             }
                             match p.key.text.as_str() {
@@ -449,7 +462,10 @@ impl<'a> Linker<'a> {
                                     v => self.type_error(v, "a string"),
                                 },
                                 "at" => match string_list(&p.value) {
-                                    Some(l) => edge.at = l,
+                                    Some(l) => {
+                                        self.check_evidence(&l, &p.value);
+                                        edge.at = l;
+                                    }
                                     None => self.type_error(&p.value, "a list of \"path:line\" strings"),
                                 },
                                 "resolved" => match &p.value {
@@ -554,7 +570,8 @@ fn nearest_id(dotted: &str, ids: &[&str], scope: &str) -> Option<String> {
         }
         let tail = segs[segs.len() - n..].join(".");
         let d = crate::diag::edit_distance(dotted, &tail);
-        if d > 3 {
+        // close, and sharing more than it differs (never a one-letter id for an unrelated word)
+        if d > 3 || d >= tail.chars().count() || d >= dotted.chars().count().max(1) {
             continue;
         }
         let far = if Ir::is_within(id, scope) { 0 } else { 1 };
@@ -563,17 +580,6 @@ fn nearest_id(dotted: &str, ids: &[&str], scope: &str) -> Option<String> {
         }
     }
     best.map(|(_, _, id)| id)
-}
-
-/// Keep quoted source text in messages short.
-fn clip(s: &str) -> String {
-    const MAX: usize = 80;
-    if s.chars().count() <= MAX {
-        s.to_string()
-    } else {
-        let head: String = s.chars().take(MAX - 1).collect();
-        format!("{head}…")
-    }
 }
 
 fn article(kind: &str) -> String {

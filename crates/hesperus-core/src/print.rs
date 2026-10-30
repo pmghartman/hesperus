@@ -34,7 +34,9 @@ pub fn print(ir: &Ir) -> Vec<(String, String)> {
             path: f.path.clone(),
             leading: vec![],
             version: Some(Str { text: VERSION.into(), span: Span::default() }),
+            version_comment: None,
             generated: ir.generated.as_ref().map(|g| Str { text: g.clone(), span: Span::default() }),
+            generated_comment: None,
             items: vec![stmt],
             trailing: vec![],
         };

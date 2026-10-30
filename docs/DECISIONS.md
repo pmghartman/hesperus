@@ -93,9 +93,13 @@ Flat sorted arrays of nodes (with `parent`) and edges, keyed by fully qualified 
 
 Edges whose target cannot be identified statically all point at `network unresolved` with `resolved: false`: outbound HTTP or WebSocket calls with dynamic URLs, and dynamic `import(expr)` / `require(expr)` with a non-literal specifier (a `calls` edge). One sink keeps the actual graph readable; the edge kind says what the code tried to do.
 
+## Edges between a node and its own ancestor
+
+The extractor emits them (a file bound to a subsystem that imports a file bound to one of its components yields `subsystem -> subsystem.component: calls`; a container's own code touching a boundary declared inside it yields `container -> container.boundary`). They are legal in the language, the differ keys them like any other edge, and the inspector lists them; the graph view folds edges to the visible level and so cannot draw an edge from a box to itself, which is the one place they stay invisible.
+
 ## Actual output location
 
-`.hesperus/actual/` under the directory `hesp emit` is run in (`--out` overrides), never inside the analyzed repository unless that is the current directory. Keeps the tool from writing into someone else's checkout.
+`.hesperus/actual/` under the directory `hesp emit` is run in (`--out` overrides), never inside the analyzed repository unless that is the current directory. Keeps the tool from writing into someone else's checkout. Actual files mirror the intent's layout relative to the master; an intent that imports from outside the master's directory (`../shared/x.hesp`) cannot be mirrored and `hesp emit` refuses to write it rather than write outside `--out`.
 
 ## Multi-language direction: frameworks are rows in a table
 
@@ -125,7 +129,7 @@ These are the rows of the table, summarized:
 
 Rust: `serde`/`serde_json` (IR), `clap` (CLI), `tower-lsp` + `tokio` (LSP; the brief names tower-lsp), `ropey`? no — line/column maps are computed from the source directly. No `insta`: golden files are plain files with `UPDATE_GOLDEN=1`. No `jsonschema` crate: schema conformance is checked in the TypeScript tests with `ajv` against `docs/ir.schema.json`, covering Rust-produced IR too.
 TypeScript: `ts-morph` (the brief names it), `ajv` (dev, schema validation of every IR the tests produce against `docs/ir.schema.json`), `typescript` (dev, build), `@types/node` (dev). The glob matcher is written in-house (about 60 lines) rather than adding `picomatch`, so one function owns binding semantics on both sides of the test.
-Extension: `vscode-languageclient` (LSP client), `@vscode/vsce` (packaging, dev), `@types/vscode` (dev), `esbuild` (bundling the extension, dev). The viewer uses no graph library: a deterministic layered layout is written in `viewer/layout.ts` and tested with golden JSON, because dagre/elk are either unmaintained or non-trivially deterministic across versions.
+Extension: `vscode-languageclient` (LSP client), `@vscode/vsce` (packaging, dev), `@types/vscode` (dev), `esbuild` (bundling the extension and the webview, dev), `typescript` and `@types/node` (dev, compile the node tests), `@vscode/test-electron` (dev, the optional activation smoke test). The bundled `media/viewer.js` is build output and not tracked. The viewer uses no graph library: a deterministic layered layout is written in `viewer/layout.ts` and tested with golden JSON, because dagre/elk are either unmaintained or non-trivially deterministic across versions.
 
 ## Extension tests
 

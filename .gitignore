@@ -6,3 +6,6 @@ out/
 .hesperus/
 .vscode-test/
 .DS_Store
+
+vscode-hesperus/media/viewer.js
+vscode-hesperus/media/viewer.js.map

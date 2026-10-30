@@ -13,6 +13,6 @@ fixtures/broken/many.hesp:19:10: error[E011]: cannot resolve `ap` from `shop`; d
   help: replace with `shop.api`
 fixtures/broken/many.hesp:21:3: error[E032]: duplicate edge `shop.web -> shop.db: reads`
 fixtures/broken/many.hesp:22:14: error[E006]: unknown edge kind `invokes`; one of calls, reads, writes, http, ws, io
-fixtures/broken/many.hesp:23:3: error[E003]: an edge cannot connect `shop.api` to itself
+fixtures/broken/many.hesp:23:3: error[E036]: an edge cannot connect `shop.api` to itself
 fixtures/broken/many.hesp:25:5: error[E008]: `src` is not allowed on an edge; edge properties are desc, at, resolved
 fixtures/broken/many.hesp:28:17: error[E011]: cannot resolve `nowhere` from `shop`

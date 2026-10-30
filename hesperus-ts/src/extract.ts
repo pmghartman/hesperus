@@ -2,7 +2,7 @@
 
 import { Bindings } from "./bindings.js";
 import { analyze, classifyUrl, Finding, newProject } from "./heuristics.js";
-import { canonicalize, edge, edgeKey, EXTRACTOR, identify, Ir, IrEdge, IrNode, node, NodeKind, Protocol, within } from "./ir.js";
+import { canonicalize, edge, edgeKey, EXTRACTOR, identify, Ir, IrEdge, IrNode, node, NodeKind, Protocol } from "./ir.js";
 import { Workspace } from "./workspace.js";
 
 export interface ExtractOptions {
@@ -35,7 +35,7 @@ export function extract(repoRoot: string, opts: ExtractOptions): Ir {
     return n;
   };
   const addEdge = (from: string, to: string, kind: IrEdge["kind"], at: string, resolved = true) => {
-    if (from === to || within(from, to) || within(to, from)) return;
+    if (from === to) return;
     const e = edge(from, to, kind, { resolved });
     const key = edgeKey(e);
     const existing = edges.get(key);
