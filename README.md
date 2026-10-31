@@ -47,7 +47,7 @@ Click a node to inspect it; double-click a container to drill down (edges aggreg
 
 Settings: `hesperus.intent` (master file; defaults to the one the open `.hesp` belongs to), `hesperus.sourceRoot` (the repository the actual files describe; defaults to the workspace), `hesperus.actualDir` (default `.hesperus/actual`). `hesperus.hespPath`, `hesperus.serverPath` and `hesperus.extractorPath` replace the bundled tools with your own.
 
-Agents get the same workflow from [`skill/SKILL.md`](skill/SKILL.md). The command line is the same engine:
+Agents get the same workflow from [`skill/SKILL.md`](skill/SKILL.md); each release also carries it as `hesperus.skill`, which Claude installs from the download. The command line is the same engine:
 
 ```bash
 hesp check intent.hesp        # parse and validate, with fixes
@@ -65,6 +65,6 @@ hesp diff intent.hesp .hesperus/actual/intent.hesp
 | `hesperus-ts/` | the TypeScript extractor: a neutral fact stream plus a rule table (`src/rules.ts`); adding a framework is adding rows |
 | `docs/` | [the language spec](docs/SPEC.md) (every example is a test), [the IR schema](docs/ir.schema.json), [design decisions](docs/DECISIONS.md) |
 
-Develop with `cargo test --workspace`, `npm test` here and in `hesperus-ts/`, and `scripts/package-vsix.sh` to build the package for your machine. Pushing a `v*` tag builds and publishes all platforms.
+Develop with `cargo test --workspace`, `npm test` here and in `hesperus-ts/`, `scripts/package-vsix.sh` to build the package for your machine and `scripts/package-skill.sh` for the skill bundle. Pushing a `v*` tag builds and publishes all platforms plus the skill.
 
 Apache-2.0.

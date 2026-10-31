@@ -1,5 +1,5 @@
 # Builds a self-contained .vsix per platform when a version tag is pushed, attaches
-# them to the GitHub release, and publishes to the Marketplace and Open VSX when the
+# them and the hesperus.skill bundle to the GitHub release, and publishes to the Marketplace and Open VSX when the
 # VSCE_PAT / OVSX_PAT secrets exist. Nothing runs on ordinary pushes.
 name: release
 on:
@@ -36,13 +36,18 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      # the agent skill, as a .skill bundle Claude can install from the release page
+      - run: bash scripts/package-skill.sh dist/hesperus.skill
       - uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.vsix
+          files: |
+            dist/*.vsix
+            dist/hesperus.skill
       - if: ${{ env.VSCE_PAT != '' }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
