@@ -65,6 +65,6 @@ hesp diff intent.hesp .hesperus/actual/intent.hesp
 | `hesperus-ts/` | the TypeScript extractor: a neutral fact stream plus a rule table (`src/rules.ts`); adding a framework is adding rows |
 | `docs/` | [the language spec](docs/SPEC.md) (every example is a test), [the IR schema](docs/ir.schema.json), [design decisions](docs/DECISIONS.md) |
 
-Develop with `cargo test --workspace`, `npm test` here and in `hesperus-ts/`, `scripts/package-vsix.sh` to build the package for your machine and `scripts/package-skill.sh` for the skill bundle. Pushing a `v*` tag builds and publishes all platforms plus the skill.
+Develop with `cargo test --workspace`, `npm test` here and in `hesperus-ts/`, `scripts/package-vsix.sh` to build the package for your machine and `scripts/package-skill.sh` for the skill bundle. Releasing is a button: Actions → **release** → Run workflow (optionally with a new version number); it bumps the version, tags, builds all platforms plus the skill, and publishes.
 
 Apache-2.0.
