@@ -1,65 +1,51 @@
-# Release Hesperus. Run it from the Actions tab ("Run workflow"): it sets the version,
-# commits, creates the tag, builds a self-contained .vsix per platform plus the
-# hesperus.skill bundle, and publishes the GitHub release (and the Marketplace / Open VSX
-# when the VSCE_PAT / OVSX_PAT secrets exist). Pushing a v* tag by hand releases that
-# tag the same way. Nothing runs on ordinary pushes.
+# Manual release, run from the Actions tab. The version lives in tags only:
+# MAJOR.MINOR is one minor past the highest vMAJOR.MINOR.* tag (or the next major with
+# minor 0 when "Bump Major Version" is checked) and PATCH is the commit count, so every
+# release number is derivable from the repository. Files are stamped at build time, never
+# committed. Builds a self-contained .vsix per platform plus hesperus.skill, tags, and
+# publishes the GitHub release (and the Marketplace / Open VSX when the VSCE_PAT /
+# OVSX_PAT secrets exist). Refused when nothing changed since the last release.
 name: release
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: "Version to release (X.Y.Z). Empty: the version already in package.json."
-        required: false
-        default: ""
-  push:
-    tags: ["v*"]
+      major:
+        description: "Bump Major Version"
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  tag:
+  version:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     outputs:
-      tag: ${{ steps.v.outputs.tag }}
-      sha: ${{ steps.v.outputs.sha }}
+      ver: ${{ steps.v.outputs.ver }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
       - id: v
         env:
-          REQUESTED: ${{ github.event.inputs.version }}
+          MAJOR: ${{ inputs.major }}
         run: |
           set -euo pipefail
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-            echo "sha=${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          current=$(node -p "require('./package.json').version")
-          version="${REQUESTED:-$current}"
-          if [ "$version" != "$current" ]; then
-            bash scripts/set-version.sh "$version"
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git commit -am "Release v$version"
-            git push origin HEAD:"${GITHUB_REF_NAME}"
-          fi
-          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
-            echo "tag v$version already exists; pick a new version" >&2
+          last=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+          if [ -n "$last" ] && [ "$(git rev-list --count "v$last..HEAD")" = 0 ]; then
+            echo "::error::no commits since v$last; nothing to release"
             exit 1
           fi
-          git tag "v$version"
-          git push origin "v$version"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          mm=${last:-0.0.0}; mm=${mm%.*}            # MAJOR.MINOR of the last release
+          if [ "$MAJOR" = true ]; then next=$(( ${mm%.*} + 1 )).0
+          else next=${mm%.*}.$(( ${mm#*.} + 1 ))
+          fi
+          ver="$next.$(git rev-list --count HEAD)"
+          echo "ver=$ver" | tee -a "$GITHUB_OUTPUT"
 
   package:
-    needs: tag
+    needs: version
     strategy:
       matrix:
         include:
@@ -74,12 +60,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.tag.outputs.sha }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - run: bash scripts/set-version.sh ${{ needs.version.outputs.ver }}
       - run: bash scripts/package-vsix.sh ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
@@ -87,23 +72,37 @@ jobs:
           path: "*.vsix"
 
   release:
-    needs: [tag, package]
+    needs: [version, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ needs.tag.outputs.sha }}
+          fetch-depth: 0
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
       - run: bash scripts/package-skill.sh dist/hesperus.skill
+      - name: release notes
+        run: |
+          last=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+          git log --no-merges --format='- %s' ${last:+v$last..}HEAD | grep . > notes.md || echo "- No changes" > notes.md
+          cat notes.md
+      - name: tag
+        env:
+          VER: ${{ needs.version.outputs.ver }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v$VER"
+          git push origin "v$VER"
       - uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.tag.outputs.tag }}
-          generate_release_notes: true
+          tag_name: v${{ needs.version.outputs.ver }}
+          name: v${{ needs.version.outputs.ver }}
+          body_path: notes.md
           files: |
             dist/*.vsix
             dist/hesperus.skill
