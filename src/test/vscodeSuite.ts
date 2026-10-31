@@ -16,7 +16,7 @@ export async function run(): Promise<void> {
   const cfg = vscode.workspace.getConfiguration("hesperus");
   await cfg.update("hespPath", bundled ? undefined : path.join(repo, "target", "release", "hesp"), vscode.ConfigurationTarget.Global);
   await cfg.update("serverPath", bundled ? undefined : path.join(repo, "target", "release", "hesperus-lsp"), vscode.ConfigurationTarget.Global);
-  const ext = vscode.extensions.getExtension("pmghartman.vscode-hesperus");
+  const ext = vscode.extensions.getExtension("pmghartman.hesperus-vscode");
   assert.ok(ext, "extension found");
   await ext.activate();
   const commands = await vscode.commands.getCommands(true);

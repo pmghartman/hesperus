@@ -1,5 +1,5 @@
 {
-  "name": "vscode-hesperus",
+  "name": "hesperus-vscode",
   "displayName": "Hesperus",
   "description": "Hesperus system descriptions: syntax, language server, and a viewer that diffs intent against the code",
   "version": "0.1.0",
@@ -110,7 +110,7 @@
     "build:webview": "esbuild src/webview/main.ts --bundle --outfile=media/viewer.js --format=iife --sourcemap",
     "build:extractor": "cd hesperus-ts && npm run build && cd .. && esbuild hesperus-ts/dist/cli.js --bundle --platform=node --format=cjs --outfile=extractor/cli.js --log-level=warning",
     "compile-tests": "tsc -p tsconfig.json",
-    "test": "npm run build && npm run compile-tests && node --test out/test/",
+    "test": "npm run build && npm run compile-tests && node --test \"out/test/*.test.js\"",
     "test:vscode": "npm run build && npm run compile-tests && node out/test/runVsCode.js",
     "package": "vsce package --no-dependencies"
   },

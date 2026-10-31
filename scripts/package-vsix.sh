@@ -11,11 +11,10 @@ target="${1:-}"
 if [ -z "$target" ]; then
   case "$(uname -s)-$(uname -m)" in
     Darwin-arm64) target=darwin-arm64 ;;
-    Darwin-x86_64) target=darwin-x64 ;;
     Linux-x86_64) target=linux-x64 ;;
     Linux-aarch64) target=linux-arm64 ;;
     MINGW*|MSYS*|CYGWIN*) target=win32-x64 ;;
-    *) echo "unknown host; pass a target (darwin-arm64, darwin-x64, linux-x64, linux-arm64, win32-x64)" >&2; exit 2 ;;
+    *) echo "unknown host; pass a target (darwin-arm64, linux-x64, linux-arm64, win32-x64)" >&2; exit 2 ;;
   esac
 fi
 exe=""

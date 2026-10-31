@@ -13,8 +13,8 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "npm run build && node --test dist/test/",
-    "update-golden": "npm run build && UPDATE_GOLDEN=1 node --test dist/test/"
+    "test": "npm run build && node --test \"dist/test/*.test.js\"",
+    "update-golden": "npm run build && UPDATE_GOLDEN=1 node --test \"dist/test/*.test.js\""
   },
   "dependencies": {
     "ts-morph": "28.0.0"

@@ -1,4 +1,4 @@
-// vscode-hesperus: language client for hesperus-lsp, and the viewer webview.
+// hesperus-vscode: language client for hesperus-lsp, and the viewer webview.
 
 import * as cp from "node:child_process";
 import * as fs from "node:fs";

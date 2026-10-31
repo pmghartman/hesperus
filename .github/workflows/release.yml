@@ -1,10 +1,13 @@
 # Manual release, run from the Actions tab. The version lives in tags only:
-# MAJOR.MINOR is one minor past the highest vMAJOR.MINOR.* tag (or the next major with
+# MAJOR.MINOR is one minor past the highest vMAJOR.MINOR[.PATCH] tag (or the next major with
 # minor 0 when "Bump Major Version" is checked) and PATCH is the commit count, so every
 # release number is derivable from the repository. Files are stamped at build time, never
-# committed. Builds a self-contained .vsix per platform plus hesperus.skill, tags, and
-# publishes the GitHub release (and the Marketplace / Open VSX when the VSCE_PAT /
-# OVSX_PAT secrets exist). Refused when nothing changed since the last release.
+# committed. Tested, built as a self-contained .vsix per platform plus hesperus.skill,
+# published to the VS Code Marketplace through Microsoft Entra ID and to Open VSX by trusted
+# publishing, then tagged and released on GitHub; then only the two newest releases and runs
+# kept. Refused when nothing changed since the last release.
+# needs vars AZURE_CLIENT_ID (a user-assigned managed identity) and AZURE_TENANT_ID, and the
+# `marketplace` environment
 name: release
 on:
   workflow_dispatch:
@@ -14,17 +17,22 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
+# one release at a time: the next version is read off the tags
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
   version:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
       ver: ${{ steps.v.outputs.ver }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - id: v
@@ -32,85 +40,220 @@ jobs:
           MAJOR: ${{ inputs.major }}
         run: |
           set -euo pipefail
-          last=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+          last=$(git tag -l | sed -nE 's/^v([0-9]+\.[0-9]+(\.[0-9]+)?)$/\1/p' | sort -V | tail -1)
           if [ -n "$last" ] && [ "$(git rev-list --count "v$last..HEAD")" = 0 ]; then
             echo "::error::no commits since v$last; nothing to release"
             exit 1
           fi
-          mm=${last:-0.0.0}; mm=${mm%.*}            # MAJOR.MINOR of the last release
+          mm=$(echo "${last:-0.0}" | cut -d. -f1,2)  # MAJOR.MINOR of the last release
           if [ "$MAJOR" = true ]; then next=$(( ${mm%.*} + 1 )).0
           else next=${mm%.*}.$(( ${mm#*.} + 1 ))
           fi
           ver="$next.$(git rev-list --count HEAD)"
           echo "ver=$ver" | tee -a "$GITHUB_OUTPUT"
+      # the Marketplace's changelog tab: each release's commit subjects, newest first;
+      # notes.md, this release's alone, for the GitHub release
+      - name: changelog
+        env:
+          VER: ${{ steps.v.outputs.ver }}
+        run: |
+          tags=$(git tag -l | grep -E '^v[0-9]+\.[0-9]+(\.[0-9]+)?$' | sort -V)
+          log() { git log --no-merges --format='- %s' "$1" | grep . || echo "- No changes"; }
+          p=""; : > older.md
+          for t in $tags; do
+            { echo "## ${t#v}"; echo; log "${p:+$p..}$t"; echo; cat older.md; } > tmp.md && mv tmp.md older.md
+            p=$t
+          done
+          log "${p:+$p..}HEAD" > notes.md
+          { echo "# Changelog"; echo; echo "## $VER"; echo; cat notes.md; echo; cat older.md; } > CHANGELOG.md
+          cat CHANGELOG.md
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: changelog
+          path: |
+            CHANGELOG.md
+            notes.md
+          retention-days: 1
+
+  # the suites gating the publish, beside the builds rather than before them
+  check:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            hesperus-ts/package-lock.json
+      - run: npm ci
+      - run: npm ci
+        working-directory: hesperus-ts
+      - run: cargo test --workspace
+      - run: npm test
+      - run: npm test
+        working-directory: hesperus-ts
 
   package:
     needs: version
     strategy:
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: darwin-arm64
-          - os: macos-13
-            target: darwin-x64
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             target: linux-x64
-          - os: windows-latest
+          - os: windows-2025
             target: win32-x64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: changelog
+          path: ${{ runner.temp }}/changelog
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      # before set-version, so a new version does not change the cache key
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ matrix.target }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            hesperus-ts/package-lock.json
+      - run: cp "$RUNNER_TEMP/changelog/CHANGELOG.md" CHANGELOG.md
+        shell: bash
       - run: bash scripts/set-version.sh ${{ needs.version.outputs.ver }}
       - run: bash scripts/package-vsix.sh ${{ matrix.target }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: vsix-${{ matrix.target }}
           path: "*.vsix"
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
 
-  release:
-    needs: [version, package]
-    runs-on: ubuntu-latest
+  # Marketplace first: a failed publish leaves no tag, so the next run reuses the version,
+  # and --skip-duplicate steps over the packages that already went up
+  publish:
+    needs: [version, check, package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: marketplace
     permissions:
-      contents: write
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
-          fetch-depth: 0
-      - uses: actions/download-artifact@v4
+          node-version: 22
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
+          pattern: vsix-*
           path: dist
           merge-multiple: true
-      - run: bash scripts/package-skill.sh dist/hesperus.skill
-      - name: release notes
-        run: |
-          last=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
-          git log --no-merges --format='- %s' ${last:+v$last..}HEAD | grep . > notes.md || echo "- No changes" > notes.md
-          cat notes.md
-      - name: tag
-        env:
-          VER: ${{ needs.version.outputs.ver }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v$VER"
-          git push origin "v$VER"
-      - uses: softprops/action-gh-release@v2
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3
         with:
-          tag_name: v${{ needs.version.outputs.ver }}
-          name: v${{ needs.version.outputs.ver }}
-          body_path: notes.md
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      # only vsce, at the version pinned in package.json; --azure-credential takes the
+      # Azure CLI login above
+      - run: |
+          V=$(node -p "require('./package.json').devDependencies['@vscode/vsce']")
+          npx --yes "@vscode/vsce@$V" publish --azure-credential --skip-duplicate --packagePath dist/*.vsix
+      # Open VSX second: the Marketplace stays the gate. Trusted publishing: this job's OIDC token
+      # (id-token: write above) is exchanged for a short-lived Open VSX token, so no secret is stored
+      - run: npx --yes ovsx@1.2.0 publish --trusted-publishing --skip-duplicate --packagePath dist/*.vsix
+
+  release:
+    needs: [version, publish]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VER: ${{ needs.version.outputs.ver }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: vsix-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: changelog
+          path: changelog
+      - run: bash scripts/package-skill.sh dist/hesperus.skill
+      - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
+        with:
+          tag_name: v${{ env.VER }}
+          name: Hesperus ${{ env.VER }}
+          target_commitish: ${{ github.sha }}
+          body_path: changelog/notes.md
           files: |
             dist/*.vsix
             dist/hesperus.skill
-      - if: ${{ env.VSCE_PAT != '' }}
-        env:
-          VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: for f in dist/*.vsix; do npx @vscode/vsce publish --packagePath "$f"; done
-      - if: ${{ env.OVSX_PAT != '' }}
-        env:
-          OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: for f in dist/*.vsix; do npx ovsx publish "$f" -p "$OVSX_PAT"; done
+
+  # only the two newest numbered releases and tags kept; the next version is read off the
+  # highest tag and the changelog off the tags left. Only this workflow's two newest runs, this one included,
+  # and the two newest `marketplace` deployments
+  prune:
+    needs: [release]
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+      deployments: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: releases
+        run: |
+          gh release list --limit 200 --json tagName,createdAt --jq '[.[] | select(.tagName | test("^v[0-9]"))] | sort_by(.createdAt) | reverse | .[2:] | .[].tagName' |
+          while read -r t; do
+            echo "deleting release $t"
+            gh release delete "$t" --yes --cleanup-tag
+          done
+      - name: tags
+        run: |
+          gh api --paginate "repos/$GH_REPO/git/matching-refs/tags/v" --jq '.[].ref | ltrimstr("refs/tags/") | select(test("^v[0-9]+[.][0-9]+([.][0-9]+)?$"))' |
+          sort -V | head -n -2 |
+          while read -r t; do
+            echo "deleting tag $t"
+            gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$t"
+          done
+      - name: runs
+        run: |
+          gh run list --workflow release.yml --limit 200 --json databaseId,createdAt,status --jq 'sort_by(.createdAt) | reverse | .[2:] | .[] | select(.status == "completed") | .databaseId' |
+          while read -r id; do
+            echo "deleting run $id"
+            gh run delete "$id" || true
+          done
+      - name: deployments
+        run: |
+          # a deployment must be inactive before it can be deleted
+          gh api "repos/$GH_REPO/deployments?environment=marketplace&per_page=100" --jq 'sort_by(.created_at) | reverse | .[2:] | .[].id' |
+          while read -r id; do
+            echo "deleting deployment $id"
+            gh api -X POST "repos/$GH_REPO/deployments/$id/statuses" -f state=inactive > /dev/null || true
+            gh api -X DELETE "repos/$GH_REPO/deployments/$id" || true
+          done
