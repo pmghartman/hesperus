@@ -20,11 +20,11 @@ fn scratch(name: &str) -> PathBuf {
 
 #[test]
 fn check_fmt_ir_and_diff_exit_codes() {
-    let master = root().join("examples/phosphorus/phosphorus.hesp");
+    let master = root().join("crates/hesperus-core/tests/fixtures/phosphorus/phosphorus.hesp");
     let out = hesp().args(["check"]).arg(&master).output().unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(String::from_utf8_lossy(&out.stdout).contains("ok (57 nodes"));
-    let out = hesp().args(["fmt", "--check"]).arg(root().join("examples")).output().unwrap();
+    let out = hesp().args(["fmt", "--check"]).arg(root().join("crates/hesperus-core/tests/fixtures/phosphorus")).output().unwrap();
     assert!(out.status.success());
     let out = hesp().args(["ir"]).arg(&master).output().unwrap();
     assert!(out.status.success());

@@ -6,7 +6,7 @@ import { downloadAndUnzipVSCode, runTests } from "@vscode/test-electron";
 async function main() {
   const extensionDevelopmentPath = path.resolve(__dirname, "..", "..");
   const extensionTestsPath = path.resolve(__dirname, "vscodeSuite.js");
-  const workspace = path.resolve(extensionDevelopmentPath, "..", "examples", "phosphorus");
+  const workspace = path.resolve(extensionDevelopmentPath, "crates/hesperus-core/tests/fixtures/phosphorus");
   // newer macOS builds ship `Contents/MacOS/Code`, which @vscode/test-electron 2.5 still calls `Electron`
   let vscodeExecutablePath = await downloadAndUnzipVSCode();
   if (!fs.existsSync(vscodeExecutablePath)) {

@@ -159,7 +159,7 @@ fn formatter_is_idempotent_and_meaning_preserving() {
             inputs.push(("spec".into(), f.body));
         }
     }
-    for p in hesperus_core::project::find_hesp_files(&root().join("examples")) {
+    for p in hesperus_core::project::find_hesp_files(&root().join("crates/hesperus-core/tests/fixtures/phosphorus")) {
         inputs.push((p.display().to_string(), std::fs::read_to_string(&p).unwrap()));
     }
     inputs.push(("messy".into(), MESSY.to_string()));
@@ -430,7 +430,7 @@ fn review_regressions_3() {
     assert!(hesperus_core::project::is_generated("g.hesp", "# first\nhesperus 0.1\ngenerated \"hesperus-ts\"\n\nsystem s {\n  component a\n}\n"));
     assert!(!hesperus_core::project::is_generated("g.hesp", "hesperus 0.1\n\nsystem s {\n  component a\n}\n"));
     // a subsystem file checked alone may hold a child named like itself
-    let p = load_from_disk(&root().join("examples/phosphorus/server.hesp").display().to_string());
+    let p = load_from_disk(&root().join("crates/hesperus-core/tests/fixtures/phosphorus/server.hesp").display().to_string());
     assert!(!p.has_errors(), "{}", render(&p.diags, &|q| p.text_of(q).map(|s| s.to_string())));
     // definitions after the root are misplaced
     let p = check("hesperus 0.1\n\nsystem s {\n  component a\n}\n\nlet l = [a]\n");

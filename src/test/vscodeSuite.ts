@@ -10,9 +10,9 @@ export async function run(): Promise<void> {
   assert.equal(doc.languageId, "hesperus");
   await vscode.window.showTextDocument(doc);
   // with binaries bundled under bin/ the defaults work; otherwise point at this checkout's build
-  const repo = path.resolve(__dirname, "..", "..", "..");
+  const repo = path.resolve(__dirname, "..", "..");
   const fs = await import("node:fs");
-  const bundled = fs.existsSync(path.join(repo, "vscode-hesperus", "bin", "hesp"));
+  const bundled = fs.existsSync(path.join(repo, "bin", "hesp"));
   const cfg = vscode.workspace.getConfiguration("hesperus");
   await cfg.update("hespPath", bundled ? undefined : path.join(repo, "target", "release", "hesp"), vscode.ConfigurationTarget.Global);
   await cfg.update("serverPath", bundled ? undefined : path.join(repo, "target", "release", "hesperus-lsp"), vscode.ConfigurationTarget.Global);

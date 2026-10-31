@@ -7,7 +7,7 @@ out/
 .vscode-test/
 .DS_Store
 
-vscode-hesperus/media/viewer.js
-vscode-hesperus/media/viewer.js.map
-vscode-hesperus/bin/
-vscode-hesperus/extractor/
+media/viewer.js
+media/viewer.js.map
+/bin/
+/extractor/

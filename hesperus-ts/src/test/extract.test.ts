@@ -206,7 +206,7 @@ test("the Phosphorus intent and actual IR validate against the schema (when hesp
     t.skip(`no hesp binary at ${hesp}; set HESP_BIN`);
     return;
   }
-  const intentJson = execFileSync(hesp, ["ir", path.join(repoRoot, "examples", "phosphorus", "phosphorus.hesp")], { encoding: "utf8" });
+  const intentJson = execFileSync(hesp, ["ir", path.join(repoRoot, "crates", "hesperus-core", "tests", "fixtures", "phosphorus", "phosphorus.hesp")], { encoding: "utf8" });
   const intent = JSON.parse(intentJson) as Ir;
   checkSchema(intent, "phosphorus intent IR");
   if (!fs.existsSync(phosphorus)) {

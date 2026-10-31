@@ -2,6 +2,10 @@
 
 Every choice made without Patrick in the room, with the options weighed. Review these first.
 
+## Repository layout
+
+The repository *is* the VS Code extension: `package.json`, `src/`, `media/` and `syntaxes/` sit at the root, as in the earlier Hesperus, so one checkout packages with `vsce`. The language core and CLI live in `crates/`, the extractor in `hesperus-ts/`, and the Phosphorus intent that every suite exercises in `crates/hesperus-core/tests/fixtures/phosphorus/` (it was briefly `examples/`; Patrick asked for no examples directory).
+
 ## Where v1 lives
 
 **Chosen**: a fresh orphan branch `v1`, built in the git worktree `.claude/worktrees/v1`, so `main` (the earlier Hesperus: a TypeScript static-analysis extension) stays untouched until Patrick decides to merge or replace it.
@@ -143,7 +147,7 @@ The viewer's model, layout and renderer are pure TypeScript with no DOM or `vsco
 
 ## Layout placement
 
-Auto-layout lives only in the viewer (`vscode-hesperus/src/viewer/layout.ts`): a nested layered layout where each container ranks its children by longest path over the edges visible at that level, columns are ranks, rows are sorted by name. Nothing about layout enters the language, IR or CLI.
+Auto-layout lives only in the viewer (`src/viewer/layout.ts`): a nested layered layout where each container ranks its children by longest path over the edges visible at that level, columns are ranks, rows are sorted by name. Nothing about layout enters the language, IR or CLI.
 
 ## License
 
@@ -151,4 +155,4 @@ Apache-2.0, carried over from the existing repository.
 
 ## Example repository
 
-Phosphorus (`/Users/pmh/phosphorus`) was present, so `examples/phosphorus/` describes it and `hesp emit` runs against it. Extractor heuristics that Phosphorus does not exercise (Express routes, database clients, `ws`) are covered by fixtures under `hesperus-ts/test/fixtures/`, one per heuristic.
+Phosphorus (`/Users/pmh/phosphorus`) was present, so `crates/hesperus-core/tests/fixtures/phosphorus/` describes it and `hesp emit` runs against it. Extractor heuristics that Phosphorus does not exercise (Express routes, database clients, `ws`) are covered by fixtures under `hesperus-ts/test/fixtures/`, one per heuristic.

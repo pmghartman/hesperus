@@ -23,15 +23,15 @@ case "$target" in win32-*) exe=".exe" ;; esac
 
 echo "== rust binaries"
 cargo build --release
-mkdir -p vscode-hesperus/bin
-cp "target/release/hesp$exe" "target/release/hesperus-lsp$exe" vscode-hesperus/bin/
+mkdir -p bin
+cp "target/release/hesp$exe" "target/release/hesperus-lsp$exe" bin/
 
 echo "== extractor bundle"
 (cd hesperus-ts && [ -d node_modules ] || npm ci --silent)
 (cd hesperus-ts && npm run build --silent)
-(cd vscode-hesperus && [ -d node_modules ] || npm ci --silent)
-(cd vscode-hesperus && npx esbuild ../hesperus-ts/dist/cli.js --bundle --platform=node --format=cjs --outfile=extractor/cli.js --log-level=warning)
+[ -d node_modules ] || npm ci --silent
+npx esbuild hesperus-ts/dist/cli.js --bundle --platform=node --format=cjs --outfile=extractor/cli.js --log-level=warning
 
 echo "== vsix ($target)"
-(cd vscode-hesperus && npx vsce package --no-dependencies --target "$target")
-ls -la vscode-hesperus/*.vsix
+npx vsce package --no-dependencies --target "$target"
+ls -la ./*.vsix
