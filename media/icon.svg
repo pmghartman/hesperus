@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="hesperus">
+  <!-- Hesperus's mark: η, the evening star's initial, folded as Phosphorus's and Sulfur's: the
+       arch over the stem at the shoulder and under the leg. One sunset (amber, coral, rose, dusk
+       violet) runs across the whole glyph, and each band takes it at its own depth, as VS Code's
+       ribbon takes one blue: the stem at the back in the sunset's dusk twin, the arch a shade
+       under, the leg in front at full light. A crease shadow, darkest on each fold line and fading
+       across the band beneath; one white sheen over the whole, on nothing.
+       The source media/icon.png is rendered from -->
+  <defs>
+    <!-- the sunset, corner to corner over the glyph, and its dusk twin for faces turned away -->
+    <linearGradient id="sun" gradientUnits="userSpaceOnUse" x1="212" y1="220" x2="740" y2="872"><stop offset="0" stop-color="#ffd27a"/><stop offset="0.35" stop-color="#ff8f5a"/><stop offset="0.68" stop-color="#ec4f6e"/><stop offset="1" stop-color="#8b3394"/></linearGradient>
+    <linearGradient id="dusk" gradientUnits="userSpaceOnUse" x1="212" y1="220" x2="740" y2="872"><stop offset="0" stop-color="#f29a4a"/><stop offset="0.35" stop-color="#e5574a"/><stop offset="0.68" stop-color="#b8305f"/><stop offset="1" stop-color="#5a1c6e"/></linearGradient>
+    <!-- the creases: darkest on the fold line, gone a band-width off it -->
+    <linearGradient id="crease-stem" gradientUnits="userSpaceOnUse" x1="0" y1="486" x2="0" y2="590"><stop offset="0" stop-color="#3b0f50" stop-opacity="0.6"/><stop offset="0.4" stop-color="#3b0f50" stop-opacity="0.22"/><stop offset="1" stop-color="#3b0f50" stop-opacity="0"/></linearGradient>
+    <linearGradient id="crease-arch" gradientUnits="userSpaceOnUse" x1="614" y1="0" x2="510" y2="0"><stop offset="0" stop-color="#3b0f50" stop-opacity="0.6"/><stop offset="0.4" stop-color="#3b0f50" stop-opacity="0.22"/><stop offset="1" stop-color="#3b0f50" stop-opacity="0"/></linearGradient>
+    <linearGradient id="sheen" gradientUnits="userSpaceOnUse" x1="0" y1="200" x2="0" y2="900"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <filter id="soft" filterUnits="userSpaceOnUse" x="-200" y="-200" width="1424" height="1424"><feGaussianBlur stdDeviation="16"/></filter>
+    <filter id="drop" filterUnits="userSpaceOnUse" x="-200" y="-200" width="1424" height="1424"><feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#3b0f50" flood-opacity="0.26"/></filter>
+    <!-- the stem, as tall as the arch, with η's small entry spur; the arch, a half ring; the leg,
+         the one stroke down past the baseline -->
+    <polygon id="p-stem" stroke-width="32" stroke-linejoin="round" points="226,256 380,250 380,692 270,692 270,306 226,306"/>
+    <path id="p-arch" stroke-width="32" stroke-linejoin="round" d="M270,470 A235,250 0 0,1 740,470 L630,470 A125,145 0 0,0 380,470 Z"/>
+    <!-- the leg's top follows the arch's outer curve, so the arch's shoulder runs under it -->
+    <path id="p-leg" stroke-width="32" stroke-linejoin="round" d="M630,258.3 A235,250 0 0,1 740,470 L740,872 L630,872 Z"/>
+    <mask id="m-stem" maskUnits="userSpaceOnUse" x="-100" y="-100" width="1224" height="1224"><use xlink:href="#p-stem" fill="#fff" stroke="#fff"/></mask>
+    <mask id="m-arch" maskUnits="userSpaceOnUse" x="-100" y="-100" width="1224" height="1224"><use xlink:href="#p-arch" fill="#fff" stroke="#fff"/></mask>
+    <mask id="m-all" maskUnits="userSpaceOnUse" x="-100" y="-100" width="1224" height="1224"><g fill="#fff" stroke="#fff"><use xlink:href="#p-stem"/><use xlink:href="#p-arch"/><use xlink:href="#p-leg"/></g></mask>
+  </defs>
+  <!-- centred: the glyph spans x 226..740, y 220..872 -->
+  <g style="isolation:isolate" transform="translate(29 -34)">
+    <g filter="url(#drop)">
+      <use xlink:href="#p-stem" fill="url(#dusk)" stroke="url(#dusk)"/>
+      <g mask="url(#m-stem)">
+        <use xlink:href="#p-arch" fill="#3b0f50" stroke="#3b0f50" opacity="0.45" filter="url(#soft)"/>
+        <rect x="180" y="486" width="220" height="104" fill="url(#crease-stem)"/>
+      </g>
+      <use xlink:href="#p-arch" fill="url(#sun)" stroke="url(#sun)"/>
+      <use xlink:href="#p-arch" fill="url(#dusk)" stroke="url(#dusk)" opacity="0.45"/>
+      <g mask="url(#m-arch)"><rect x="510" y="150" width="250" height="340" fill="url(#crease-arch)"/></g>
+      <use xlink:href="#p-leg" fill="url(#sun)" stroke="url(#sun)"/>
+    </g>
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#sheen)" opacity="0.3" mask="url(#m-all)" style="mix-blend-mode:overlay"/>
+  </g>
+</svg>
