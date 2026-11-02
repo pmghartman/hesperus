@@ -1,8 +1,8 @@
 # Hesperus language specification, version 0.1
 
-Hesperus is a non-executable, non-Turing-complete descriptor language for software systems. A `.hesp` file describes a graph: nested containers (system, subsystem, component), boundaries (ingress, egress, store, external, network, hardware) and typed edges between them. Every file lowers to a canonical JSON intermediate representation (IR, schema in `ir.schema.json`); the parser, printer, formatter, differ, extractors, language server and viewer all speak IR.
+Hesperus is a non-executable, non-Turing-complete descriptor language for software systems. A `.hesp` file describes a graph: nested containers (system, subsystem, component), boundaries (ingress, egress, store, external, network, hardware) and typed edges between them. Every file lowers to a canonical JSON intermediate representation (IR, schema in `ir.schema.json`); the parser, printer, formatter, extractors and language server all speak IR.
 
-Two descriptions of one system exist side by side. **Intent** files are written by people or agents and tracked in git. **Actual** files are emitted by an extractor from the code, carry a `generated` header, are gitignored and are never edited. The differ merges them into a **unified** graph in which every node and edge is `match`, `intent-only`, `actual-only` or `conflict`.
+**Intent** files are written by people or agents and tracked in git. An extractor reads the intent's IR for three things, `src` bindings, boundary names and constraints, and writes the **flow** (`flow.json`, schema in `flow.schema.json`): the entry points of the code, the calls each reaches and where each path leaves the program, with the constraints checked over it. The extractor's own IR output can still be printed as `.hesp` files (`hesp print`); such files carry a `generated` header (section 8). Nothing compares two `.hesp` graphs.
 
 Everything is deterministic: the same input produces byte-identical output on any machine. There are no coordinates, layout hints or timestamps anywhere in the language or IR.
 
@@ -94,7 +94,7 @@ subsystem catalog "Product catalog" {
 
 ## 4. Nodes and identifiers
 
-A node is `kind name "optional label" { ... }`. The **label** is free text shown in the viewer and never diffed. The node's **id** is its fully qualified path: the names of its ancestors and itself joined by `.`, so `search` above has id `shop.catalog.search`. Ids must be unique (E010); the differ matches on them. In a master file, a child of the root `system` may not share the root's name (E033), so that the root's name always means the root in a path; a subsystem checked on its own is exempt, since it is normally a child of some system.
+A node is `kind name "optional label" { ... }`. The **label** is free text shown in the viewer and never diffed. The node's **id** is its fully qualified path: the names of its ancestors and itself joined by `.`, so `search` above has id `shop.catalog.search`. Ids must be unique (E010); the extractor binds on them. In a master file, a child of the root `system` may not share the root's name (E033), so that the root's name always means the root in a path; a subsystem checked on its own is exempt, since it is normally a child of some system.
 
 Kinds form a closed set:
 
@@ -114,21 +114,21 @@ Boundary kinds (the last six) cannot contain nodes (E030).
 
 ### Properties
 
-| property | type | allowed on | diffed |
+| property | type | allowed on | read by the extractor |
 |---|---|---|---|
 | `desc` | string | any node, any edge | no |
-| `src` | string or list of strings | system, subsystem, component | no |
-| `protocol` | one of `http ws grpc tcp udp ssh other` | ingress, egress, external, network | yes |
-| `host` | string | external, network | yes |
-| `engine` | string | store | yes |
-| `at` | list of `"path:line"` strings | any node, any edge | no |
-| `resolved` | `true` or `false`, default `true` | edges | no |
+| `src` | string or list of strings | system, subsystem, component | binding |
+| `protocol` | one of `http ws grpc tcp udp ssh other` | ingress, egress, external, network | binding key for ingress and egress |
+| `host` | string | external, network | binding key for external |
+| `engine` | string | store | binding key for store |
+| `at` | list of `"path:line"` strings | any node, any edge | no (written by extractors) |
+| `resolved` | `true` or `false`, default `true` | edges | no (written by extractors) |
 
 Unknown keys are E007; keys on the wrong kind are E008; wrong value types are E009; an unknown protocol is E023.
 
 `src` is a **binding**: a list of path globs (`*`, `**`, `?`, `{a,b}`) relative to the repository root. The extractor assigns every source file to the bound node whose glob has the longest literal prefix match (ties: the deeper node, then the longer pattern); files that match nothing go to the `unbound` subsystem, grouped by directory two levels deep: `apps/web/x.ts` lands in `unbound.apps.web`, a component inside a subsystem `apps`; a directory with no code in subdirectories is a component; top-level files land in `unbound.root`. Bindings are intent-only; the extractor copies none of them into actual files, except that each node of the synthesized `unbound` subsystem carries the directory glob it was grouped by, so a reader can turn it into a binding.
 
-`at` is **evidence**: `"path:line"` into the repository, written by extractors so viewers can jump to source. The differ ignores it.
+`at` is **evidence**: `"path:line"` into the repository, written by extractors so viewers can jump to source.
 
 ```hesp
 hesperus 0.1
@@ -201,7 +201,7 @@ In canonical form an edge is printed in the block of the lowest common ancestor 
 
 An edge's identity is `(from, to, kind)`; the same triple written twice is one edge (E032). An edge cannot connect a node to itself (E036). A property may be set once per block (E037). Labels and `desc` are free text. `resolved: false` marks an edge an extractor emitted without being able to resolve its target statically; its target is then usually the `network` node `unresolved`.
 
-Constraints are checked by the differ against the **actual** graph. `forbid a -> b` fails if any actual edge runs from `a` or a descendant of `a` to `b` or a descendant of `b`; with `: kind` only edges of that kind count. `require a -> b` fails if no such edge exists. A violated constraint makes `hesp diff` exit 1.
+Constraints are checked by the extractor over the flow, that is over every function in the repository. `forbid a -> b` fails if any crossing runs from code bound to `a` or a descendant of `a` to `b` or a descendant of `b`; with `: kind` only crossings of that kind count. `require a -> b` fails if no such crossing exists. Results, with witness sites, land in `flow.json`; a violated constraint makes `hesperus-ts check` exit 1. Edges written in the intent are legal but not read.
 
 ```hesp
 hesperus 0.1
@@ -304,7 +304,7 @@ The IR holds only the expanded graph. `hesp fmt` formats the source as written a
 
 ## 8. Generated files
 
-An extractor's output starts with a `generated` line naming the extractor. Such a file is a fact about the code, not an opinion: `hesp fmt` never rewrites it (its content is already canonical, so `--check` passes), the language server reports an information diagnostic on it and refuses rename and formatting edits, and the skill tells agents never to touch it.
+A `.hesp` file printed from an extractor's IR starts with a `generated` line naming the extractor. Such a file is a fact about the code, not an opinion: `hesp fmt` never rewrites it (its content is already canonical, so `--check` passes) and the language server refuses formatting edits on it. `hesp emit` no longer writes such files; `hesp print` on extractor output does.
 
 ```hesp
 hesperus 0.1
@@ -366,18 +366,9 @@ A template-free file whose statements already follow this order is its own canon
 
 The IR is JSON as described by `ir.schema.json`. Canonical IR has keys in schema order, two-space indentation, nodes sorted by `id`, edges by `(from, to, kind)`, constraints by `(rule, from, to, kind)`, `src` and `at` lists sorted, a trailing newline. Every node carries `id`, `kind`, `name`, `parent`, `label`, `desc`, `src`, `protocol`, `host`, `engine`, `at`; every edge `from`, `to`, `kind`, `label`, `desc`, `resolved`, `at`; the document carries `hesperus`, `generated`, `root`, `files`, `nodes`, `edges`, `constraints`. `files` records which node is the root of which file so the printer can split the graph back into the same files. `hesp ir --locations` adds an optional `locations` map from node id to `path:line` of its declaration (the path relative to the master's directory), for editors; it works on intent and actual files alike, is not part of the canonical IR, and the printer ignores it. Names of `let` lists, templates, parameters and `each` variables are plain identifiers and may not contain `$` (E028).
 
-## 12. The unified graph
+## 12. The flow
 
-`hesp diff intent.hesp actual.hesp` loads both projects and matches nodes by id and edges by `(from, to, kind)`:
-
-| status | meaning | text mark |
-|---|---|---|
-| `match` | both sides, diffed properties agree | `=` |
-| `intent-only` | declared, not built: work for an agent | `-` |
-| `actual-only` | code nobody declared: drift | `+` |
-| `conflict` | both sides, `kind`, `protocol`, `host` or `engine` disagree (only when both sides set the property) | `!` |
-
-Constraints come from the intent and are evaluated against the actual (`ok` or `x`). With `--depth N` edges are aggregated to the nodes visible at depth N: an aggregated edge carries the count of underlying edges and the worst status among them (`conflict` > `actual-only` > `intent-only` > `match`). `--json` prints the unified graph as JSON; `--all` includes matches in the text output, which otherwise lists differences only.
+`hesp emit --lang ts <repo> --intent <master>` runs the extractor with the intent's IR and has it write `<out>/flow.json` (default `.hesperus/actual/flow.json`; schema `flow.schema.json`): `components` (the intent's containers), `units` (every function, with the component that owns its file), `entries` (each entry point with its steps in source order and the boundary each path ends in) and `constraints` (each rule with `satisfied` and its witnesses). `hesp init` writes an intent from the code, then the same flow. There is no `hesp diff`; `hesperus-ts entries | flow | reaches | boundaries | check` read the flow.
 
 ## 13. Diagnostics
 

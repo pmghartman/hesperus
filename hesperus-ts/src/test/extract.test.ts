@@ -24,6 +24,8 @@ const schema = JSON.parse(fs.readFileSync(path.join(repoRoot, "docs", "ir.schema
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 const validate = ajv.compile(schema);
 
+const validateFlow = ajv.compile(JSON.parse(fs.readFileSync(path.join(repoRoot, "docs", "flow.schema.json"), "utf8")));
+
 function checkSchema(ir: unknown, what: string) {
   const ok = validate(ir);
   assert.ok(ok, `${what} violates ir.schema.json: ${JSON.stringify(validate.errors, null, 2)}`);
@@ -225,7 +227,7 @@ test("the Phosphorus intent and actual IR validate against the schema (when hesp
   assert.equal(toJson(actual), toJson(extract(phosphorus, { intent })));
 });
 
-test("hesp init: every fixture starts with intent and actual matching (when hesp is present)", (t: TestContext) => {
+test("hesp init: every fixture gets an intent and a flow (when hesp is present)", (t: TestContext) => {
   const hesp = process.env.HESP_BIN ?? path.join(repoRoot, "target", "debug", "hesp");
   if (!fs.existsSync(hesp)) {
     t.skip(`no hesp binary at ${hesp}; set HESP_BIN`);
@@ -237,10 +239,17 @@ test("hesp init: every fixture starts with intent and actual matching (when hesp
     try {
       const r = spawnSync(hesp, ["init", "--lang", "ts", path.join(fixtures, name, "repo"), "--dir", dir, "--out", path.join(dir, "actual"), "--extractor", cli], { encoding: "utf8" });
       assert.equal(r.status, 0, `${name}: ${r.stderr}`);
-      assert.match(r.stderr, /intent and actual match/, `${name}: ${r.stderr}`);
+      assert.match(r.stderr, /flow\.json \(\d+ entr(y|ies)\)/, `${name}: ${r.stderr}`);
       const intent = fs.readdirSync(dir).filter((f) => f.endsWith(".hesp"));
       assert.equal(intent.length, 1, name);
       assert.doesNotMatch(fs.readFileSync(path.join(dir, intent[0]), "utf8"), /generated|unbound|\bat:/, name);
+      // stdout names the intent first, then the flow; the actual directory holds only the flow
+      const lines = r.stdout.trim().split("\n");
+      assert.ok(lines[0].endsWith(intent[0]), `${name}: ${r.stdout}`);
+      assert.ok(lines[lines.length - 1].endsWith("flow.json"), `${name}: ${r.stdout}`);
+      assert.deepEqual(fs.readdirSync(path.join(dir, "actual")), ["flow.json"], name);
+      const flow = JSON.parse(fs.readFileSync(path.join(dir, "actual", "flow.json"), "utf8"));
+      assert.ok(validateFlow(flow), `${name} flow violates flow.schema.json: ${JSON.stringify(validateFlow.errors, null, 2)}`);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -106,18 +106,6 @@ impl Backend {
         let mut by_file: HashMap<String, Vec<Diagnostic>> = HashMap::new();
         for f in &project.files {
             by_file.entry(f.path.clone()).or_default();
-            if f.ast.generated.is_some() {
-                let index = LineIndex::new(&f.text);
-                let (s, e) = f.ast.generated.as_ref().map(|g| (g.span.start, g.span.end)).unwrap();
-                by_file.get_mut(&f.path).unwrap().push(Diagnostic {
-                    range: to_range(&index, s, e),
-                    severity: Some(DiagnosticSeverity::INFORMATION),
-                    code: Some(NumberOrString::String("generated".into())),
-                    source: Some("hesperus".into()),
-                    message: "generated file: edits are overwritten by the next `hesp emit`; change the intent instead".into(),
-                    ..Default::default()
-                });
-            }
         }
         let mut indexes: HashMap<String, LineIndex> = HashMap::new();
         for d in &project.diags {
@@ -443,9 +431,6 @@ impl LanguageServer for Backend {
     async fn prepare_rename(&self, params: TextDocumentPositionParams) -> Result<Option<PrepareRenameResponse>> {
         let Some((path, text, offset)) = self.text_and_offset(&params.text_document.uri, params.position) else { return Ok(None) };
         let project = self.project_for(&path);
-        if project.ir.generated.is_some() {
-            return Ok(None);
-        }
         let Some((id, _)) = self.node_at(&project, &path, offset) else { return Ok(None) };
         let index = LineIndex::new(&text);
         let span = project
@@ -462,9 +447,6 @@ impl LanguageServer for Backend {
         let pos = params.text_document_position.position;
         let Some((path, _text, offset)) = self.text_and_offset(&params.text_document_position.text_document.uri, pos) else { return Ok(None) };
         let project = self.project_for(&path);
-        if project.ir.generated.is_some() {
-            return Err(tower_lsp::jsonrpc::Error::invalid_params("generated files cannot be edited; change the intent instead"));
-        }
         if !hesperus_core::lexer::is_valid_ident(&params.new_name) {
             return Err(tower_lsp::jsonrpc::Error::invalid_params(format!("`{}` is not a valid identifier", params.new_name)));
         }

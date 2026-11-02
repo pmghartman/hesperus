@@ -1,5 +1,5 @@
 //! Golden tests: SPEC examples round-trip, broken fixtures produce the expected
-//! diagnostics, the formatter is idempotent, and the differ covers every status.
+//! diagnostics, and the formatter is idempotent.
 //! Set UPDATE_GOLDEN=1 to rewrite the expected files.
 
 use hesperus_core::diag::{render, Diagnostic, Severity};
@@ -247,38 +247,6 @@ fn malformed_input_never_panics() {
         }
     }
     assert!(runs > 300);
-}
-
-/// Differ goldens: all four statuses, forbidden and required edges, nested containers, aggregation.
-#[test]
-fn differ_goldens() {
-    for name in ["statuses", "nested", "aggregate"] {
-        let dir = fixtures().join("diff").join(name);
-        let intent = load_from_disk(&dir.join("intent.hesp").display().to_string());
-        let actual = load_from_disk(&dir.join("actual.hesp").display().to_string());
-        assert!(!intent.has_errors(), "{name} intent: {}", render(&intent.diags, &|p| intent.text_of(p).map(|s| s.to_string())));
-        assert!(!actual.has_errors(), "{name} actual: {}", render(&actual.diags, &|p| actual.text_of(p).map(|s| s.to_string())));
-        let u = hesperus_core::diff::diff(&intent.ir, &actual.ir);
-        check_golden(&dir.join("unified.json"), &u.to_json());
-        check_golden(&dir.join("diff.txt"), &hesperus_core::diff::render(&u, true));
-        if name == "aggregate" {
-            let d1 = hesperus_core::diff::aggregate(&u, 1);
-            check_golden(&dir.join("depth1.txt"), &hesperus_core::diff::render(&d1, true));
-            check_golden(&dir.join("depth1.json"), &d1.to_json());
-            let d2 = hesperus_core::diff::aggregate(&u, 2);
-            check_golden(&dir.join("depth2.txt"), &hesperus_core::diff::render(&d2, true));
-        }
-        if name == "statuses" {
-            use hesperus_core::diff::Status;
-            let st = |id: &str| u.nodes.iter().find(|n| n.id == id).map(|n| n.status).unwrap();
-            assert_eq!(st("shop.api"), Status::Match);
-            assert_eq!(st("shop.recommendations"), Status::IntentOnly);
-            assert_eq!(st("shop.filesystem"), Status::ActualOnly);
-            assert_eq!(st("shop.db"), Status::Conflict);
-            assert_eq!(st("shop.edge"), Status::Conflict);
-            assert_eq!(u.summary.violations, 3);
-        }
-    }
 }
 
 /// The printer places every edge in the lowest common ancestor and the result re-parses.

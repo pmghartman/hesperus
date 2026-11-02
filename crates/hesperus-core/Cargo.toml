@@ -1,6 +1,6 @@
 [package]
 name = "hesperus-core"
-description = "Hesperus descriptor language: lexer, parser, IR, printer, formatter, differ"
+description = "Hesperus descriptor language: lexer, parser, IR, printer, formatter"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

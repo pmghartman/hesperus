@@ -44,7 +44,7 @@ system shop "Web shop" {
 }
 ```
 
-`hesp init --lang ts <repo>` writes one from the code (a component per source directory, every store and host found); `hesp emit --lang ts <repo> --intent <master>` reads the code and writes `.hesperus/actual/flow.json` (gitignored; never edit it). `hesp fmt` and `hesp check <master>` keep the file tidy and valid; fix every diagnostic. Edges between components (`api -> db: reads`) are legal but no longer read: the flow shows what the code does, the intent only names and constrains it.
+`hesp init --lang ts <repo>` writes one from the code (a component per source directory, every store and host found), then the flow, and reports the entry count; `hesp emit --lang ts <repo> --intent <master>` reads the code and writes only `.hesperus/actual/flow.json` (`--out <dir>` for elsewhere; gitignored; never edit it), printing its path. `hesp fmt` and `hesp check <master>` keep the file tidy and valid; fix every diagnostic. Edges between components (`api -> db: reads`) are legal but no longer read: the flow shows what the code does, the intent only names and constrains it.
 
 ## Reading flow.json directly
 

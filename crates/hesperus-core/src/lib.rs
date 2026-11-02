@@ -2,11 +2,10 @@
 //!
 //! Pipeline: `lexer` → `parser` (AST) → `expand` (templates, each) → `lower`
 //! (imports, ids, resolution, validation) → `ir`. `format` prints the AST,
-//! `print` prints the IR, `diff` merges two IRs, `scaffold` makes an intent from an actual.
+//! `print` prints the IR, `scaffold` makes an intent from an extracted IR.
 
 pub mod ast;
 pub mod diag;
-pub mod diff;
 pub mod expand;
 pub mod format;
 pub mod ir;

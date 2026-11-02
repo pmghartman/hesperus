@@ -1,6 +1,6 @@
 [package]
 name = "hesp"
-description = "Hesperus command line: check, fmt, ir, emit, diff"
+description = "Hesperus command line: check, fmt, ir, print, emit, init"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

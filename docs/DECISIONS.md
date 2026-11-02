@@ -47,12 +47,12 @@ The repository *is* the VS Code extension: `package.json`, `src/`, `media/` and 
 ## Boundary bindings
 
 **Chosen**: besides `src` globs on containers, an intent boundary node binds a detected boundary of the same kind when its binding key matches: `host` for `external`, `engine` for `store`, `protocol` for `ingress`/`egress`, the name for `network`/`hardware`. The actual node then takes the intent node's id (including its position in the tree). Unbound detections get extractor-generated names (`postgres`, `api_stripe_com`, `filesystem`, `processes`, `http`, `ws`, `unresolved`) under the root.
-**Options**: match externals by generated name only (forces authors to spell `api_stripe_com`); let the differ match by property (contradicts "the differ matches on ids").
-**Why**: the differ stays a pure id matcher; the extractor owns all heuristics, including how a detection is named.
+**Options**: match externals by generated name only (forces authors to spell `api_stripe_com`); match by property in the core (contradicts "ids are the identity").
+**Why**: the core stays a pure id matcher; the extractor owns all heuristics, including how a detection is named.
 
 ## Required and forbidden edges
 
-**Chosen**: `require a -> b [: kind]` and `forbid a -> b [: kind]`, evaluated by the differ against the actual graph, with container endpoints meaning "any descendant". A violation exits 1.
+**Chosen**: `require a -> b [: kind]` and `forbid a -> b [: kind]`, with container endpoints meaning "any descendant". First evaluated by the differ against the actual graph; since the flow pivot, by the extractor over every function (witnesses in `flow.json`, `hesperus-ts check` exits 1).
 **Options**: evaluate against intent too; wildcard kinds; richer predicates.
 **Why**: a declared intent edge missing from actual is already `intent-only`; `require` upgrades that to a failure. Structural constraints only, per the brief.
 
@@ -78,15 +78,15 @@ Master imports one file per subsystem with `import "./name.hesp"`; the imported 
 
 ## IR shape
 
-Flat sorted arrays of nodes (with `parent`) and edges, keyed by fully qualified id. Canonical JSON prints every field (nulls and empty lists included) so the output is a fixed layout; inputs may omit defaults. Chosen over a nested tree because the differ, aggregation and the viewer all index by id, and a flat array is trivially sorted.
+Flat sorted arrays of nodes (with `parent`) and edges, keyed by fully qualified id. Canonical JSON prints every field (nulls and empty lists included) so the output is a fixed layout; inputs may omit defaults. Chosen over a nested tree because the extractor and the viewer index by id, and a flat array is trivially sorted.
 
-## Unified diff text
+## Unified diff text (removed)
 
-`=` match, `-` intent-only, `+` actual-only, `!` conflict, `ok`/`x` for constraints, following `diff intent actual`. Differences only by default; `--all` adds matches; `--depth N` aggregates edges. Exit 0 unless a constraint is violated (or input fails to parse: exit 2). Drift alone is information, not failure.
+`hesp diff` printed `=` match, `-` intent-only, `+` actual-only, `!` conflict and `ok`/`x` for constraints, following `diff intent actual`, with `--all`, `--depth N` and `--json`. Removed with the flow pivot: `hesperus-core` no longer has `diff.rs` or its goldens, `hesp` has no `diff`, and the language server no longer marks generated files or refuses to rename in them. What remains of "actual": the `generated` header in the grammar and `hesp print`, which can still turn extractor IR into `.hesp` files; `hesp fmt` and the server's formatting still leave such files alone.
 
 ## Extractor placement and invocation
 
-`hesp emit --lang ts <repo>` runs the Node extractor as a subprocess (`--extractor <command>`, else `$HESPERUS_TS`, else `hesperus-ts` on `PATH`), feeding it the intent IR on stdin and reading actual IR from stdout, then prints `.hesp` files. Rust never parses TypeScript; TypeScript never prints `.hesp`.
+`hesp emit --lang ts <repo>` runs the Node extractor as a subprocess (`--extractor <command>`, else `$HESPERUS_TS`, else `hesperus-ts` on `PATH`), feeding it the intent IR on stdin and `--flow <out>/flow.json` on the command line. The extractor writes the flow itself; its IR on stdout is checked for shape and dropped by `emit`, and turned into the intent by `init`. Rust never parses TypeScript; TypeScript never prints `.hesp`.
 **Option rejected**: a Node addon or embedding a JS engine in Rust (heavy, non-deterministic across platforms); writing actual files from TypeScript (two printers to keep byte-identical).
 
 ## `hesp emit` without `--intent`
@@ -95,7 +95,7 @@ Flat sorted arrays of nodes (with `parent`) and edges, keyed by fully qualified 
 
 ## `hesp init`: an intent that starts matched
 
-`hesp init --lang ts <repo>` runs the extractor with no intent, then makes that output the intent: the `unbound` components move up to the root (suffixed `_src` when a boundary already holds the name), and evidence and the `generated` marker are dropped. Their `src` globs bind the same files to the same ids, so emitting against the new intent reproduces it; init runs that emit and diffs the two, warning if anything differs. A root name that is a reserved word (a repository called `hesperus`) gets an `_` added. It writes only new files: an existing intent belongs to the user. When the actual lands inside the intent's directory, init appends it to that directory's `.gitignore` (`.hesperus/` for the default location) unless an entry is already there; actual files are never committed.
+`hesp init --lang ts <repo>` runs the extractor with no intent, then makes that output the intent: the `unbound` components move up to the root (suffixed `_src` when a boundary already holds the name), and evidence and the `generated` marker are dropped. Their `src` globs bind the same files to the same ids; init then emits the flow against the new intent and reports the entry count (`hesp init: wrote <intent> and <flow> (N entries)`). A root name that is a reserved word (a repository called `hesperus`) gets an `_` added. It writes only new files: an existing intent belongs to the user. When the actual lands inside the intent's directory, init appends it to that directory's `.gitignore` (`.hesperus/` for the default location) unless an entry is already there; actual files are never committed.
 
 ## One unresolved sink
 
@@ -105,21 +105,21 @@ Edges whose target cannot be identified statically all point at `network unresol
 
 **Chosen**: the viewer has one mode, Flow. The Intent/Actual/Unified graph and the diff that drove it are gone from the extension. The `.hesp` file is read for three things: `src` bindings (which component a function's file belongs to, for grouping and tinting), boundary names (`store db { engine: "postgres" }` names the detected store), and `require`/`forbid` constraints, now checked in the flow over every function with witness sites and the entries that pass through them. Edges in the intent stay legal in the grammar but are not read. The extractor answers questions directly (`entries`, `flow`, `reaches`, `boundaries --since`, `check`) and serves them over MCP; the viewer and the sidebar read the same `flow.json`.
 **Options**: keep the diff beside the flow (two models of the same code, one of them file-level and derivable with grep); make the intent describe functions (nobody will maintain it).
-**Why**: the questions a developer or an agent asks are "what happens on this request", "what does my change affect", "what does this diff newly reach", "is this rule broken". The file-level diff answered none of them; the constraints did, and they get better witnesses from the flow. The Rust side (`hesp` CLI, language server, `diff`) is untouched until a session with a toolchain slims it; `hesp emit` still prints the actual `.hesp` files nobody reads.
+**Why**: the questions a developer or an agent asks are "what happens on this request", "what does my change affect", "what does this diff newly reach", "is this rule broken". The file-level diff answered none of them; the constraints did, and they get better witnesses from the flow. The Rust side followed: `hesp diff` and `hesperus-core::diff` are gone, `hesp emit` writes only `flow.json`, and the language server's generated-file diagnostic and rename guard went with the actual files they described.
 
 ## Flow is a separate artifact
 
-**Chosen**: `hesp emit` has the extractor write `flow.json` (schema `docs/flow.schema.json`) beside the actual files; the `.hesp` IR, the Rust differ and the goldens are untouched, and the viewer's Flow mode reads the file directly. Entry points are route handlers found by the existing ingress rules, `main`, `bin`/shebang modules, CLI command handlers and host-called exports; steps are calls whose callee resolves (through the TypeScript checker, then the workspace's own import resolution) to a declaration in the repository, in source position order; crossings are the findings of the same rule table, attributed to the function they sit in. Inline callbacks are transparent (their calls belong to the enclosing function); an inline route handler is a unit of its own. Bounded by a depth of 8 and 400 steps per entry; a callee already on the path is `cut: cycle`, one expanded earlier in the entry `cut: seen`.
+**Chosen**: `hesp emit` has the extractor write `flow.json` (schema `docs/flow.schema.json`) as its only output; the `.hesp` IR is unchanged, and the viewer reads the file directly. Entry points are route handlers found by the existing ingress rules, `main`, `bin`/shebang modules, CLI command handlers and host-called exports; steps are calls whose callee resolves (through the TypeScript checker, then the workspace's own import resolution) to a declaration in the repository, in source position order; crossings are the findings of the same rule table, attributed to the function they sit in. Inline callbacks are transparent (their calls belong to the enclosing function); an inline route handler is a unit of its own. Bounded by a depth of 8 and 400 steps per entry; a callee already on the path is `cut: cycle`, one expanded earlier in the entry `cut: seen`.
 **Options**: function-level nodes in the IR (every `.hesp` file would gain hundreds of nodes and the diff would compare functions, which the intent never names); an ordering property on `calls` edges (the IR has no order and file-level edges cannot carry a sequence).
-**Why**: the intent describes components, not functions, so flow belongs next to the actual, not in the diff. The Rust side only passes `--flow <out>/flow.json` to the extractor, which keeps the change buildable without a toolchain.
+**Why**: the intent describes components, not functions, so the flow is its own artifact, not part of the `.hesp` IR. The Rust side only passes `--flow <out>/flow.json` to the extractor.
 
 ## Edges between a node and its own ancestor
 
-The extractor emits them (a file bound to a subsystem that imports a file bound to one of its components yields `subsystem -> subsystem.component: calls`; a container's own code touching a boundary declared inside it yields `container -> container.boundary`). They are legal in the language, the differ keys them like any other edge, and the inspector lists them; the graph view folds edges to the visible level and so cannot draw an edge from a box to itself, which is the one place they stay invisible.
+The extractor emits them (a file bound to a subsystem that imports a file bound to one of its components yields `subsystem -> subsystem.component: calls`; a container's own code touching a boundary declared inside it yields `container -> container.boundary`). They are legal in the language like any other edge; since the flow pivot no edge in a `.hesp` file is read, so the question of drawing them is moot.
 
 ## Actual output location
 
-`.hesperus/actual/` under the directory `hesp emit` is run in (`--out` overrides), never inside the analyzed repository unless that is the current directory. Keeps the tool from writing into someone else's checkout. Actual files mirror the intent's layout relative to the master; an intent that imports from outside the master's directory (`../shared/x.hesp`) cannot be mirrored and `hesp emit` refuses to write it rather than write outside `--out`.
+`.hesperus/actual/flow.json` under the directory `hesp emit` is run in (`--out <dir>` overrides, `flow.json` inside it), never inside the analyzed repository unless that is the current directory. Keeps the tool from writing into someone else's checkout. `emit` prints the path it wrote and fails if the extractor left no file there. The extension passes `--out` as `hesperus.actualDir` resolved against the workspace, and `hesp init` adds `.hesperus/` to the intent directory's `.gitignore` when the flow lands inside it.
 
 ## Multi-language direction: frameworks are rows in a table
 
