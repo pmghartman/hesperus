@@ -54,6 +54,10 @@
         "title": "Hesperus: Emit Actual From Code"
       },
       {
+        "command": "hesperus.init",
+        "title": "Hesperus: Create Intent From Code"
+      },
+      {
         "command": "hesperus.restartServer",
         "title": "Hesperus: Restart Language Server"
       }

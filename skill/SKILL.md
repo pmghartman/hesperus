@@ -95,6 +95,10 @@ Rules that bite:
 - Repetition only through `let x = [a, b]`, `template name(p) { ... }` called as `name($x)`, and `each x in list { ... }`, all at most 4 levels deep; templates may only call templates defined earlier in the file. Interpolate with `$p` or `${p}`.
 - Reserved words: `hesperus generated import require forbid let template each in true false`. Kind names (`store`, `network`) are fine as node names.
 
+## Starting from existing code
+
+`hesp init --lang ts <repo>` writes `<repo name>.hesp` into the repository (`--dir` to put it elsewhere, `--name` to name the root system) describing the code as it is, then emits the actual: it ends `hesp init: intent and actual match (N nodes and edges)`. It refuses to overwrite an existing file. The result is a starting point, not a design: rename components, group them into subsystems (keeping each `src` glob), add `desc` and constraints, then re-emit and diff.
+
 ## Adding a subsystem
 
 1. Create `name.hesp` with `hesperus 0.1` and a `subsystem name "Label" { src: "path/**" ... }` root.

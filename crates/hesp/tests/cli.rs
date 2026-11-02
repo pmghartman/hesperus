@@ -147,3 +147,37 @@ fn emit_requires_a_known_language_and_an_extractor() {
     assert_eq!(out.status.code(), Some(1), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(String::from_utf8_lossy(&out.stderr).contains("extractor failed"));
 }
+
+#[test]
+fn init_writes_a_matching_intent_and_never_overwrites() {
+    let dir = scratch("init");
+    let out_dir = dir.join("actual");
+    // no intent on stdin: everything unbound; with an intent: bound by its src globs
+    let script = dir.join("ext.js");
+    std::fs::write(
+        &script,
+        r#"let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{const i=process.argv.indexOf("--root");const root=i<0?JSON.parse(t).root:process.argv[i+1];
+const n=(id,kind,src=[])=>({id,kind,name:id.split(".").pop(),parent:id.includes(".")?id.slice(0,id.lastIndexOf(".")):null,src});
+const lib=t.trim()?root+".lib":root+".unbound.lib";
+const nodes=[n(root,"system"),n(root+".http","ingress"),n(lib,"component",["lib/**"])];
+if(!t.trim())nodes.push(n(root+".unbound","subsystem"));
+process.stdout.write(JSON.stringify({hesperus:"0.1",generated:"fake",root,files:[{path:root+".hesp",root}],nodes,edges:[{from:root+".http",to:lib,kind:"http",at:["lib/a.ts:1"]}]}));});"#,
+    )
+    .unwrap();
+    let run = || hesp().args(["init", "--lang", "ts"]).arg(&dir).args(["--name", "my-app", "--out"]).arg(&out_dir).arg("--extractor").arg(&script).output().unwrap();
+    let out = run();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("intent and actual match (4 nodes and edges)"), "{}", String::from_utf8_lossy(&out.stderr));
+    let intent = std::fs::read_to_string(dir.join("my_app.hesp")).unwrap();
+    assert!(intent.contains("component lib") && !intent.contains("unbound") && !intent.contains("generated") && !intent.contains("at:"), "{intent}");
+    assert!(out_dir.join("my_app.hesp").exists());
+    // a second run refuses: the intent is the user's now
+    std::fs::write(dir.join("my_app.hesp"), "edited").unwrap();
+    let out = run();
+    assert_eq!(out.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("already exists; nothing was written"));
+    assert_eq!(std::fs::read_to_string(dir.join("my_app.hesp")).unwrap(), "edited");
+    let out = hesp().args(["init", "--lang", "go", "."]).output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+    let _ = std::fs::remove_dir_all(&dir);
+}

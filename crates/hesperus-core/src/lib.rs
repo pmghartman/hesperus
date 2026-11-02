@@ -2,7 +2,7 @@
 //!
 //! Pipeline: `lexer` → `parser` (AST) → `expand` (templates, each) → `lower`
 //! (imports, ids, resolution, validation) → `ir`. `format` prints the AST,
-//! `print` prints the IR, `diff` merges two IRs.
+//! `print` prints the IR, `diff` merges two IRs, `scaffold` makes an intent from an actual.
 
 pub mod ast;
 pub mod diag;
@@ -15,6 +15,7 @@ pub mod lower;
 pub mod parser;
 pub mod print;
 pub mod project;
+pub mod scaffold;
 
 pub use diag::{Diagnostic, Severity, Span};
 pub use ir::Ir;

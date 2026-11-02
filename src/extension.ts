@@ -15,6 +15,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("hesperus.openViewer", () => openViewer(context)),
     vscode.commands.registerCommand("hesperus.emit", () => emit(context)),
+    vscode.commands.registerCommand("hesperus.init", () => init(context)),
     vscode.commands.registerCommand("hesperus.restartServer", async () => {
       await client?.stop();
       client = undefined;
@@ -227,6 +228,37 @@ async function openViewer(context: vscode.ExtensionContext) {
   watcher.onDidCreate(refresh);
   watcher.onDidDelete(refresh);
   context.subscriptions.push(watcher);
+}
+
+/** Write an intent describing the repository as it is, emit its actual, and show both: they start matched. */
+async function init(context: vscode.ExtensionContext) {
+  const root = workspaceRoot();
+  if (!root) {
+    vscode.window.showErrorMessage("Hesperus: open a folder first.");
+    return;
+  }
+  const configured = config("intent", "");
+  if (configured && fs.existsSync(path.resolve(root, configured))) {
+    vscode.window.showInformationMessage(`Hesperus: this workspace already has an intent (${configured}).`);
+    return;
+  }
+  const repo = config("sourceRoot", root);
+  const args = ["init", "--lang", "ts", repo, "--dir", root, "--out", path.resolve(root, config("actualDir", ".hesperus/actual"))];
+  const extractor = extractorPath();
+  if (extractor) args.push("--extractor", extractor, "--node", process.execPath);
+  const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Hesperus: describing the repository" }, () => run(hespPath(), args, root));
+  if (res.code !== 0) {
+    vscode.window.showErrorMessage(`Hesperus: ${res.stderr.trim() || "init failed"}`);
+    return;
+  }
+  // hesp prints every file it wrote, the intent master first
+  const master = res.stdout.trim().split("\n")[0];
+  lastMaster = master;
+  await openAt(master, 1);
+  await openViewer(context);
+  const summary = res.stderr.trim().split("\n").find((l) => l.startsWith("hesp init: intent and actual"));
+  if (summary?.includes("differ")) vscode.window.showWarningMessage(`Hesperus: ${res.stderr.trim()}`);
+  else vscode.window.showInformationMessage(`Hesperus: wrote ${path.basename(master)}; ${summary?.replace("hesp init: ", "") ?? "intent and actual match"}.`);
 }
 
 function splitLoc(loc: string): [string, number] {

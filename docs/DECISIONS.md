@@ -93,6 +93,10 @@ Flat sorted arrays of nodes (with `parent`) and edges, keyed by fully qualified 
 
 `hesp emit --lang ts <repo>` runs without an intent: the extractor then has no bindings, every file lands in the `unbound` bucket, and the root is named after the repository directory. It prints a note saying so. The useful form passes `--intent <master>`; the brief's bare form still works.
 
+## `hesp init`: an intent that starts matched
+
+`hesp init --lang ts <repo>` runs the extractor with no intent, then makes that output the intent: the `unbound` components move up to the root (suffixed `_src` when a boundary already holds the name), and evidence and the `generated` marker are dropped. Their `src` globs bind the same files to the same ids, so emitting against the new intent reproduces it; init runs that emit and diffs the two, warning if anything differs. A root name that is a reserved word (a repository called `hesperus`) gets an `_` added. It writes only new files: an existing intent belongs to the user.
+
 ## One unresolved sink
 
 Edges whose target cannot be identified statically all point at `network unresolved` with `resolved: false`: outbound HTTP or WebSocket calls with dynamic URLs, and dynamic `import(expr)` / `require(expr)` with a non-literal specifier (a `calls` edge). One sink keeps the actual graph readable; the edge kind says what the code tried to do.

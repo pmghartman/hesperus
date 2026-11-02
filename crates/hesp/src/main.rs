@@ -1,9 +1,10 @@
-//! `hesp`: check, fmt, ir, print, emit, diff.
+//! `hesp`: check, fmt, ir, print, emit, init, diff.
 
 use clap::{Parser, Subcommand};
 use hesperus_core::diag::{render, Severity};
 use hesperus_core::ir::Ir;
 use hesperus_core::project::{find_hesp_files, format_text, is_generated, load_from_disk};
+use hesperus_core::scaffold::{identifier, intent_from_actual};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -68,6 +69,30 @@ enum Cmd {
         #[arg(long)]
         node: Option<String>,
     },
+    /// Describe a repository as it is now: write an intent that matches the code, then
+    /// emit its actual, so the two start in agreement
+    Init {
+        /// The language extractor to use
+        #[arg(long)]
+        lang: String,
+        /// The repository to describe
+        repo: PathBuf,
+        /// Root system name (default: the repository's directory name)
+        #[arg(long)]
+        name: Option<String>,
+        /// Directory to write the intent into (default: the repository)
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Where to write actual files (default `.hesperus/actual`)
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Extractor command; default `$HESPERUS_TS`, else `hesperus-ts` on PATH
+        #[arg(long)]
+        extractor: Option<String>,
+        /// Node executable used to run a `.js` extractor (default `$HESPERUS_NODE`, else `node`)
+        #[arg(long)]
+        node: Option<String>,
+    },
     /// Compare intent and actual
     Diff {
         intent: PathBuf,
@@ -91,6 +116,7 @@ fn main() {
         Cmd::Ir { file, locations } => ir(&file, locations),
         Cmd::Print { ir, out } => print_ir(&ir, out.as_deref()),
         Cmd::Emit { lang, repo, intent, out, extractor, node } => emit(&lang, &repo, intent.as_deref(), out.as_deref(), extractor.as_deref(), node.as_deref()),
+        Cmd::Init { lang, repo, name, dir, out, extractor, node } => init(&lang, &repo, name.as_deref(), dir.as_deref(), out.as_deref(), extractor.as_deref(), node.as_deref()),
         Cmd::Diff { intent, actual, json, all, depth } => diff(&intent, &actual, json, all, depth),
     };
     std::process::exit(code);
@@ -323,56 +349,13 @@ fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extr
             String::new()
         }
     };
-    let node_exe = node.map(|s| s.to_string()).or_else(|| std::env::var("HESPERUS_NODE").ok()).unwrap_or_else(|| "node".into());
-    let command: Vec<String> = match extractor.map(|s| s.to_string()).or_else(|| std::env::var("HESPERUS_TS").ok()) {
-        Some(cmd) => {
-            // a script path (which may contain spaces) runs under node; anything else is a command line
-            let script = cmd.ends_with(".js") || cmd.ends_with(".mjs") || cmd.ends_with(".cjs");
-            if script && (!cmd.contains(char::is_whitespace) || Path::new(&cmd).is_file()) {
-                vec![node_exe, cmd]
-            } else {
-                cmd.split_whitespace().map(|s| s.to_string()).collect()
-            }
-        }
-        None => vec!["hesperus-ts".into()],
-    };
-    let repo_abs = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
-    let mut child = match Command::new(&command[0]).args(&command[1..]).arg("extract").arg(&repo_abs).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("hesp emit: cannot run extractor `{}`: {e}\n  set --extractor, $HESPERUS_TS, or put hesperus-ts on PATH", command.join(" "));
-            return 2;
-        }
-    };
-    {
-        let mut stdin = child.stdin.take().unwrap();
-        if stdin.write_all(intent_json.as_bytes()).is_err() {
-            eprintln!("hesp emit: extractor closed its input");
-            return 1;
-        }
-    }
-    let output = match child.wait_with_output() {
-        Ok(o) => o,
-        Err(e) => {
-            eprintln!("hesp emit: {e}");
-            return 1;
-        }
-    };
-    if !output.status.success() {
-        eprintln!("hesp emit: extractor failed with {}", output.status);
-        return 1;
-    }
-    let actual = match Ir::from_json(&String::from_utf8_lossy(&output.stdout)) {
+    let actual = match run_extractor(repo, &intent_json, &[], extractor, node) {
         Ok(ir) => ir,
-        Err(e) => {
-            eprintln!("hesp emit: extractor output is not valid IR: {e}");
-            return 1;
+        Err((code, e)) => {
+            eprintln!("hesp emit: {e}");
+            return code;
         }
     };
-    if actual.generated.is_none() {
-        eprintln!("hesp emit: extractor output lacks a `generated` marker");
-        return 1;
-    }
     let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".hesperus/actual"));
     let files = match print_checked(&actual, &out_dir) {
         Ok(f) => f,
@@ -384,6 +367,96 @@ fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extr
     if let Err(e) = write_files(&files, &out_dir) {
         eprintln!("hesp emit: {e}");
         return 1;
+    }
+    0
+}
+
+/// The extractor as a command line: a `.js` script runs under node.
+fn extractor_command(extractor: Option<&str>, node: Option<&str>) -> Vec<String> {
+    let node_exe = node.map(|s| s.to_string()).or_else(|| std::env::var("HESPERUS_NODE").ok()).unwrap_or_else(|| "node".into());
+    match extractor.map(|s| s.to_string()).or_else(|| std::env::var("HESPERUS_TS").ok()) {
+        Some(cmd) => {
+            // a script path (which may contain spaces) runs under node; anything else is a command line
+            let script = cmd.ends_with(".js") || cmd.ends_with(".mjs") || cmd.ends_with(".cjs");
+            if script && (!cmd.contains(char::is_whitespace) || Path::new(&cmd).is_file()) {
+                vec![node_exe, cmd]
+            } else {
+                cmd.split_whitespace().map(|s| s.to_string()).collect()
+            }
+        }
+        None => vec!["hesperus-ts".into()],
+    }
+}
+
+/// Run `extract <repo> <args>` with the intent IR JSON on stdin (empty: no intent), and
+/// return its output as a generated IR. Errors carry the exit code.
+fn run_extractor(repo: &Path, intent_json: &str, args: &[String], extractor: Option<&str>, node: Option<&str>) -> Result<Ir, (i32, String)> {
+    let command = extractor_command(extractor, node);
+    let repo_abs = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
+    let mut child = Command::new(&command[0]).args(&command[1..]).arg("extract").arg(&repo_abs).args(args).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn().map_err(|e| {
+        (2, format!("cannot run extractor `{}`: {e}\n  set --extractor, $HESPERUS_TS, or put hesperus-ts on PATH", command.join(" ")))
+    })?;
+    {
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(intent_json.as_bytes()).map_err(|_| (1, "extractor closed its input".to_string()))?;
+    }
+    let output = child.wait_with_output().map_err(|e| (1, e.to_string()))?;
+    if !output.status.success() {
+        return Err((1, format!("extractor failed with {}", output.status)));
+    }
+    let actual = Ir::from_json(&String::from_utf8_lossy(&output.stdout)).map_err(|e| (1, format!("extractor output is not valid IR: {e}")))?;
+    if actual.generated.is_none() {
+        return Err((1, "extractor output lacks a `generated` marker".into()));
+    }
+    Ok(actual)
+}
+
+fn init(lang: &str, repo: &Path, name: Option<&str>, dir: Option<&Path>, out: Option<&Path>, extractor: Option<&str>, node: Option<&str>) -> i32 {
+    if lang != "ts" {
+        eprintln!("hesp init: unknown language `{lang}`; v1 ships the `ts` extractor");
+        return 2;
+    }
+    let repo_abs = std::fs::canonicalize(repo).unwrap_or_else(|_| repo.to_path_buf());
+    let name = identifier(name.map(|s| s.to_string()).unwrap_or_else(|| repo_abs.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "repo".into())).as_str());
+    let actual = match run_extractor(repo, "", &["--root".into(), name], extractor, node) {
+        Ok(ir) => ir,
+        Err((code, e)) => {
+            eprintln!("hesp init: {e}");
+            return code;
+        }
+    };
+    let intent = intent_from_actual(&actual);
+    let dir = dir.unwrap_or(repo);
+    let files = match print_checked(&intent, dir) {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("hesp init: {e}");
+            return 1;
+        }
+    };
+    if let Some((rel, _)) = files.iter().find(|(rel, _)| dir.join(rel).exists()) {
+        eprintln!("hesp init: {} already exists; nothing was written", path_str(&dir.join(rel)));
+        return 1;
+    }
+    if let Err(e) = write_files(&files, dir) {
+        eprintln!("hesp init: {e}");
+        return 1;
+    }
+    let master = dir.join(&files[0].0);
+    let code = emit(lang, repo, Some(&master), out, extractor, node);
+    if code != 0 {
+        return code;
+    }
+    // the point of init: nothing differs yet
+    let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".hesperus/actual"));
+    let a = load_from_disk(&path_str(&master));
+    let b = load_from_disk(&path_str(&out_dir.join(&files[0].0)));
+    let u = hesperus_core::diff::diff(&a.ir, &b.ir);
+    let s = &u.summary;
+    if s.intent_only + s.actual_only + s.conflict > 0 {
+        eprint!("hesp init: intent and actual differ already:\n{}", hesperus_core::diff::render(&u, false));
+    } else {
+        eprintln!("hesp init: intent and actual match ({} nodes and edges)", s.matched);
     }
     0
 }

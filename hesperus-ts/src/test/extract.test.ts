@@ -2,8 +2,9 @@
 // extraction is deterministic.
 
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -219,4 +220,26 @@ test("the Phosphorus intent and actual IR validate against the schema (when hesp
   assert.ok(actual.edges.some((e) => e.from === "phosphorus.server.server" && e.to === "phosphorus.mesh.peers" && e.kind === "calls"));
   assert.ok(actual.nodes.some((n) => n.id === "phosphorus.tailscale" && n.host === "api.tailscale.com"), "adopts the intent external by host");
   assert.equal(toJson(actual), toJson(extract(phosphorus, { intent })));
+});
+
+test("hesp init: every fixture starts with intent and actual matching (when hesp is present)", (t: TestContext) => {
+  const hesp = process.env.HESP_BIN ?? path.join(repoRoot, "target", "debug", "hesp");
+  if (!fs.existsSync(hesp)) {
+    t.skip(`no hesp binary at ${hesp}; set HESP_BIN`);
+    return;
+  }
+  const cli = path.join(pkg, "dist", "cli.js");
+  for (const name of FIXTURES) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), `hesp-init-${name}-`));
+    try {
+      const r = spawnSync(hesp, ["init", "--lang", "ts", path.join(fixtures, name, "repo"), "--dir", dir, "--out", path.join(dir, "actual"), "--extractor", cli], { encoding: "utf8" });
+      assert.equal(r.status, 0, `${name}: ${r.stderr}`);
+      assert.match(r.stderr, /intent and actual match/, `${name}: ${r.stderr}`);
+      const intent = fs.readdirSync(dir).filter((f) => f.endsWith(".hesp"));
+      assert.equal(intent.length, 1, name);
+      assert.doesNotMatch(fs.readFileSync(path.join(dir, intent[0]), "utf8"), /generated|unbound|\bat:/, name);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
 });

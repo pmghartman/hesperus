@@ -33,7 +33,7 @@ Download the `.vsix` for your platform from the [latest release](https://github.
 
 ## Use
 
-1. Write an intent file like the one above (`hesp` highlighting, completion, hover, go-to-definition, rename and formatting work as you type; errors come with fixes).
+1. Write an intent file like the one above, or run **Hesperus: Create Intent From Code** in a repository already under way: it writes an intent describing the code as it is now (one component per source directory two levels deep, plus every ingress, store and external host found) and emits the actual, so the viewer starts all **match** and every later change shows as a difference. It never overwrites an existing file. In `.hesp` files, highlighting, completion, hover, go-to-definition, rename and formatting work as you type; errors come with fixes.
 2. **Hesperus: Emit Actual From Code** reads your TypeScript repository and writes `.hesperus/actual/*.hesp`, a generated description of what the code does: imports, HTTP routes, outbound requests, databases, WebSockets, filesystem and process use. Never edit those files.
 3. **Hesperus: Open Viewer** (the icon in the editor title) shows the graph in three modes:
 
@@ -53,6 +53,7 @@ Agents get the same workflow from [`skill/SKILL.md`](skill/SKILL.md); each relea
 hesp check intent.hesp        # parse and validate, with fixes
 hesp fmt .                    # format in place (generated files are left alone)
 hesp emit --lang ts <repo> --intent intent.hesp
+hesp init --lang ts <repo>    # an intent matching the code as it is, plus its actual
 hesp diff intent.hesp .hesperus/actual/intent.hesp
 ```
 
