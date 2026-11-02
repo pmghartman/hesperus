@@ -19,7 +19,7 @@ fn scratch(name: &str) -> PathBuf {
 }
 
 #[test]
-fn check_fmt_ir_and_diff_exit_codes() {
+fn check_fmt_and_ir_exit_codes() {
     let master = root().join("crates/hesperus-core/tests/fixtures/phosphorus/phosphorus.hesp");
     let out = hesp().args(["check"]).arg(&master).output().unwrap();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
@@ -46,13 +46,6 @@ fn check_fmt_ir_and_diff_exit_codes() {
     let out = hesp().args(["check", "--json"]).arg(&broken).output().unwrap();
     let diags: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert!(diags.as_array().unwrap().len() >= 12);
-    // diff: exit 1 on a violated constraint, 0 otherwise
-    let fx = root().join("crates/hesperus-core/tests/fixtures/diff");
-    let out = hesp().args(["diff"]).arg(fx.join("statuses/intent.hesp")).arg(fx.join("statuses/actual.hesp")).output().unwrap();
-    assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stdout).starts_with("shop: 9 match, 2 intent-only, 6 actual-only, 2 conflict, 3 violations"));
-    let out = hesp().args(["diff"]).arg(fx.join("aggregate/intent.hesp")).arg(fx.join("aggregate/actual.hesp")).output().unwrap();
-    assert_eq!(out.status.code(), Some(0));
     // missing file: exit 1 with E012
     let out = hesp().args(["check", "/nonexistent/x.hesp"]).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
@@ -119,19 +112,38 @@ fn fmt_never_rewrites_a_generated_file() {
 fn emit_refuses_bad_extractor_output_without_writing() {
     let dir = scratch("emitbad");
     let out_dir = dir.join("out");
-    for bad in [
-        r#"{"hesperus":"0.1","generated":"x","root":"a","files":[],"nodes":[],"edges":[],"constraints":[]}"#,
-        r#"{"hesperus":"0.1","generated":"x","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null}],"edges":[{"from":"a","to":"a.nope","kind":"calls"}]}"#,
-        r#"{"hesperus":"0.1","generated":"x","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null},{"id":"a.b c","kind":"component","name":"b c","parent":"a"}],"edges":[]}"#,
+    // output that is not IR, and IR from an extractor that wrote no flow
+    for (bad, msg) in [
+        (r#"{"hesperus":"0.1","generated":"x","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null}],"edges":[{"from":"a","to":"a.nope","kind":"calls"}]}"#, "not valid IR"),
+        (r#"{"hesperus":"0.1","generated":"x","root":"a","nodes":[{"id":"a","kind":"system","name":"a","parent":null}],"edges":[]}"#, "wrote no"),
     ] {
         let script = dir.join("ext.js");
         std::fs::write(&script, format!("process.stdout.write({});", serde_json::to_string(bad).unwrap())).unwrap();
         let out = hesp().args(["emit", "--lang", "ts"]).arg(&dir).arg("--out").arg(&out_dir).arg("--extractor").arg(format!("node {}", script.display())).output().unwrap();
         assert_eq!(out.status.code(), Some(1), "{}", String::from_utf8_lossy(&out.stderr));
         let err = String::from_utf8_lossy(&out.stderr);
-        assert!(err.contains("not valid IR") || err.contains("would not check clean"), "{err}");
+        assert!(err.contains(msg), "{err}");
         assert!(!out_dir.exists(), "nothing written for {bad}");
     }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn emit_writes_only_the_flow() {
+    let dir = scratch("emitflow");
+    let out_dir = dir.join("out");
+    let script = dir.join("ext.js");
+    std::fs::write(
+        &script,
+        r#"const fs=require("fs"),p=require("path");const i=process.argv.indexOf("--flow");fs.mkdirSync(p.dirname(process.argv[i+1]),{recursive:true});fs.writeFileSync(process.argv[i+1],JSON.stringify({entries:[{id:"a"},{id:"b"}]}));
+process.stdout.write(JSON.stringify({hesperus:"0.1",generated:"fake",root:"a",files:[{path:"a.hesp",root:"a"}],nodes:[{id:"a",kind:"system",name:"a",parent:null}],edges:[]}));"#,
+    )
+    .unwrap();
+    let out = hesp().args(["emit", "--lang", "ts"]).arg(&dir).arg("--out").arg(&out_dir).arg("--extractor").arg(&script).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), format!("{}/flow.json", out_dir.display()).replace('\\', "/"));
+    let written: Vec<_> = std::fs::read_dir(&out_dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(written, ["flow.json"], "no .hesp files beside the flow");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -149,7 +161,7 @@ fn emit_requires_a_known_language_and_an_extractor() {
 }
 
 #[test]
-fn init_writes_a_matching_intent_and_never_overwrites() {
+fn init_writes_an_intent_and_the_flow_and_never_overwrites() {
     let dir = scratch("init");
     let out_dir = dir.join(".hesperus/actual");
     // no intent on stdin: everything unbound; with an intent: bound by its src globs
@@ -157,6 +169,7 @@ fn init_writes_a_matching_intent_and_never_overwrites() {
     std::fs::write(
         &script,
         r#"let t="";process.stdin.on("data",d=>t+=d).on("end",()=>{const i=process.argv.indexOf("--root");const root=i<0?JSON.parse(t).root:process.argv[i+1];
+const f=process.argv.indexOf("--flow");if(f>=0){const fs=require("fs"),p=require("path");fs.mkdirSync(p.dirname(process.argv[f+1]),{recursive:true});fs.writeFileSync(process.argv[f+1],JSON.stringify({entries:[{id:"http"}]}));}
 const n=(id,kind,src=[])=>({id,kind,name:id.split(".").pop(),parent:id.includes(".")?id.slice(0,id.lastIndexOf(".")):null,src});
 const lib=t.trim()?root+".lib":root+".unbound.lib";
 const nodes=[n(root,"system"),n(root+".http","ingress"),n(lib,"component",["lib/**"])];
@@ -168,10 +181,15 @@ process.stdout.write(JSON.stringify({hesperus:"0.1",generated:"fake",root,files:
     let run = || hesp().args(["init", "--lang", "ts"]).arg(&dir).args(["--name", "my-app", "--out"]).arg(&out_dir).arg("--extractor").arg(&script).output().unwrap();
     let out = run();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("intent and actual match (4 nodes and edges)"), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("flow.json (1 entry)"), "{}", String::from_utf8_lossy(&out.stderr));
+    // stdout: the intent master first (the extension reads it), then the flow
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.lines().next().unwrap().ends_with("my_app.hesp"), "{stdout}");
+    assert!(stdout.lines().last().unwrap().ends_with("flow.json"), "{stdout}");
     let intent = std::fs::read_to_string(dir.join("my_app.hesp")).unwrap();
     assert!(intent.contains("component lib") && !intent.contains("unbound") && !intent.contains("generated") && !intent.contains("at:"), "{intent}");
-    assert!(out_dir.join("my_app.hesp").exists());
+    assert!(out_dir.join("flow.json").exists());
+    assert!(!out_dir.join("my_app.hesp").exists(), "no actual .hesp files");
     // the actual is ignored by git, once; an existing .gitignore keeps its lines
     assert_eq!(std::fs::read_to_string(dir.join(".gitignore")).unwrap(), "node_modules\n.hesperus/\n");
     // a second run refuses: the intent is the user's now
@@ -181,9 +199,7 @@ process.stdout.write(JSON.stringify({hesperus:"0.1",generated:"fake",root,files:
     assert!(String::from_utf8_lossy(&out.stderr).contains("already exists; nothing was written"));
     assert_eq!(std::fs::read_to_string(dir.join("my_app.hesp")).unwrap(), "edited");
     // an entry already there, in another spelling, is left alone
-    for f in ["my_app.hesp", ".hesperus/actual/my_app.hesp"] {
-        std::fs::remove_file(dir.join(f)).unwrap();
-    }
+    std::fs::remove_file(dir.join("my_app.hesp")).unwrap();
     std::fs::write(dir.join(".gitignore"), "/.hesperus\n").unwrap();
     assert!(run().status.success());
     assert_eq!(std::fs::read_to_string(dir.join(".gitignore")).unwrap(), "/.hesperus\n");

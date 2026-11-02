@@ -1,4 +1,4 @@
-//! `hesp`: check, fmt, ir, print, emit, init, diff.
+//! `hesp`: check, fmt, ir, print, emit, init.
 
 use clap::{Parser, Subcommand};
 use hesperus_core::diag::{render, Severity};
@@ -48,7 +48,7 @@ enum Cmd {
         #[arg(long)]
         out: Option<PathBuf>,
     },
-    /// Run an extractor on a repository and write the actual description
+    /// Run an extractor on a repository and write the flow (`flow.json`)
     Emit {
         /// The language extractor to use
         #[arg(long)]
@@ -59,7 +59,7 @@ enum Cmd {
         /// without it every file lands in the `unbound` bucket
         #[arg(long)]
         intent: Option<PathBuf>,
-        /// Where to write actual files (default `.hesperus/actual`)
+        /// Directory for `flow.json` (default `.hesperus/actual`)
         #[arg(long)]
         out: Option<PathBuf>,
         /// Extractor command; default `$HESPERUS_TS`, else `hesperus-ts` on PATH
@@ -69,8 +69,8 @@ enum Cmd {
         #[arg(long)]
         node: Option<String>,
     },
-    /// Describe a repository as it is now: write an intent that matches the code, then
-    /// emit its actual, so the two start in agreement
+    /// Describe a repository as it is now: write an intent naming the code's parts, then
+    /// emit the flow against it
     Init {
         /// The language extractor to use
         #[arg(long)]
@@ -83,7 +83,7 @@ enum Cmd {
         /// Directory to write the intent into (default: the repository)
         #[arg(long)]
         dir: Option<PathBuf>,
-        /// Where to write actual files (default `.hesperus/actual`)
+        /// Directory for `flow.json` (default `.hesperus/actual`)
         #[arg(long)]
         out: Option<PathBuf>,
         /// Extractor command; default `$HESPERUS_TS`, else `hesperus-ts` on PATH
@@ -92,19 +92,6 @@ enum Cmd {
         /// Node executable used to run a `.js` extractor (default `$HESPERUS_NODE`, else `node`)
         #[arg(long)]
         node: Option<String>,
-    },
-    /// Compare intent and actual
-    Diff {
-        intent: PathBuf,
-        actual: PathBuf,
-        #[arg(long)]
-        json: bool,
-        /// Also list matches
-        #[arg(long)]
-        all: bool,
-        /// Aggregate edges to the nodes at this depth (root = 0)
-        #[arg(long)]
-        depth: Option<usize>,
     },
 }
 
@@ -117,7 +104,6 @@ fn main() {
         Cmd::Print { ir, out } => print_ir(&ir, out.as_deref()),
         Cmd::Emit { lang, repo, intent, out, extractor, node } => emit(&lang, &repo, intent.as_deref(), out.as_deref(), extractor.as_deref(), node.as_deref()),
         Cmd::Init { lang, repo, name, dir, out, extractor, node } => init(&lang, &repo, name.as_deref(), dir.as_deref(), out.as_deref(), extractor.as_deref(), node.as_deref()),
-        Cmd::Diff { intent, actual, json, all, depth } => diff(&intent, &actual, json, all, depth),
     };
     std::process::exit(code);
 }
@@ -350,26 +336,19 @@ fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extr
         }
     };
     let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".hesperus/actual"));
-    // the extractor writes the flow (entry points and the calls they reach) beside the actual files itself
-    let flow_args = ["--flow".to_string(), path_str(&out_dir.join("flow.json"))];
-    let actual = match run_extractor(repo, &intent_json, &flow_args, extractor, node) {
-        Ok(ir) => ir,
-        Err((code, e)) => {
-            eprintln!("hesp emit: {e}");
-            return code;
-        }
-    };
-    let files = match print_checked(&actual, &out_dir) {
-        Ok(f) => f,
-        Err(e) => {
-            eprintln!("hesp emit: {e}");
-            return 1;
-        }
-    };
-    if let Err(e) = write_files(&files, &out_dir) {
+    let flow = out_dir.join("flow.json");
+    // the extractor writes the flow (entry points and the calls they reach) itself; its IR on
+    // stdout is checked for shape and dropped: nothing reads actual `.hesp` files any more
+    let flow_args = ["--flow".to_string(), path_str(&flow)];
+    if let Err((code, e)) = run_extractor(repo, &intent_json, &flow_args, extractor, node) {
         eprintln!("hesp emit: {e}");
+        return code;
+    }
+    if !flow.is_file() {
+        eprintln!("hesp emit: extractor wrote no {}", path_str(&flow));
         return 1;
     }
+    println!("{}", path_str(&flow));
     0
 }
 
@@ -455,17 +434,18 @@ fn init(lang: &str, repo: &Path, name: Option<&str>, dir: Option<&Path>, out: Op
         Ok(None) => {}
         Err(e) => eprintln!("hesp init: could not update .gitignore: {e}"),
     }
-    // the point of init: nothing differs yet
-    let a = load_from_disk(&path_str(&master));
-    let b = load_from_disk(&path_str(&out_dir.join(&files[0].0)));
-    let u = hesperus_core::diff::diff(&a.ir, &b.ir);
-    let s = &u.summary;
-    if s.intent_only + s.actual_only + s.conflict > 0 {
-        eprint!("hesp init: intent and actual differ already:\n{}", hesperus_core::diff::render(&u, false));
-    } else {
-        eprintln!("hesp init: intent and actual match ({} nodes and edges)", s.matched);
+    match flow_entries(&out_dir.join("flow.json")) {
+        Ok(n) => eprintln!("hesp init: wrote {} and {} ({n} entr{})", path_str(&master), path_str(&out_dir.join("flow.json")), if n == 1 { "y" } else { "ies" }),
+        Err(e) => eprintln!("hesp init: {e}"),
     }
     0
+}
+
+/// How many entry points `flow.json` holds.
+fn flow_entries(flow: &Path) -> Result<usize, String> {
+    let text = std::fs::read_to_string(flow).map_err(|e| format!("{}: {e}", path_str(flow)))?;
+    let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path_str(flow)))?;
+    v.get("entries").and_then(|e| e.as_array()).map(|a| a.len()).ok_or_else(|| format!("{}: no `entries` array", path_str(flow)))
 }
 
 /// Make the intent's directory ignore the actual files when they land inside it: `.hesperus/`
@@ -487,34 +467,4 @@ fn ignore_actual(dir: &Path, out_dir: &Path) -> Result<Option<String>, String> {
     let sep = if text.is_empty() || text.ends_with('\n') { "" } else { "\n" };
     std::fs::write(&file, format!("{text}{sep}{entry}\n")).map_err(|e| format!("{}: {e}", path_str(&file)))?;
     Ok(Some(entry))
-}
-
-fn diff(intent: &Path, actual: &Path, json: bool, all: bool, depth: Option<usize>) -> i32 {
-    let a = load_from_disk(&path_str(intent));
-    let b = load_from_disk(&path_str(actual));
-    let mut bad = false;
-    for p in [&a, &b] {
-        if p.has_errors() {
-            let src = |path: &str| p.text_of(path).map(|s| s.to_string());
-            eprint!("{}", render(&p.diags, &src));
-            bad = true;
-        }
-    }
-    if bad {
-        return 2;
-    }
-    let mut u = hesperus_core::diff::diff(&a.ir, &b.ir);
-    if let Some(d) = depth {
-        u = hesperus_core::diff::aggregate(&u, d);
-    }
-    if json {
-        print!("{}", u.to_json());
-    } else {
-        print!("{}", hesperus_core::diff::render(&u, all));
-    }
-    if u.summary.violations > 0 {
-        1
-    } else {
-        0
-    }
 }

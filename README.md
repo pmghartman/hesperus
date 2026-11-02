@@ -73,7 +73,7 @@ The command line:
 
 ```bash
 hesp init --lang ts <repo>                          # an intent from the code, plus the flow
-hesp emit --lang ts <repo> --intent intent.hesp     # the flow (and the actual .hesp files hesp still prints)
+hesp emit --lang ts <repo> --intent intent.hesp     # the flow: .hesperus/actual/flow.json (--out for elsewhere)
 hesp check intent.hesp && hesp fmt .                # validate and format the intent
 hesperus-ts entries <repo>                          # the questions above; --json for data
 hesperus-ts mcp <repo>                              # the same as an MCP server
