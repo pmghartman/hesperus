@@ -100,27 +100,36 @@ function apply(rule: Rule, effect: Effect, f: Fact): Finding {
 
 /** Apply the table to one file's facts. */
 export function applyRules(file: FileFacts, rules: Rule[] = RULES): Finding[] {
-  const out: Finding[] = [];
+  return applyRulesIndexed(file, rules).map((x) => x.finding);
+}
+
+/**
+ * The same, keeping which fact (by index into `file.facts`) each finding came from;
+ * fallback findings, fired on an import alone, carry the index of that import fact.
+ */
+export function applyRulesIndexed(file: FileFacts, rules: Rule[] = RULES): { finding: Finding; fact: number }[] {
+  const out: { finding: Finding; fact: number }[] = [];
   const firedGroups = new Set<string>();
-  for (const f of file.facts) {
+  file.facts.forEach((f, i) => {
     if (f.kind === "import") {
-      if (!f.typeOnly) out.push({ kind: "import", spec: f.spec, line: f.line, rule: null });
-      continue;
+      if (!f.typeOnly) out.push({ finding: { kind: "import", spec: f.spec, line: f.line, rule: null }, fact: i });
+      return;
     }
     const seenGroups = new Set<string>();
     for (const r of rules) {
       if (r.fallback || seenGroups.has(r.group) || !matches(r, f)) continue;
-      out.push(apply(r, r.effect, f));
+      out.push({ finding: apply(r, r.effect, f), fact: i });
       firedGroups.add(r.group);
       seenGroups.add(r.group);
     }
-  }
+  });
   for (const r of rules) {
     if (!r.fallback || firedGroups.has(r.group) || r.when.module === "<any>") continue;
     for (const m of r.when.module) {
       const line = file.modules.get(m);
-      if (line !== undefined && file.facts.some((f) => f.kind === "import" && f.spec === m && !f.typeOnly)) {
-        out.push(apply(r, r.effect, { kind: "import", spec: m, typeOnly: false, line }));
+      const i = file.facts.findIndex((f) => f.kind === "import" && f.spec === m && !f.typeOnly);
+      if (line !== undefined && i >= 0) {
+        out.push({ finding: apply(r, r.effect, { kind: "import", spec: m, typeOnly: false, line }), fact: i });
         firedGroups.add(r.group);
         break;
       }

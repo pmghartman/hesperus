@@ -41,6 +41,8 @@ export interface FileFacts {
   facts: Fact[];
   /** Every module specifier the file imports, for fallback rules. */
   modules: Map<string, number>;
+  /** The syntax node each fact came from, parallel to `facts`. */
+  nodes: Node[];
 }
 
 export function newProject(): Project {
@@ -56,8 +58,14 @@ export function factsOf(project: Project, relPath: string, text: string): FileFa
   }
 }
 
+/** Facts of a source file that stays in its project, with the node behind each fact (for the flow walker). */
+export function factsWithNodes(sf: SourceFile): FileFacts {
+  return collect(sf);
+}
+
 function collect(sf: SourceFile): FileFacts {
   const facts: Fact[] = [];
+  const nodes: Node[] = [];
   const modules = new Map<string, number>();
   const origins = new Map<string, Origin>();
   const declared = new Set<string>();
@@ -78,6 +86,7 @@ function collect(sf: SourceFile): FileFacts {
     const named = imp.getNamedImports();
     const typeOnly = imp.isTypeOnly() || (named.length > 0 && named.every((n) => n.isTypeOnly()) && !imp.getDefaultImport() && !imp.getNamespaceImport());
     facts.push({ kind: "import", spec, typeOnly, line: line(imp) });
+    nodes.push(imp);
     const def = imp.getDefaultImport();
     if (def) origins.set(def.getText(), { module: spec, symbol: "default" });
     const ns = imp.getNamespaceImport();
@@ -89,6 +98,7 @@ function collect(sf: SourceFile): FileFacts {
     if (spec && !exp.isTypeOnly()) {
       if (!modules.has(spec)) modules.set(spec, line(exp));
       facts.push({ kind: "import", spec, typeOnly: false, line: line(exp) });
+      nodes.push(exp);
     }
   }
 
@@ -129,16 +139,19 @@ function collect(sf: SourceFile): FileFacts {
         const spec = staticText(args[0], origins, sf);
         if (spec && !modules.has(spec)) modules.set(spec, line(n));
         facts.push({ kind: "import", spec, typeOnly: false, line: line(n) });
+        nodes.push(n);
         return;
       }
       const { name, receiver } = split(callee);
       facts.push({ kind: "call", name, receiver, origin: originOf(callee), args: args.map(arg), head: null, line: line(n) });
+      nodes.push(n);
       return;
     }
     if (Node.isNewExpression(n)) {
       const callee = n.getExpression();
       const { name, receiver } = split(callee);
       facts.push({ kind: "new", name, receiver, origin: originOf(callee), args: n.getArguments().map(arg), head: null, line: line(n) });
+      nodes.push(n);
       return;
     }
     if (Node.isTaggedTemplateExpression(n)) {
@@ -147,6 +160,7 @@ function collect(sf: SourceFile): FileFacts {
       const t = n.getTemplate();
       const head = Node.isNoSubstitutionTemplateLiteral(t) ? t.getLiteralText() : Node.isTemplateExpression(t) ? t.getHead().getLiteralText() : "";
       facts.push({ kind: "tagged", name, receiver, origin: originOf(tag), args: [], head, line: line(n) });
+      nodes.push(n);
       return;
     }
     if (Node.isBinaryExpression(n)) {
@@ -154,15 +168,23 @@ function collect(sf: SourceFile): FileFacts {
       if (op === SyntaxKind.EqualsEqualsEqualsToken || op === SyntaxKind.EqualsEqualsToken) {
         const l = n.getLeft();
         const r = n.getRight();
-        if (Node.isStringLiteral(r)) facts.push({ kind: "compare", subject: l.getText(), literal: r.getLiteralText(), line: line(n) });
-        else if (Node.isStringLiteral(l)) facts.push({ kind: "compare", subject: r.getText(), literal: l.getLiteralText(), line: line(n) });
+        if (Node.isStringLiteral(r)) {
+          facts.push({ kind: "compare", subject: l.getText(), literal: r.getLiteralText(), line: line(n) });
+          nodes.push(n);
+        } else if (Node.isStringLiteral(l)) {
+          facts.push({ kind: "compare", subject: r.getText(), literal: l.getLiteralText(), line: line(n) });
+          nodes.push(n);
+        }
       }
       return;
     }
     if (Node.isCaseClause(n)) {
       const sw = n.getParentOrThrow().getParentOrThrow();
       const e = n.getExpression();
-      if (Node.isSwitchStatement(sw) && Node.isStringLiteral(e)) facts.push({ kind: "compare", subject: sw.getExpression().getText(), literal: e.getLiteralText(), line: line(n) });
+      if (Node.isSwitchStatement(sw) && Node.isStringLiteral(e)) {
+        facts.push({ kind: "compare", subject: sw.getExpression().getText(), literal: e.getLiteralText(), line: line(n) });
+        nodes.push(n);
+      }
       return;
     }
     if (Node.isPropertyAssignment(n) || Node.isShorthandPropertyAssignment(n)) {
@@ -170,9 +192,10 @@ function collect(sf: SourceFile): FileFacts {
       const call = obj?.getParent();
       const inCall = call && (Node.isCallExpression(call) || Node.isNewExpression(call)) ? split(call.getExpression()).name : null;
       facts.push({ kind: "property", name: n.getName(), inCall, line: line(n) });
+      nodes.push(n);
     }
   });
-  return { facts, modules };
+  return { facts, modules, nodes };
 }
 
 /** `a.b.c(` → name `c`, receiver `a.b`; `f(` → name `f`, receiver null. */

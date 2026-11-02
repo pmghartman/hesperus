@@ -349,14 +349,16 @@ fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extr
             String::new()
         }
     };
-    let actual = match run_extractor(repo, &intent_json, &[], extractor, node) {
+    let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".hesperus/actual"));
+    // the extractor writes the flow (entry points and the calls they reach) beside the actual files itself
+    let flow_args = ["--flow".to_string(), path_str(&out_dir.join("flow.json"))];
+    let actual = match run_extractor(repo, &intent_json, &flow_args, extractor, node) {
         Ok(ir) => ir,
         Err((code, e)) => {
             eprintln!("hesp emit: {e}");
             return code;
         }
     };
-    let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".hesperus/actual"));
     let files = match print_checked(&actual, &out_dir) {
         Ok(f) => f,
         Err(e) => {
