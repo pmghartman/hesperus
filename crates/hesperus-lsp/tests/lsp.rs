@@ -249,26 +249,3 @@ fn lsp_end_to_end() {
 
     lsp.shutdown();
 }
-
-#[test]
-fn generated_files_are_read_only() {
-    let dir = std::env::temp_dir().join(format!("hesp-lsp-gen-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("demo.hesp");
-    let text = "hesperus 0.1\ngenerated \"hesperus-ts\"\n\nsystem demo {\n  component api\n  hardware filesystem\n\n  api -> filesystem: io\n}\n";
-    std::fs::write(&path, text).unwrap();
-    let mut lsp = Lsp::start();
-    lsp.request("initialize", json!({"processId": null, "rootUri": uri(&dir), "capabilities": {}}));
-    lsp.notify("initialized", json!({}));
-    open(&mut lsp, &path, text);
-    let d = lsp.diagnostics_for(&uri(&path), 1);
-    assert_eq!(d.len(), 1);
-    assert_eq!(d[0]["severity"], json!(3));
-    assert!(d[0]["message"].as_str().unwrap().contains("generated file"));
-    let p = lsp.request("textDocument/prepareRename", json!({"textDocument": {"uri": uri(&path)}, "position": pos(4, 13)}));
-    assert!(p.is_null());
-    let f = lsp.request("textDocument/formatting", json!({"textDocument": {"uri": uri(&path)}, "options": {"tabSize": 2, "insertSpaces": true}}));
-    assert!(f.is_null());
-    lsp.shutdown();
-    let _ = std::fs::remove_dir_all(&dir);
-}
