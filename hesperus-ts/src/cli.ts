@@ -23,7 +23,7 @@ import { extract } from "./extract.js";
 import { factsOf, newProject } from "./facts.js";
 import { flow, toFlowJson, writeFlow } from "./flow.js";
 import { Ir, toJson } from "./ir.js";
-import { changedFiles, diffFlows, findEntry, flowAt, loadFlow, reaches, renderConstraints, renderDiff, renderEntries, renderEntry, renderReaches, summarize } from "./query.js";
+import { changedFiles, diffFlows, entriesForReading, findEntry, flowAt, loadFlow, reaches, renderConstraints, renderDiff, renderEntries, renderEntry, renderReaches, summarize } from "./query.js";
 import { RULES } from "./rules.js";
 
 const COMMANDS = ["extract", "flow", "entries", "reaches", "boundaries", "check", "explain", "rules", "mcp"];
@@ -174,7 +174,7 @@ async function main() {
       return;
     }
     case "entries":
-      process.stdout.write(o.json ? JSON.stringify(f.entries.map((e) => summarize(f, e)), null, 2) + "\n" : renderEntries(f));
+      process.stdout.write(o.json ? JSON.stringify(entriesForReading(f).map((e) => summarize(f, e)), null, 2) + "\n" : renderEntries(f));
       return;
     case "reaches": {
       if (!o.rest.length) usage();
@@ -199,7 +199,7 @@ async function main() {
         process.exit(2);
       }
       const d = diffFlows(before, f, o.since, changed);
-      process.stdout.write(o.json ? JSON.stringify(d, null, 2) + "\n" : renderDiff(d));
+      process.stdout.write(o.json ? JSON.stringify(d, null, 2) + "\n" : renderDiff(d, f));
       return;
     }
     case "check": {

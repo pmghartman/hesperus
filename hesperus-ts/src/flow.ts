@@ -85,6 +85,8 @@ export interface FlowEntry {
   /** Route handler, `main`, a `bin`/shebang module, a CLI command handler, an exported function a host calls by name, or an event handler. */
   kind: "route" | "main" | "module" | "command" | "export" | "event";
   label: string;
+  /** Further routes the same function handles (pathname comparisons inside one handler), in source order. */
+  also?: string[];
   protocol: "http" | "ws" | null;
   unit: string;
   /** Where the entry is declared or registered, `path:line`. */
@@ -395,7 +397,7 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
   };
 
   // ---- entries
-  type Entry = { kind: FlowEntry["kind"]; label: string; protocol: FlowEntry["protocol"]; fn: Fn | SourceFile; at: string; chain?: Fn[] };
+  type Entry = { kind: FlowEntry["kind"]; label: string; also?: string[]; protocol: FlowEntry["protocol"]; fn: Fn | SourceFile; at: string; chain?: Fn[] };
   const entries: Entry[] = [];
   const addEntry = (e: Entry) => {
     if (!entries.some((x) => x.fn === e.fn && x.label === e.label)) entries.push(e);
@@ -577,9 +579,12 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
       if (plain.length) addEntry({ kind: "route", label, protocol: finding.protocol, fn: plain[0].fn, at: at(node), chain: plain.slice(1).map((h) => h.fn) });
       for (const h of found) if (h.label) addEntry({ kind: "route", label: h.label, protocol: finding.protocol, fn: h.fn, at: at(node) });
     } else {
-      // a pathname comparison: the function it sits in handles that route
+      // a pathname comparison: the function it sits in handles that route; one entry per function, the other routes under `also`
       const fn = enclosingUnit(node) ?? node.getSourceFile();
-      addEntry({ kind: "route", label: finding.detail, protocol: finding.protocol, fn, at: at(node) });
+      const existing = entries.find((x) => x.fn === fn && x.kind === "route" && x.label.startsWith("MATCH "));
+      if (existing) {
+        if (existing.label !== finding.detail && !existing.also?.includes(finding.detail)) (existing.also ??= []).push(finding.detail);
+      } else addEntry({ kind: "route", label: finding.detail, protocol: finding.protocol, fn, at: at(node) });
     }
   }
   // event handlers: `.on("name", fn)` on an emitter from a known module; `.emit("name")` reaches them
@@ -588,8 +593,9 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
     for (const c of calls) {
       if (!Node.isCallExpression(c)) continue;
       const name = calleeName(c);
-      if (name !== "on" && name !== "once" && name !== "addListener") continue;
-      if (!onEmitter(c)) continue;
+      // `addEventListener(name, fn)` on anything (the DOM, a worker, a socket) registers a handler too
+      if (name !== "on" && name !== "once" && name !== "addListener" && name !== "addEventListener") continue;
+      if (name !== "addEventListener" && !onEmitter(c)) continue;
       const a0 = unwrap(c.getArguments()[0]);
       if (!a0 || !Node.isStringLiteral(a0)) continue;
       const fn = fnOf(c.getArguments()[1]);
@@ -793,7 +799,7 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
     const first = walk(e.fn, 1, new Set([e.fn]));
     // a middleware chain: the next handlers run after the first, in registration order
     for (const next of e.chain ?? []) if (!exhausted) first.push(step(next, e.at, 1, new Set([e.fn]), "next"));
-    const entry: FlowEntry = { id: `${e.kind}:${unit}`, kind: e.kind, label: e.label, protocol: e.protocol, unit, at: e.at, steps: first };
+    const entry: FlowEntry = { id: `${e.kind}:${unit}`, kind: e.kind, label: e.label, ...(e.also?.length ? { also: e.also } : {}), protocol: e.protocol, unit, at: e.at, steps: first };
     out.push(entry);
     for (const fn of passed) {
       if (!entriesThrough.has(fn)) entriesThrough.set(fn, new Set());

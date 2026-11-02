@@ -8,7 +8,7 @@ import * as path from "node:path";
 import { z } from "zod";
 import { toFlowJson } from "./flow.js";
 import { Ir } from "./ir.js";
-import { changedFiles, diffFlows, findEntry, flowAt, loadFlow, reaches, renderConstraints, renderDiff, renderEntries, renderEntry, renderReaches, summarize } from "./query.js";
+import { changedFiles, diffFlows, entriesForReading, findEntry, flowAt, loadFlow, reaches, renderConstraints, renderDiff, renderEntries, renderEntry, renderReaches, summarize } from "./query.js";
 
 export async function serve(repo: string, opts: { intent: Ir | null; rootName?: string }): Promise<void> {
   const server = new McpServer({ name: "hesperus", version: "0.1.0" });
@@ -25,7 +25,7 @@ export async function serve(repo: string, opts: { intent: Ir | null; rootName?: 
     },
     async (a) => {
       const f = load(a.fresh);
-      return text(a.json ? JSON.stringify(f.entries.map((e) => summarize(f, e)), null, 2) : renderEntries(f));
+      return text(a.json ? JSON.stringify(entriesForReading(f).map((e) => summarize(f, e)), null, 2) : renderEntries(f));
     },
   );
   server.registerTool(
@@ -66,7 +66,7 @@ export async function serve(repo: string, opts: { intent: Ir | null; rootName?: 
       try {
         const before = flowAt(repo, a.since, { intent: opts.intent, rootName: f.root });
         const d = diffFlows(before, f, a.since, changedFiles(repo, a.since));
-        return text(a.json ? JSON.stringify(d, null, 2) : renderDiff(d));
+        return text(a.json ? JSON.stringify(d, null, 2) : renderDiff(d, f));
       } catch (e) {
         return text(`git: ${(e as Error).message.split("\n")[0]}`);
       }

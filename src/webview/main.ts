@@ -87,7 +87,7 @@ function applyTransform() {
 function entryLink(f: FlowJson, id: string, current: string | null): string {
   const e = f.entries.find((x) => x.id === id);
   if (!e) return esc(id);
-  return `<a href="#" class="${e.id === current ? "current" : ""}" data-entry="${esc(e.id)}" title="${esc(e.at)}"><span>${esc(e.label)}</span><span class="unit">${esc(e.kind === "module" ? e.unit.slice(0, e.unit.indexOf("#")) : e.unit.slice(e.unit.indexOf("#") + 1))}</span></a>`;
+  return `<a href="#" class="${e.id === current ? "current" : ""}" data-entry="${esc(e.id)}" title="${esc(e.at)}${e.also?.length ? `\nalso: ${esc(e.also.join(", "))}` : ""}"><span>${esc(e.label)}${e.also?.length ? ` <span class="muted">+${e.also.length}</span>` : ""}</span><span class="unit">${esc(e.kind === "module" ? e.unit.slice(0, e.unit.indexOf("#")) : e.unit.slice(e.unit.indexOf("#") + 1))}</span></a>`;
 }
 
 function renderEntries(f: FlowJson, current: string | null): string {

@@ -5,6 +5,7 @@
 // is newer than it.
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -57,9 +58,10 @@ export function findEntry(f: Flow, key: string): FlowEntry | { ambiguous: FlowEn
   const byId = f.entries.find((e) => e.id === key);
   if (byId) return byId;
   const k = key.toLowerCase();
-  const exact = f.entries.filter((e) => e.label.toLowerCase() === k);
+  const labels = (e: FlowEntry) => [e.label, ...(e.also ?? [])].map((l) => l.toLowerCase());
+  const exact = f.entries.filter((e) => labels(e).includes(k));
   if (exact.length === 1) return exact[0];
-  const loose = exact.length ? exact : f.entries.filter((e) => e.label.toLowerCase().includes(k) || e.unit.toLowerCase().includes(k));
+  const loose = exact.length ? exact : f.entries.filter((e) => labels(e).some((l) => l.includes(k)) || e.unit.toLowerCase().includes(k));
   if (loose.length === 1) return loose[0];
   return loose.length ? { ambiguous: loose } : null;
 }
@@ -188,7 +190,32 @@ export function changedFiles(repo: string, since: string, to?: string): string[]
  * The flow of a repository at a git revision: its TypeScript sources, package.json and
  * tsconfig files are materialized into a temporary directory and read there.
  */
-export function flowAt(repo: string, rev: string, opts: { intent: Ir | null; rootName?: string }): Flow {
+export function flowAt(repo: string, rev: string, opts: { intent: Ir | null; rootName?: string; cache?: boolean }): Flow {
+  // a revision's flow never changes: cache it by commit sha, root name and intent
+  const sha = execFileSync("git", ["-C", repo, "rev-parse", "--verify", `${rev}^{commit}`], { encoding: "utf8" }).trim();
+  const rootName = opts.rootName ?? opts.intent?.root ?? identify(path.basename(path.resolve(repo)));
+  const key = createHash("sha1").update(`${sha}\u0000${rootName}\u0000${opts.intent ? JSON.stringify(opts.intent) : ""}`).digest("hex").slice(0, 16);
+  const cacheFile = opts.cache === false ? null : path.join(repo, ".hesperus", "actual", "at", `${sha.slice(0, 12)}-${key}.json`);
+  if (cacheFile && fs.existsSync(cacheFile)) {
+    try {
+      const f = JSON.parse(fs.readFileSync(cacheFile, "utf8")) as Flow;
+      if (f.flow === "0.2") return f;
+    } catch {
+      // recompute
+    }
+  }
+  const f = materializeAndFlow(repo, rev, { intent: opts.intent, rootName });
+  if (cacheFile) {
+    try {
+      writeFlow(f, cacheFile);
+    } catch {
+      // read-only tree
+    }
+  }
+  return f;
+}
+
+function materializeAndFlow(repo: string, rev: string, opts: { intent: Ir | null; rootName: string }): Flow {
   const list = execFileSync("git", ["-C", repo, "ls-tree", "-r", "--name-only", rev], { encoding: "utf8" })
     .split("\n")
     .map((l) => l.trim())
@@ -211,8 +238,7 @@ export function flowAt(repo: string, rev: string, opts: { intent: Ir | null; roo
         fs.writeFileSync(target, content);
       }
     }
-    const rootName = opts.rootName ?? opts.intent?.root ?? identify(path.basename(path.resolve(repo)));
-    return flow(dir, { intent: opts.intent, rootName });
+    return flow(dir, { intent: opts.intent, rootName: opts.rootName });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -220,11 +246,25 @@ export function flowAt(repo: string, rev: string, opts: { intent: Ir | null; roo
 
 // ---- text renderings, for a terminal or an agent reading tool output
 
+/** Entries for reading: routes first, then events, commands, main, modules, exports; evidence order within a kind. */
+const KIND_ORDER: FlowEntry["kind"][] = ["route", "event", "command", "main", "module", "export"];
+export function entriesForReading(f: Flow): FlowEntry[] {
+  return [...f.entries].sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || f.entries.indexOf(a) - f.entries.indexOf(b));
+}
+
+/** `label (file:line)` for a list, short enough to scan. */
+export function entryRef(f: Flow, id: string): string {
+  const e = f.entries.find((x) => x.id === id);
+  if (!e) return id;
+  const file = e.at.slice(e.at.lastIndexOf("/") + 1);
+  return `${e.label}${e.also?.length ? ` +${e.also.length}` : ""} (${file})`;
+}
+
 export function renderEntries(f: Flow): string {
   const lines: string[] = [];
-  for (const e of f.entries) {
+  for (const e of entriesForReading(f)) {
     const s = summarize(f, e);
-    lines.push(`${e.id}\n  ${e.kind} ${e.label}  @${e.at}  ${s.functions} function${s.functions === 1 ? "" : "s"}${s.boundaries.length ? "  -> " + s.boundaries.join(", ") : "  (stays inside the program)"}`);
+    lines.push(`${e.id}\n  ${e.kind} ${e.label}${e.also?.length ? ` (+${e.also.length} more route${e.also.length === 1 ? "" : "s"})` : ""}  @${e.at}  ${s.functions} function${s.functions === 1 ? "" : "s"}${s.boundaries.length ? "  -> " + s.boundaries.join(", ") : "  (stays inside the program)"}`);
   }
   return lines.join("\n") + (lines.length ? "\n" : "no entry points found\n");
 }
@@ -237,7 +277,7 @@ export function renderEntry(f: Flow, e: FlowEntry): string {
     const c = f.components.find((x) => x.id === u.owner);
     return c ? ` [${c.label ?? c.name}]` : "";
   };
-  const lines: string[] = [`${e.kind} ${e.label}  @${e.at}`, `  ${e.unit}${owner(e.unit)}  @${units.get(e.unit)?.file ?? ""}:${units.get(e.unit)?.line ?? ""}`];
+  const lines: string[] = [`${e.kind} ${e.label}  @${e.at}`, ...(e.also?.length ? [`  also: ${e.also.join(", ")}`] : []), `  ${e.unit}${owner(e.unit)}  @${units.get(e.unit)?.file ?? ""}:${units.get(e.unit)?.line ?? ""}`];
   const walk = (steps: FlowStep[], indent: string) => {
     for (const s of steps) {
       if (isCrossing(s)) lines.push(`${indent}-> ${s.boundary} ${s.label} (${s.node}) ${s.edge}${s.resolved ? "" : " unresolved"}  @${s.at}`);
@@ -255,7 +295,8 @@ export function renderEntry(f: Flow, e: FlowEntry): string {
 export function renderReaches(f: Flow, file: string, line: number | undefined, hits: { entry: FlowEntry; units: FlowUnit[] }[]): string {
   const where = line === undefined ? file : `${file}:${line}`;
   if (!hits.length) return `${where}: no entry point reaches it\n`;
-  return `${where}: reached by ${hits.length} entr${hits.length === 1 ? "y" : "ies"}\n` + hits.map((h) => `  ${h.entry.id}\n    ${h.entry.kind} ${h.entry.label} via ${h.units.map((u) => u.name).join(", ")}`).join("\n") + "\n";
+  const via = (us: FlowUnit[]) => (us.length <= 6 ? us.map((u) => u.name).join(", ") : `${us.slice(0, 6).map((u) => u.name).join(", ")} +${us.length - 6} more`);
+  return `${where}: reached by ${hits.length} entr${hits.length === 1 ? "y" : "ies"}\n` + hits.map((h) => `  ${h.entry.id}\n    ${h.entry.kind} ${h.entry.label}${h.entry.also?.length ? ` (+${h.entry.also.length})` : ""} via ${via(h.units)}`).join("\n") + "\n";
 }
 
 export function renderConstraints(f: Flow): string {
@@ -267,9 +308,10 @@ export function renderConstraints(f: Flow): string {
   );
 }
 
-export function renderDiff(d: FlowDiff): string {
+export function renderDiff(d: FlowDiff, f?: Flow): string {
   const lines: string[] = [`since ${d.since}: ${d.changed.length} source file${d.changed.length === 1 ? "" : "s"} changed`];
-  for (const a of d.affected) lines.push(`  ${a.file} is under ${a.entries.join(", ")}`);
+  const ref = (id: string) => (f ? entryRef(f, id) : id);
+  for (const a of d.affected) lines.push(`  ${a.file} is under ${a.entries.length} entr${a.entries.length === 1 ? "y" : "ies"}: ${a.entries.slice(0, 5).map(ref).join(", ")}${a.entries.length > 5 ? ` +${a.entries.length - 5} more` : ""}`);
   for (const f of d.changed) if (!d.affected.some((a) => a.file === f)) lines.push(`  ${f} is under no entry point`);
   const cross = (c: BoundaryChange) => `${c.label}: ${c.boundary} ${c.node} ${c.edge} from ${c.unit}  @${c.at}`;
   if (d.addedCrossings.length) lines.push("newly reached:", ...d.addedCrossings.map((c) => `  + ${cross(c)}`));

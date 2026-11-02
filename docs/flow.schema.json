@@ -100,7 +100,8 @@
           "enum": ["route", "main", "module", "command", "export", "event"],
           "description": "route: a handler registered on an ingress the rule table recognizes (a route call, a `routes` object, the function holding a pathname comparison), with router mount prefixes (`app.use(\"/api\", r)`) applied to its label; main: a `main` function that is exported or called at the top level; module: the top-level code of a `bin` file or a file with a shebang; command: a CLI command handler (commander/cac/yargs/citty style `.action(fn)`, `.command(..., fn)`, `defineCommand({ run })`); export: an exported function a host calls by name (`activate`/`deactivate` in a file importing `vscode`); event: a handler registered with `.on(name, fn)` on an emitter from events/eventemitter3/mitt/nanoevents/emittery/ws."
         },
-        "label": { "type": "string", "description": "`GET /users`, `MATCH /x`, `main`, the file name, `command <name>`, or the export name." },
+        "label": { "type": "string", "description": "`GET /users`, `MATCH /x`, `main`, the file name, `command <name>`, `on <event>`, or the export name." },
+        "also": { "type": "array", "items": { "type": "string" }, "description": "Further routes the same function handles (pathname comparisons inside one handler), in source order." },
         "protocol": { "enum": ["http", "ws", null] },
         "unit": { "$ref": "#/$defs/unitId", "description": "The function the entry runs." },
         "at": { "$ref": "#/$defs/at", "description": "Where the entry is registered or declared." },

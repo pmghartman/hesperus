@@ -19,6 +19,7 @@ const intent = JSON.parse(fs.readFileSync(path.join(fixture, "intent.json"), "ut
 test("entries, one entry as a tree, reaches and check read as text", () => {
   const { flow: f } = loadFlow(path.join(fixture, "repo"), { intent, cache: null });
   const entries = renderEntries(f);
+  assert.ok(entries.startsWith("route:"), "routes listed before the bin module");
   assert.match(entries, /^route:src\/handlers\/users\.ts#listUsers\n  route GET \/users  @src\/server\.ts:5  3 functions  -> store shop\.db reads, hardware shop\.filesystem io$/m);
   assert.match(entries, /route GET \/health  @src\/server\.ts:7  2 functions  \(stays inside the program\)/);
   const orders = findEntry(f, "post /orders");
@@ -110,8 +111,9 @@ test("boundaries --since: what a change newly reaches, and which entries the cha
         "src/server.ts: route:src/server.ts#anonymous, route:src/server.ts#anonymous@13",
       ],
     );
-    const textOut = renderDiff(diffFlows(before, after, "HEAD", [...changed, "src/unused.ts"]));
+    const textOut = renderDiff(diffFlows(before, after, "HEAD", [...changed, "src/unused.ts"]), after);
     assert.match(textOut, /^since HEAD: 4 source files changed\n/);
+    assert.match(textOut, /src\/handlers\/audit\.ts is under 2 entries: GET \/users \(server\.ts:5\), POST \/orders \(server\.ts:6\)/);
     assert.match(textOut, /src\/unused\.ts is under no entry point/);
     assert.match(textOut, /newly reached:\n  \+ GET \/users: external shop\.hooks_slack_com http/);
     assert.match(textOut, /new entry points:\n  \+ route GET \/ping  @src\/server\.ts:13/);

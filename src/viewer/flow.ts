@@ -27,6 +27,7 @@ export interface FlowEntry {
   id: string;
   kind: "route" | "main" | "module" | "command" | "export" | "event";
   label: string;
+  also?: string[];
   protocol: "http" | "ws" | null;
   unit: string;
   at: string;
@@ -131,7 +132,7 @@ export function flowView(f: FlowJson, entryId: string | null): FlowView | null {
     name: entry.label,
     label: ENTRY_KIND_LABEL[entry.kind] ?? entry.kind,
     at: [entry.at],
-    detail: [`kind: ${entry.kind}`, ...(entry.protocol ? [`protocol: ${entry.protocol}`] : [])],
+    detail: [`kind: ${entry.kind}`, ...(entry.protocol ? [`protocol: ${entry.protocol}`] : []), ...(entry.also?.length ? [`also: ${entry.also.join(", ")}`] : [])],
   };
   nodes.set(entry.id, entryNode);
   order.push(entryNode);
