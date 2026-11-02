@@ -29,11 +29,13 @@ system shop "Web shop" {
 
 ## Install
 
-Download the `.vsix` for your platform from the [latest release](https://github.com/pmghartman/hesperus/releases/latest) and in VS Code choose Extensions → `…` → **Install from VSIX**. The package carries everything it needs; no Rust or Node install.
+In VS Code, open Extensions, search **Hesperus** and install it ([Marketplace](https://marketplace.visualstudio.com/items?itemName=pmghartman.hesperus-vscode); [Open VSX](https://open-vsx.org/extension/pmghartman/hesperus-vscode) for VSCodium, Cursor and other forks). That is all: the package for macOS (Apple silicon), Linux x64 and Windows x64 carries `hesp`, the language server and the extractor, and runs the extractor on VS Code's own Node. No Rust, Node or `.vsix` download needed.
 
 ## Use
 
-1. Write an intent file like the one above, or run **Hesperus: Create Intent From Code** in a repository already under way: it writes an intent describing the code as it is now (one component per source directory two levels deep, plus every ingress, store and external host found) and emits the actual, so the viewer starts all **match** and every later change shows as a difference. It never overwrites an existing file. In `.hesp` files, highlighting, completion, hover, go-to-definition, rename and formatting work as you type; errors come with fixes.
+The **Hesperus** icon in the activity bar opens the sidebar: the intent, the actual and the diff counts, with Emit and Open Viewer in its title bar. In a workspace with no intent it offers **Create Intent From Code**.
+
+1. Write an intent file like the one above, or press **Create Intent From Code** in the sidebar (also in the command palette) in a repository already under way: it writes an intent describing the code as it is now (one component per source directory two levels deep, plus every ingress, store and external host found) and emits the actual, so the viewer starts all **match** and every later change shows as a difference. It adds `.hesperus/` to `.gitignore` and never overwrites an existing file. In `.hesp` files, highlighting, completion, hover, go-to-definition, rename and formatting work as you type; errors come with fixes.
 2. **Hesperus: Emit Actual From Code** reads your TypeScript repository and writes `.hesperus/actual/*.hesp`, a generated description of what the code does: imports, HTTP routes, outbound requests, databases, WebSockets, filesystem and process use. Never edit those files.
 3. **Hesperus: Open Viewer** (the icon in the editor title) shows the graph in three modes:
 

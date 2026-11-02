@@ -51,15 +51,46 @@
       },
       {
         "command": "hesperus.emit",
-        "title": "Hesperus: Emit Actual From Code"
+        "title": "Hesperus: Emit Actual From Code",
+        "icon": "$(sync)"
       },
       {
         "command": "hesperus.init",
-        "title": "Hesperus: Create Intent From Code"
+        "title": "Hesperus: Create Intent From Code",
+        "icon": "$(sparkle)"
       },
       {
         "command": "hesperus.restartServer",
         "title": "Hesperus: Restart Language Server"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "hesperus",
+          "title": "Hesperus",
+          "icon": "media/activity.svg"
+        }
+      ]
+    },
+    "views": {
+      "hesperus": [
+        {
+          "id": "hesperus.status",
+          "name": "Status"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "hesperus.status",
+        "contents": "Open a folder to describe it with Hesperus.\n[Open Folder](command:vscode.openFolder)",
+        "when": "workbenchState == empty"
+      },
+      {
+        "view": "hesperus.status",
+        "contents": "This workspace has no Hesperus intent yet.\n[Create Intent From Code](command:hesperus.init)\nDescribes the code as it is now, so intent and actual start matched and every change after shows as a difference.\nOr write a .hesp file by hand: [see how](https://github.com/pmghartman/hesperus#use).",
+        "when": "workbenchState != empty"
       }
     ],
     "menus": {
@@ -68,6 +99,18 @@
           "command": "hesperus.openViewer",
           "when": "resourceLangId == hesperus",
           "group": "navigation"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "hesperus.emit",
+          "when": "view == hesperus.status",
+          "group": "navigation@1"
+        },
+        {
+          "command": "hesperus.openViewer",
+          "when": "view == hesperus.status",
+          "group": "navigation@2"
         }
       ]
     },

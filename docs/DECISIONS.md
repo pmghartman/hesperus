@@ -95,7 +95,7 @@ Flat sorted arrays of nodes (with `parent`) and edges, keyed by fully qualified 
 
 ## `hesp init`: an intent that starts matched
 
-`hesp init --lang ts <repo>` runs the extractor with no intent, then makes that output the intent: the `unbound` components move up to the root (suffixed `_src` when a boundary already holds the name), and evidence and the `generated` marker are dropped. Their `src` globs bind the same files to the same ids, so emitting against the new intent reproduces it; init runs that emit and diffs the two, warning if anything differs. A root name that is a reserved word (a repository called `hesperus`) gets an `_` added. It writes only new files: an existing intent belongs to the user.
+`hesp init --lang ts <repo>` runs the extractor with no intent, then makes that output the intent: the `unbound` components move up to the root (suffixed `_src` when a boundary already holds the name), and evidence and the `generated` marker are dropped. Their `src` globs bind the same files to the same ids, so emitting against the new intent reproduces it; init runs that emit and diffs the two, warning if anything differs. A root name that is a reserved word (a repository called `hesperus`) gets an `_` added. It writes only new files: an existing intent belongs to the user. When the actual lands inside the intent's directory, init appends it to that directory's `.gitignore` (`.hesperus/` for the default location) unless an entry is already there; actual files are never committed.
 
 ## One unresolved sink
 

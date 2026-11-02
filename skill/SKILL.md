@@ -97,7 +97,7 @@ Rules that bite:
 
 ## Starting from existing code
 
-`hesp init --lang ts <repo>` writes `<repo name>.hesp` into the repository (`--dir` to put it elsewhere, `--name` to name the root system) describing the code as it is, then emits the actual: it ends `hesp init: intent and actual match (N nodes and edges)`. It refuses to overwrite an existing file. The result is a starting point, not a design: rename components, group them into subsystems (keeping each `src` glob), add `desc` and constraints, then re-emit and diff.
+`hesp init --lang ts <repo>` writes `<repo name>.hesp` into the repository (`--dir` to put it elsewhere, `--name` to name the root system) describing the code as it is, then emits the actual and adds the actual's directory (`.hesperus/` by default) to the `.gitignore` beside the intent: it ends `hesp init: intent and actual match (N nodes and edges)`. It refuses to overwrite an existing file. The result is a starting point, not a design: rename components, group them into subsystems (keeping each `src` glob), add `desc` and constraints, then re-emit and diff.
 
 ## Adding a subsystem
 

@@ -5,12 +5,27 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { LanguageClient, LanguageClientOptions, ServerOptions } from "vscode-languageclient/node";
+import { findMaster } from "./master";
+import { StatusView } from "./sidebar";
 
 let client: LanguageClient | undefined;
 let panel: vscode.WebviewPanel | undefined;
+let status: StatusView | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
   extensionRoot = context.extensionUri.fsPath;
+  status = new StatusView(() => statusData(context));
+  const hespWatcher = vscode.workspace.createFileSystemWatcher("**/*.hesp");
+  const refresh = () => status?.refresh();
+  context.subscriptions.push(
+    vscode.window.registerTreeDataProvider("hesperus.status", status),
+    hespWatcher,
+    hespWatcher.onDidChange(refresh),
+    hespWatcher.onDidCreate(refresh),
+    hespWatcher.onDidDelete(refresh),
+    vscode.window.onDidChangeActiveTextEditor((e) => e?.document.languageId === "hesperus" && refresh()),
+    vscode.workspace.onDidChangeConfiguration((e) => e.affectsConfiguration("hesperus") && refresh()),
+  );
   await startServer(context);
   context.subscriptions.push(
     vscode.commands.registerCommand("hesperus.openViewer", () => openViewer(context)),
@@ -104,42 +119,16 @@ function run(cmd: string, args: string[], cwd: string, input?: string): Promise<
   });
 }
 
-/** The intent master for the active editor: the configured file, else the file that imports the active one. */
-export function findMaster(root: string, active: string | undefined, configured: string): string | undefined {
-  if (configured) return path.resolve(root, configured);
-  if (!active) return undefined;
-  const files: string[] = [];
-  const walk = (dir: string, depth: number) => {
-    if (depth > 6) return;
-    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (e.isDirectory()) {
-        if (e.name.startsWith(".") || e.name === "node_modules" || e.name === "target") continue;
-        walk(path.join(dir, e.name), depth + 1);
-      } else if (e.name.endsWith(".hesp")) files.push(path.join(dir, e.name));
-    }
-  };
-  walk(root, 0);
-  const importers = new Map<string, string>();
-  for (const f of files) {
-    const text = fs.readFileSync(f, "utf8");
-    for (const m of text.matchAll(/^\s*import\s+"([^"]+)"/gm)) importers.set(path.resolve(path.dirname(f), m[1]), f);
-  }
-  let cur = path.resolve(active);
-  const seen = new Set<string>();
-  while (importers.has(cur) && !seen.has(cur)) {
-    seen.add(cur);
-    cur = importers.get(cur)!;
-  }
-  return cur;
-}
-
 let lastMaster: string | undefined;
 
 async function loadData(context: vscode.ExtensionContext): Promise<any> {
   const root = workspaceRoot();
   if (!root) return { type: "data", error: "Open a folder first.", intent: null, actual: null, unified: null, locations: {} };
   const active = vscode.window.activeTextEditor?.document;
-  const master = findMaster(root, active?.languageId === "hesperus" ? active.uri.fsPath : undefined, config("intent", "")) ?? lastMaster;
+  const activeHesp = active?.languageId === "hesperus" ? active.uri.fsPath : undefined;
+  const configured = config("intent", "");
+  // an open .hesp file or the setting decides; else the last master shown; else the one on disk
+  const master = activeHesp || configured ? findMaster(root, activeHesp, configured) : lastMaster && fs.existsSync(lastMaster) ? lastMaster : findMaster(root, undefined, "");
   if (!master || !fs.existsSync(master)) {
     return { type: "data", error: "No intent file. Open a .hesp file or set hesperus.intent.", intent: null, actual: null, unified: null, locations: {} };
   }
@@ -254,11 +243,20 @@ async function init(context: vscode.ExtensionContext) {
   // hesp prints every file it wrote, the intent master first
   const master = res.stdout.trim().split("\n")[0];
   lastMaster = master;
+  status?.refresh();
   await openAt(master, 1);
   await openViewer(context);
   const summary = res.stderr.trim().split("\n").find((l) => l.startsWith("hesp init: intent and actual"));
   if (summary?.includes("differ")) vscode.window.showWarningMessage(`Hesperus: ${res.stderr.trim()}`);
   else vscode.window.showInformationMessage(`Hesperus: wrote ${path.basename(master)}; ${summary?.replace("hesp init: ", "") ?? "intent and actual match"}.`);
+}
+
+/** The sidebar's data; null (the welcome, with its init button) while the workspace has no intent. */
+async function statusData(context: vscode.ExtensionContext) {
+  const root = workspaceRoot();
+  if (!root) return null;
+  const d = await loadData(context);
+  return d.intentPath ? d : null;
 }
 
 function splitLoc(loc: string): [string, number] {
@@ -301,5 +299,5 @@ async function emit(context: vscode.ExtensionContext) {
   }
   vscode.window.showInformationMessage(`Hesperus: wrote ${res.stdout.trim().split("\n").length} actual files.`);
   if (panel) panel.webview.postMessage(await loadData(context));
-  void context;
+  status?.refresh();
 }

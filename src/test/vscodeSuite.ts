@@ -21,6 +21,9 @@ export async function run(): Promise<void> {
   await ext.activate();
   const commands = await vscode.commands.getCommands(true);
   for (const c of ["hesperus.openViewer", "hesperus.emit", "hesperus.init", "hesperus.restartServer"]) assert.ok(commands.includes(c), c);
+  // the sidebar container and its status view are contributed
+  await vscode.commands.executeCommand("workbench.view.extension.hesperus");
+  await vscode.commands.executeCommand("hesperus.status.focus");
   await vscode.commands.executeCommand("hesperus.openViewer");
   await new Promise((r) => setTimeout(r, 2500));
   assert.ok(vscode.window.tabGroups.all.some((g) => g.tabs.some((t) => t.label === "Hesperus")), "viewer panel opened");

@@ -447,8 +447,13 @@ fn init(lang: &str, repo: &Path, name: Option<&str>, dir: Option<&Path>, out: Op
     if code != 0 {
         return code;
     }
-    // the point of init: nothing differs yet
     let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".hesperus/actual"));
+    match ignore_actual(dir, &out_dir) {
+        Ok(Some(entry)) => eprintln!("hesp init: added {entry} to {}", path_str(&dir.join(".gitignore"))),
+        Ok(None) => {}
+        Err(e) => eprintln!("hesp init: could not update .gitignore: {e}"),
+    }
+    // the point of init: nothing differs yet
     let a = load_from_disk(&path_str(&master));
     let b = load_from_disk(&path_str(&out_dir.join(&files[0].0)));
     let u = hesperus_core::diff::diff(&a.ir, &b.ir);
@@ -459,6 +464,27 @@ fn init(lang: &str, repo: &Path, name: Option<&str>, dir: Option<&Path>, out: Op
         eprintln!("hesp init: intent and actual match ({} nodes and edges)", s.matched);
     }
     0
+}
+
+/// Make the intent's directory ignore the actual files when they land inside it: `.hesperus/`
+/// for the default location, else the output directory itself. Returns the entry it added.
+fn ignore_actual(dir: &Path, out_dir: &Path) -> Result<Option<String>, String> {
+    let (Ok(dir_abs), Ok(out_abs)) = (std::fs::canonicalize(dir), std::fs::canonicalize(out_dir)) else { return Ok(None) };
+    let Ok(rel) = out_abs.strip_prefix(&dir_abs) else { return Ok(None) };
+    let rel = path_str(rel);
+    if rel.is_empty() {
+        return Ok(None);
+    }
+    let entry = if rel == ".hesperus" || rel.starts_with(".hesperus/") { ".hesperus/".to_string() } else { format!("{rel}/") };
+    let file = dir.join(".gitignore");
+    let text = std::fs::read_to_string(&file).unwrap_or_default();
+    let bare = |l: &str| l.trim().trim_start_matches('/').trim_end_matches('/').to_string();
+    if text.lines().any(|l| bare(l) == bare(&entry)) {
+        return Ok(None);
+    }
+    let sep = if text.is_empty() || text.ends_with('\n') { "" } else { "\n" };
+    std::fs::write(&file, format!("{text}{sep}{entry}\n")).map_err(|e| format!("{}: {e}", path_str(&file)))?;
+    Ok(Some(entry))
 }
 
 fn diff(intent: &Path, actual: &Path, json: bool, all: bool, depth: Option<usize>) -> i32 {

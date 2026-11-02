@@ -151,7 +151,7 @@ fn emit_requires_a_known_language_and_an_extractor() {
 #[test]
 fn init_writes_a_matching_intent_and_never_overwrites() {
     let dir = scratch("init");
-    let out_dir = dir.join("actual");
+    let out_dir = dir.join(".hesperus/actual");
     // no intent on stdin: everything unbound; with an intent: bound by its src globs
     let script = dir.join("ext.js");
     std::fs::write(
@@ -164,6 +164,7 @@ if(!t.trim())nodes.push(n(root+".unbound","subsystem"));
 process.stdout.write(JSON.stringify({hesperus:"0.1",generated:"fake",root,files:[{path:root+".hesp",root}],nodes,edges:[{from:root+".http",to:lib,kind:"http",at:["lib/a.ts:1"]}]}));});"#,
     )
     .unwrap();
+    std::fs::write(dir.join(".gitignore"), "node_modules").unwrap();
     let run = || hesp().args(["init", "--lang", "ts"]).arg(&dir).args(["--name", "my-app", "--out"]).arg(&out_dir).arg("--extractor").arg(&script).output().unwrap();
     let out = run();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
@@ -171,12 +172,21 @@ process.stdout.write(JSON.stringify({hesperus:"0.1",generated:"fake",root,files:
     let intent = std::fs::read_to_string(dir.join("my_app.hesp")).unwrap();
     assert!(intent.contains("component lib") && !intent.contains("unbound") && !intent.contains("generated") && !intent.contains("at:"), "{intent}");
     assert!(out_dir.join("my_app.hesp").exists());
+    // the actual is ignored by git, once; an existing .gitignore keeps its lines
+    assert_eq!(std::fs::read_to_string(dir.join(".gitignore")).unwrap(), "node_modules\n.hesperus/\n");
     // a second run refuses: the intent is the user's now
     std::fs::write(dir.join("my_app.hesp"), "edited").unwrap();
     let out = run();
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("already exists; nothing was written"));
     assert_eq!(std::fs::read_to_string(dir.join("my_app.hesp")).unwrap(), "edited");
+    // an entry already there, in another spelling, is left alone
+    for f in ["my_app.hesp", ".hesperus/actual/my_app.hesp"] {
+        std::fs::remove_file(dir.join(f)).unwrap();
+    }
+    std::fs::write(dir.join(".gitignore"), "/.hesperus\n").unwrap();
+    assert!(run().status.success());
+    assert_eq!(std::fs::read_to_string(dir.join(".gitignore")).unwrap(), "/.hesperus\n");
     let out = hesp().args(["init", "--lang", "go", "."]).output().unwrap();
     assert_eq!(out.status.code(), Some(2));
     let _ = std::fs::remove_dir_all(&dir);
