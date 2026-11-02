@@ -59,7 +59,7 @@ enum Cmd {
         /// without it every file lands in the `unbound` bucket
         #[arg(long)]
         intent: Option<PathBuf>,
-        /// Directory for `flow.json` (default `.hesperus/actual`)
+        /// Directory for `flow.json` (default `<repo>/.hesperus/actual`)
         #[arg(long)]
         out: Option<PathBuf>,
         /// Extractor command; default `$HESPERUS_TS`, else `hesperus-ts` on PATH
@@ -80,10 +80,10 @@ enum Cmd {
         /// Root system name (default: the repository's directory name)
         #[arg(long)]
         name: Option<String>,
-        /// Directory to write the intent into (default: the repository)
+        /// Directory to write the intent into (default `<repo>/.hesperus`)
         #[arg(long)]
         dir: Option<PathBuf>,
-        /// Directory for `flow.json` (default `.hesperus/actual`)
+        /// Directory for `flow.json` (default `<repo>/.hesperus/actual`)
         #[arg(long)]
         out: Option<PathBuf>,
         /// Extractor command; default `$HESPERUS_TS`, else `hesperus-ts` on PATH
@@ -335,7 +335,7 @@ fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extr
             String::new()
         }
     };
-    let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".hesperus/actual"));
+    let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| repo.join(".hesperus/actual"));
     let flow = out_dir.join("flow.json");
     // the extractor writes the flow (entry points and the calls they reach) itself; its IR on
     // stdout is checked for shape and dropped: nothing reads actual `.hesp` files any more
@@ -346,6 +346,10 @@ fn emit(lang: &str, repo: &Path, intent: Option<&Path>, out: Option<&Path>, extr
     }
     if !flow.is_file() {
         eprintln!("hesp emit: extractor wrote no {}", path_str(&flow));
+        return 1;
+    }
+    if let Err(e) = ignore_hesperus_dir(&flow) {
+        eprintln!("hesp emit: {e}");
         return 1;
     }
     println!("{}", path_str(&flow));
@@ -407,7 +411,8 @@ fn init(lang: &str, repo: &Path, name: Option<&str>, dir: Option<&Path>, out: Op
         }
     };
     let intent = intent_from_actual(&actual);
-    let dir = dir.unwrap_or(repo);
+    let dir = dir.map(|d| d.to_path_buf()).unwrap_or_else(|| repo.join(".hesperus"));
+    let dir = dir.as_path();
     let files = match print_checked(&intent, dir) {
         Ok(f) => f,
         Err(e) => {
@@ -419,7 +424,7 @@ fn init(lang: &str, repo: &Path, name: Option<&str>, dir: Option<&Path>, out: Op
         eprintln!("hesp init: {} already exists; nothing was written", path_str(&dir.join(rel)));
         return 1;
     }
-    if let Err(e) = write_files(&files, dir) {
+    if let Err(e) = ignore_hesperus_dir(dir).and_then(|_| write_files(&files, dir)) {
         eprintln!("hesp init: {e}");
         return 1;
     }
@@ -428,12 +433,7 @@ fn init(lang: &str, repo: &Path, name: Option<&str>, dir: Option<&Path>, out: Op
     if code != 0 {
         return code;
     }
-    let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| PathBuf::from(".hesperus/actual"));
-    match ignore_actual(dir, &out_dir) {
-        Ok(Some(entry)) => eprintln!("hesp init: added {entry} to {}", path_str(&dir.join(".gitignore"))),
-        Ok(None) => {}
-        Err(e) => eprintln!("hesp init: could not update .gitignore: {e}"),
-    }
+    let out_dir = out.map(|p| p.to_path_buf()).unwrap_or_else(|| repo.join(".hesperus/actual"));
     match flow_entries(&out_dir.join("flow.json")) {
         Ok(n) => eprintln!("hesp init: wrote {} and {} ({n} entr{})", path_str(&master), path_str(&out_dir.join("flow.json")), if n == 1 { "y" } else { "ies" }),
         Err(e) => eprintln!("hesp init: {e}"),
@@ -448,23 +448,15 @@ fn flow_entries(flow: &Path) -> Result<usize, String> {
     v.get("entries").and_then(|e| e.as_array()).map(|a| a.len()).ok_or_else(|| format!("{}: no `entries` array", path_str(flow)))
 }
 
-/// Make the intent's directory ignore the actual files when they land inside it: `.hesperus/`
-/// for the default location, else the output directory itself. Returns the entry it added.
-fn ignore_actual(dir: &Path, out_dir: &Path) -> Result<Option<String>, String> {
-    let (Ok(dir_abs), Ok(out_abs)) = (std::fs::canonicalize(dir), std::fs::canonicalize(out_dir)) else { return Ok(None) };
-    let Ok(rel) = out_abs.strip_prefix(&dir_abs) else { return Ok(None) };
-    let rel = path_str(rel);
-    if rel.is_empty() {
-        return Ok(None);
-    }
-    let entry = if rel == ".hesperus" || rel.starts_with(".hesperus/") { ".hesperus/".to_string() } else { format!("{rel}/") };
+/// Keep a `.hesperus` folder out of git: when `path` lies in one, that folder gets a
+/// `.gitignore` of `*` (an existing one is the user's and stays). The repository's own
+/// `.gitignore` is never touched.
+fn ignore_hesperus_dir(path: &Path) -> Result<(), String> {
+    let Some(dir) = path.ancestors().find(|a| a.file_name().and_then(|s| s.to_str()) == Some(".hesperus")) else { return Ok(()) };
     let file = dir.join(".gitignore");
-    let text = std::fs::read_to_string(&file).unwrap_or_default();
-    let bare = |l: &str| l.trim().trim_start_matches('/').trim_end_matches('/').to_string();
-    if text.lines().any(|l| bare(l) == bare(&entry)) {
-        return Ok(None);
+    if file.exists() {
+        return Ok(());
     }
-    let sep = if text.is_empty() || text.ends_with('\n') { "" } else { "\n" };
-    std::fs::write(&file, format!("{text}{sep}{entry}\n")).map_err(|e| format!("{}: {e}", path_str(&file)))?;
-    Ok(Some(entry))
+    std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", path_str(dir)))?;
+    std::fs::write(&file, "*\n").map_err(|e| format!("{}: {e}", path_str(&file)))
 }

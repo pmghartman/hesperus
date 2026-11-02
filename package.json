@@ -140,7 +140,7 @@
         "hesperus.actualDir": {
           "type": "string",
           "default": ".hesperus/actual",
-          "description": "Workspace-relative directory holding the emitted actual files."
+          "description": "Workspace-relative directory for flow.json; keep it under .hesperus, which ignores itself."
         },
         "hesperus.sourceRoot": {
           "type": "string",

@@ -60,7 +60,8 @@ impl Backend {
             for d in dirs {
                 for f in find_hesp_files(&d) {
                     let s = normalize(&f.to_string_lossy().replace('\\', "/"));
-                    if s.contains("/.hesperus/") {
+                    // generated files never serve as a master; the intent may live in .hesperus
+                    if std::fs::read_to_string(&f).map(|t| is_generated(&s, &t)).unwrap_or(true) {
                         continue;
                     }
                     candidates.push(s);

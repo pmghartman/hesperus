@@ -878,8 +878,28 @@ export function toFlowJson(f: Flow): string {
 
 /** Write `flow.json`, creating its directory. */
 export function writeFlow(f: Flow, file: string): void {
+  ignoreHesperusDir(file);
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, toFlowJson(f));
+}
+
+/**
+ * Keep a `.hesperus` folder out of git: when `file` lies in one, that folder gets a
+ * `.gitignore` of `*` (an existing one is the user's and stays). The repository's own
+ * `.gitignore` is never touched.
+ */
+export function ignoreHesperusDir(file: string): void {
+  for (let d = path.resolve(file); ; d = path.dirname(d)) {
+    if (path.basename(d) === ".hesperus") {
+      const ignore = path.join(d, ".gitignore");
+      if (!fs.existsSync(ignore)) {
+        fs.mkdirSync(d, { recursive: true });
+        fs.writeFileSync(ignore, "*\n");
+      }
+      return;
+    }
+    if (path.dirname(d) === d) return;
+  }
 }
 
 /** `Class.method`, `obj.key`, a declared name, or `anonymous` for an inline function. */

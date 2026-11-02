@@ -3,11 +3,12 @@
 
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { Ajv2020 } from "ajv/dist/2020.js";
-import { flow, FlowCall, FlowCrossing, FlowStep, toFlowJson } from "../flow.js";
+import { flow, FlowCall, FlowCrossing, FlowStep, toFlowJson, writeFlow } from "../flow.js";
 import { Ir } from "../ir.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -120,3 +121,23 @@ function countSteps(steps: FlowStep[]): number {
   for (const s of steps) n += 1 + (isCall(s) && s.steps ? countSteps(s.steps) : 0);
   return n;
 }
+
+test("a flow written under .hesperus leaves a .gitignore of * there and nowhere else", () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), "hesp-ignore-"));
+  try {
+    const f = flow(path.join(fixtures, "flow"), { intent: null });
+    writeFlow(f, path.join(repo, ".hesperus", "actual", "flow.json"));
+    assert.equal(fs.readFileSync(path.join(repo, ".hesperus", ".gitignore"), "utf8"), "*\n");
+    assert.deepEqual(fs.readdirSync(repo), [".hesperus"]);
+    assert.ok(!fs.existsSync(path.join(repo, ".hesperus", "actual", ".gitignore")));
+    // an existing .gitignore is the user's
+    fs.writeFileSync(path.join(repo, ".hesperus", ".gitignore"), "actual/\n");
+    writeFlow(f, path.join(repo, ".hesperus", "actual", "flow.json"));
+    assert.equal(fs.readFileSync(path.join(repo, ".hesperus", ".gitignore"), "utf8"), "actual/\n");
+    // outside a .hesperus folder nothing but the flow is written
+    writeFlow(f, path.join(repo, "elsewhere", "flow.json"));
+    assert.deepEqual(fs.readdirSync(path.join(repo, "elsewhere")), ["flow.json"]);
+  } finally {
+    fs.rmSync(repo, { recursive: true, force: true });
+  }
+});

@@ -30,3 +30,18 @@ test("the master: configured, else the importer of the active file, else the sha
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("an intent init wrote into .hesperus is found; other dot directories are not searched", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "hesp-master-"));
+  try {
+    fs.mkdirSync(path.join(root, ".hesperus", "actual"), { recursive: true });
+    fs.mkdirSync(path.join(root, ".cache"));
+    fs.writeFileSync(path.join(root, ".hesperus", "app.hesp"), "hesperus 0.1\n\nsystem app\n");
+    fs.writeFileSync(path.join(root, ".hesperus", "actual", "app.hesp"), 'hesperus 0.1\ngenerated "hesperus-ts"\n\nsystem app\n');
+    fs.writeFileSync(path.join(root, ".cache", "old.hesp"), "hesperus 0.1\n\nsystem old\n");
+    assert.deepEqual(intentFiles(root), [path.join(root, ".hesperus", "app.hesp")]);
+    assert.equal(findMaster(root, undefined, ""), path.join(root, ".hesperus", "app.hesp"));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

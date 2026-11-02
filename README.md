@@ -31,7 +31,7 @@ In VS Code, open Extensions, search **Hesperus** and install it ([Marketplace](h
 
 ## Use
 
-1. **Hesperus: Create Intent From Code** (the sidebar's button, or the command palette) in a repository that has none: it writes a `.hesp` file naming a component per source directory and every store and host found, then reads the flow. Or write the file by hand (below). Either way it is optional: without one, functions are grouped by directory and there are no rules to check.
+1. **Hesperus: Create Intent From Code** (the sidebar's button, or the command palette) in a repository that has none: it writes `.hesperus/<repo>.hesp` naming a component per source directory and every store and host found, then reads the flow. Everything Hesperus writes stays in `.hesperus/`, which carries its own `.gitignore` so git ignores the folder; nothing else in the repository is touched. Or write the file by hand (below). Either way it is optional: without one, functions are grouped by directory and there are no rules to check.
 2. **Hesperus: Emit From Code** (Emit in the sidebar's title bar) reads the repository and writes `.hesperus/actual/flow.json` ([schema](docs/flow.schema.json)). Never edit it.
 3. **Hesperus: Open Viewer** draws one entry point as a pipeline, left to right: the entry, the functions it reaches in call order (one column per call depth, tinted by the component that owns their file), and the boundaries each path ends in, dashed on the right. The inspector lists the entry points, the entries that pass through the file open in the editor, and the constraint results. Clicking a step opens its source line; Ctrl/Cmd-click opens the owning component in the `.hesp` file.
 
@@ -72,7 +72,7 @@ Settings: `hesperus.intent` (master file; defaults to the one the open `.hesp` b
 The command line:
 
 ```bash
-hesp init --lang ts <repo>                          # an intent from the code, plus the flow
+hesp init --lang ts <repo>                          # an intent from the code (.hesperus/<repo>.hesp), plus the flow
 hesp emit --lang ts <repo> --intent intent.hesp     # the flow: .hesperus/actual/flow.json (--out for elsewhere)
 hesp check intent.hesp && hesp fmt .                # validate and format the intent
 hesperus-ts entries <repo>                          # the questions above; --json for data

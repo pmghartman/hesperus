@@ -234,7 +234,8 @@ async function init(context: vscode.ExtensionContext) {
     return;
   }
   const repo = config("sourceRoot", root);
-  const args = ["init", "--lang", "ts", repo, "--dir", root, "--out", path.resolve(root, config("actualDir", ".hesperus/actual"))];
+  // everything Hesperus writes lives under .hesperus, which carries its own .gitignore
+  const args = ["init", "--lang", "ts", repo, "--dir", path.join(root, ".hesperus"), "--out", path.resolve(root, config("actualDir", ".hesperus/actual"))];
   const extractor = extractorPath();
   if (extractor) args.push("--extractor", extractor, "--node", process.execPath);
   const res = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: "Hesperus: describing the repository" }, () => run(hespPath(), args, root));

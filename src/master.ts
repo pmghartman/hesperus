@@ -3,7 +3,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-/** Hand-written `.hesp` files under `root`; dot directories (so `.hesperus/actual`), node_modules and target are skipped. */
+/** Hand-written `.hesp` files under `root`; dot directories other than `.hesperus`, node_modules and target are skipped, and so are generated files. */
 export function intentFiles(root: string): string[] {
   const files: string[] = [];
   const walk = (dir: string, depth: number) => {
@@ -16,7 +16,7 @@ export function intentFiles(root: string): string[] {
     }
     for (const e of entries) {
       if (e.isDirectory()) {
-        if (e.name.startsWith(".") || e.name === "node_modules" || e.name === "target") continue;
+        if ((e.name.startsWith(".") && e.name !== ".hesperus") || e.name === "node_modules" || e.name === "target") continue;
         walk(path.join(dir, e.name), depth + 1);
       } else if (e.name.endsWith(".hesp")) {
         const f = path.join(dir, e.name);
