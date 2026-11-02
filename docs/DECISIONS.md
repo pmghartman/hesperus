@@ -95,7 +95,7 @@ Flat sorted arrays of nodes (with `parent`) and edges, keyed by fully qualified 
 
 ## `hesp init`: an intent that starts matched
 
-`hesp init --lang ts <repo>` runs the extractor with no intent, then makes that output the intent: the `unbound` components move up to the root (suffixed `_src` when a boundary already holds the name), and evidence and the `generated` marker are dropped. Their `src` globs bind the same files to the same ids; init then emits the flow against the new intent and reports the entry count (`hesp init: wrote <intent> and <flow> (N entries)`). A root name that is a reserved word (a repository called `hesperus`) gets an `_` added. It writes only new files: an existing intent belongs to the user. When the actual lands inside the intent's directory, init appends it to that directory's `.gitignore` (`.hesperus/` for the default location) unless an entry is already there; actual files are never committed.
+`hesp init --lang ts <repo>` runs the extractor with no intent, then makes that output the intent: the `unbound` components move up to the root (suffixed `_src` when a boundary already holds the name), and evidence and the `generated` marker are dropped. Their `src` globs bind the same files to the same ids; init then emits the flow against the new intent and reports the entry count (`hesp init: wrote <intent> and <flow> (N entries)`). A root name that is a reserved word (a repository called `hesperus`) gets an `_` added. It writes only new files: an existing intent belongs to the user. The intent goes to `<repo>/.hesperus/` (`--dir` overrides), beside the flow.
 
 ## One unresolved sink
 
@@ -119,7 +119,7 @@ The extractor emits them (a file bound to a subsystem that imports a file bound 
 
 ## Actual output location
 
-`.hesperus/actual/flow.json` under the directory `hesp emit` is run in (`--out <dir>` overrides, `flow.json` inside it), never inside the analyzed repository unless that is the current directory. Keeps the tool from writing into someone else's checkout. `emit` prints the path it wrote and fails if the extractor left no file there. The extension passes `--out` as `hesperus.actualDir` resolved against the workspace, and `hesp init` adds `.hesperus/` to the intent directory's `.gitignore` when the flow lands inside it.
+Everything Hesperus writes in a repository lives under `<repo>/.hesperus/`: the intent `hesp init` writes, `actual/flow.json` from `hesp emit` (`--out <dir>` overrides), and the extractor's caches (`actual/intent.json`, `actual/at/`). Whatever writes into a `.hesperus` folder first gives it a `.gitignore` of `*`, so the folder ignores itself; an existing one is the user's and stays. Nothing else in the repository is created or edited, its own `.gitignore` included. `emit` prints the path it wrote and fails if the extractor left no file there. The extension passes `--out` as `hesperus.actualDir` resolved against the workspace and `--dir` as the workspace's `.hesperus`. (Was: `.hesperus/actual` under the directory `hesp emit` ran in, and init appended `.hesperus/` to the repository's `.gitignore`.)
 
 ## Multi-language direction: frameworks are rows in a table
 

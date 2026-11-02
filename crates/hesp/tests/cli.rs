@@ -144,6 +144,12 @@ process.stdout.write(JSON.stringify({hesperus:"0.1",generated:"fake",root:"a",fi
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), format!("{}/flow.json", out_dir.display()).replace('\\', "/"));
     let written: Vec<_> = std::fs::read_dir(&out_dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
     assert_eq!(written, ["flow.json"], "no .hesp files beside the flow");
+    // by default the flow lands in the repository's .hesperus, which ignores itself, wherever hesp runs
+    let out = hesp().args(["emit", "--lang", "ts"]).arg(&dir).arg("--extractor").arg(&script).current_dir(root()).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(dir.join(".hesperus/actual/flow.json").is_file());
+    assert_eq!(std::fs::read_to_string(dir.join(".hesperus/.gitignore")).unwrap(), "*\n");
+    assert!(!root().join(".hesperus").exists());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -178,7 +184,8 @@ process.stdout.write(JSON.stringify({hesperus:"0.1",generated:"fake",root,files:
     )
     .unwrap();
     std::fs::write(dir.join(".gitignore"), "node_modules").unwrap();
-    let run = || hesp().args(["init", "--lang", "ts"]).arg(&dir).args(["--name", "my-app", "--out"]).arg(&out_dir).arg("--extractor").arg(&script).output().unwrap();
+    let before: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+    let run = || hesp().args(["init", "--lang", "ts"]).arg(&dir).args(["--name", "my-app", "--extractor"]).arg(&script).output().unwrap();
     let out = run();
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
     assert!(String::from_utf8_lossy(&out.stderr).contains("flow.json (1 entry)"), "{}", String::from_utf8_lossy(&out.stderr));
@@ -186,23 +193,30 @@ process.stdout.write(JSON.stringify({hesperus:"0.1",generated:"fake",root,files:
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.lines().next().unwrap().ends_with("my_app.hesp"), "{stdout}");
     assert!(stdout.lines().last().unwrap().ends_with("flow.json"), "{stdout}");
-    let intent = std::fs::read_to_string(dir.join("my_app.hesp")).unwrap();
+    // everything lands under .hesperus, which ignores itself; nothing else in the repository changes
+    let master = dir.join(".hesperus/my_app.hesp");
+    let intent = std::fs::read_to_string(&master).unwrap();
     assert!(intent.contains("component lib") && !intent.contains("unbound") && !intent.contains("generated") && !intent.contains("at:"), "{intent}");
     assert!(out_dir.join("flow.json").exists());
     assert!(!out_dir.join("my_app.hesp").exists(), "no actual .hesp files");
-    // the actual is ignored by git, once; an existing .gitignore keeps its lines
-    assert_eq!(std::fs::read_to_string(dir.join(".gitignore")).unwrap(), "node_modules\n.hesperus/\n");
+    assert_eq!(std::fs::read_to_string(dir.join(".hesperus/.gitignore")).unwrap(), "*\n");
+    assert_eq!(std::fs::read_to_string(dir.join(".gitignore")).unwrap(), "node_modules");
+    let mut after: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).filter(|n| n != ".hesperus").collect();
+    let mut before = before;
+    before.sort();
+    after.sort();
+    assert_eq!(after, before, "nothing outside .hesperus");
     // a second run refuses: the intent is the user's now
-    std::fs::write(dir.join("my_app.hesp"), "edited").unwrap();
+    std::fs::write(&master, "edited").unwrap();
     let out = run();
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("already exists; nothing was written"));
-    assert_eq!(std::fs::read_to_string(dir.join("my_app.hesp")).unwrap(), "edited");
-    // an entry already there, in another spelling, is left alone
-    std::fs::remove_file(dir.join("my_app.hesp")).unwrap();
-    std::fs::write(dir.join(".gitignore"), "/.hesperus\n").unwrap();
+    assert_eq!(std::fs::read_to_string(&master).unwrap(), "edited");
+    // an existing .gitignore in .hesperus is the user's
+    std::fs::remove_file(&master).unwrap();
+    std::fs::write(dir.join(".hesperus/.gitignore"), "actual/\n").unwrap();
     assert!(run().status.success());
-    assert_eq!(std::fs::read_to_string(dir.join(".gitignore")).unwrap(), "/.hesperus\n");
+    assert_eq!(std::fs::read_to_string(dir.join(".hesperus/.gitignore")).unwrap(), "actual/\n");
     let out = hesp().args(["init", "--lang", "go", "."]).output().unwrap();
     assert_eq!(out.status.code(), Some(2));
     let _ = std::fs::remove_dir_all(&dir);

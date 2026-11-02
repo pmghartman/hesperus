@@ -21,7 +21,7 @@ import * as path from "node:path";
 import { applyRules } from "./engine.js";
 import { extract } from "./extract.js";
 import { factsOf, newProject } from "./facts.js";
-import { flow, toFlowJson, writeFlow } from "./flow.js";
+import { flow, ignoreHesperusDir, toFlowJson, writeFlow } from "./flow.js";
 import { Ir, toJson } from "./ir.js";
 import { changedFiles, diffFlows, entriesForReading, findEntry, flowAt, loadFlow, reaches, renderConstraints, renderDiff, renderEntries, renderEntry, renderReaches, summarize } from "./query.js";
 import { RULES } from "./rules.js";
@@ -114,6 +114,7 @@ function rememberIntent(repo: string, intent: Ir | null) {
   const dir = path.join(repo, ".hesperus", "actual");
   try {
     if (intent) {
+      ignoreHesperusDir(dir);
       fs.mkdirSync(dir, { recursive: true });
       fs.writeFileSync(path.join(dir, "intent.json"), JSON.stringify(intent, null, 2) + "\n");
     }
