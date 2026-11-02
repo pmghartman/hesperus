@@ -53,23 +53,18 @@ export function extract(repoRoot: string, opts: ExtractOptions): Ir {
 
   // boundary node ids, created lazily and adopted from intent when a binding matches
   const unboundId = `${root}.unbound`;
-  const boundary = (kind: NodeKind, key: { host?: string; engine?: string; protocol?: Protocol; name?: string }, fallbackName: string, extra: Partial<IrNode>): string => {
-    const adopted = bindings.adopt(kind, key);
-    const id = adopted ? adopted.id : `${root}.${fallbackName}`;
-    const n = ensureNode(id, kind, { ...extra, label: adopted?.label ?? extra.label ?? null });
+  const boundary = (kind: NodeKind, key: BoundaryKey, fallbackName: string, extra: Partial<IrNode>): string => {
+    const adopted = adoptBoundary(bindings, kind, key, fallbackName);
+    const n = ensureNode(adopted.id, kind, { ...extra, label: adopted.label ?? extra.label ?? null });
     if (extra.host) n.host = extra.host;
     if (extra.engine) n.engine = extra.engine;
     if (extra.protocol) n.protocol = extra.protocol;
-    return id;
+    return adopted.id;
   };
 
   // which node owns each file; an unbound directory with code in its subdirectories is a
   // subsystem, so the unbound tree mirrors the repository two levels deep
-  const owner = new Map<string, string>();
-  for (const f of ws.files) {
-    const bound = bindings.bindFile(f);
-    owner.set(f, bound ?? `${unboundId}.${unboundComponent(f)}`);
-  }
+  const owner = fileOwners(ws, bindings);
   const unboundOwners = new Set([...owner.values()].filter((id) => id.startsWith(`${unboundId}.`)));
   const unboundKind = (id: string): NodeKind => ([...unboundOwners].some((o) => o.startsWith(`${id}.`)) ? "subsystem" : "component");
 
@@ -174,6 +169,21 @@ export function extract(repoRoot: string, opts: ExtractOptions): Ir {
     constraints: [],
   };
   return canonicalize(ir);
+}
+
+export type BoundaryKey = { host?: string; engine?: string; protocol?: Protocol; name?: string };
+
+/** The id and label a detected boundary takes: the intent node it adopts, else `<root>.<fallbackName>` unlabelled. */
+export function adoptBoundary(bindings: Bindings, kind: NodeKind, key: BoundaryKey, fallbackName: string): { id: string; label: string | null } {
+  const adopted = bindings.adopt(kind, key);
+  return adopted ? { id: adopted.id, label: adopted.label } : { id: `${bindings.root}.${fallbackName}`, label: null };
+}
+
+/** Which node owns each file: the most specific intent binding, else the unbound node for its directory. */
+export function fileOwners(ws: Workspace, bindings: Bindings): Map<string, string> {
+  const owner = new Map<string, string>();
+  for (const f of ws.files) owner.set(f, bindings.bindFile(f) ?? `${bindings.root}.unbound.${unboundComponent(f)}`);
+  return owner;
 }
 
 /**

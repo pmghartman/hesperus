@@ -114,6 +114,37 @@ svg .edge.status-actual-only .line { stroke: var(--status-actual-only); }
 svg .edge.status-conflict .line { stroke: var(--status-conflict); }
 svg .node.status-intent-only .card { stroke-dasharray: 6 3; }
 
+/* flow mode: functions tinted by the component that owns their file; the entry stands out */
+:root {
+  --tint-0: var(--vscode-charts-blue, #3794ff);
+  --tint-1: var(--vscode-charts-orange, #d18616);
+  --tint-2: var(--vscode-charts-green, #89d185);
+  --tint-3: var(--vscode-charts-purple, #b180d7);
+  --tint-4: var(--vscode-charts-yellow, #cca700);
+  --tint-5: var(--vscode-charts-red, #f14c4c);
+  --tint-6: var(--vscode-terminal-ansiCyan, #11a8cd);
+  --tint-7: var(--vscode-terminal-ansiBrightMagenta, #d670d6);
+}
+svg .node.tint-0 .accent, .tint-0 > .swatch { fill: var(--tint-0); background: var(--tint-0); }
+svg .node.tint-1 .accent, .tint-1 > .swatch { fill: var(--tint-1); background: var(--tint-1); }
+svg .node.tint-2 .accent, .tint-2 > .swatch { fill: var(--tint-2); background: var(--tint-2); }
+svg .node.tint-3 .accent, .tint-3 > .swatch { fill: var(--tint-3); background: var(--tint-3); }
+svg .node.tint-4 .accent, .tint-4 > .swatch { fill: var(--tint-4); background: var(--tint-4); }
+svg .node.tint-5 .accent, .tint-5 > .swatch { fill: var(--tint-5); background: var(--tint-5); }
+svg .node.tint-6 .accent, .tint-6 > .swatch { fill: var(--tint-6); background: var(--tint-6); }
+svg .node.tint-7 .accent, .tint-7 > .swatch { fill: var(--tint-7); background: var(--tint-7); }
+svg .node.kind-entry .card { stroke: var(--fg-muted); stroke-width: 1.5; }
+svg .node.kind-entry .accent { width: 6px; }
+svg .node.kind-entry .glyph .fill { fill: var(--status-none); }
+svg.mode-flow .node.kind-function .glyph { stroke-width: 1.6; }
+.legend .chip.flow-key { color: var(--fg-muted); }
+.inspector .entries li { display: block; padding: 2px 0; }
+.inspector .entries a { display: flex; gap: 8px; align-items: baseline; padding: 2px 6px; border-radius: 4px; color: var(--fg); }
+.inspector .entries a:hover { background: var(--bg-hover); text-decoration: none; }
+.inspector .entries a.current { background: var(--bg-active); }
+.inspector .entries .unit { font-family: var(--mono); color: var(--fg-muted); font-size: 11px; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 55%; }
+.inspector .entries h3 { margin: 8px 0 2px; font-size: 11px; color: var(--fg-muted); font-weight: 600; }
+
 /* inspector */
 .inspector { border-left: 1px solid var(--border); background: var(--bg-panel); overflow: auto; font-size: 12px; }
 .inspector .section { padding: 10px 14px; border-bottom: 1px solid var(--border); }

@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hesperus.dev/schema/flow-0.1.json",
+  "title": "Hesperus flow 0.1",
+  "description": "What happens when a program is entered: for each entry point, the functions it reaches in source order and where each path leaves the program. Emitted by an extractor next to the actual IR (`.hesperus/actual/flow.json`), read by the viewer's Flow mode. Separate from the IR: nothing here is diffed. Nothing is inferred: names come from declarations, order from source position, boundaries from the same rule table as the actual, and a call is a step only when its callee resolves to a declaration in the repository.",
+  "type": "object",
+  "required": ["flow", "generated", "root", "limits", "units", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "flow": { "const": "0.1", "description": "Format version." },
+    "generated": { "type": "string", "description": "Name of the extractor." },
+    "root": { "type": "string", "description": "Root node id of the actual IR this flow belongs to." },
+    "limits": {
+      "type": "object",
+      "required": ["depth", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "depth": { "type": "integer", "minimum": 1, "description": "Calls followed from an entry before a step is cut with `depth`." },
+        "steps": { "type": "integer", "minimum": 1, "description": "Steps recorded per entry before the rest is cut with `steps`." }
+      }
+    },
+    "units": {
+      "type": "array",
+      "description": "Every function the entries reach, sorted by id.",
+      "items": { "$ref": "#/$defs/unit" }
+    },
+    "entries": {
+      "type": "array",
+      "description": "Entry points in evidence order (path, then line).",
+      "items": { "$ref": "#/$defs/entry" }
+    }
+  },
+  "$defs": {
+    "at": { "type": "string", "pattern": "^.+:[0-9]+$", "description": "Repository-relative `path:line` with `/` separators." },
+    "unitId": { "type": "string", "pattern": "^.+#.+$", "description": "`file#name`: `Class.method` for methods, `<module>` for a file's top-level code, `anonymous` for an inline handler; `@line` is appended when a file declares the name twice." },
+    "unit": {
+      "type": "object",
+      "required": ["id", "name", "file", "line", "owner"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "$ref": "#/$defs/unitId" },
+        "name": { "type": "string", "description": "Declared name as written in the code." },
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1, "description": "Line of the declaration." },
+        "owner": { "type": "string", "description": "Id of the actual node that owns the file: the intent node whose `src` binds it, else the unbound node for its directory. The same bindings the actual IR uses." }
+      }
+    },
+    "entry": {
+      "type": "object",
+      "required": ["id", "kind", "label", "protocol", "unit", "at", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "`kind:unit`, with `@n` appended when one function serves several entries." },
+        "kind": {
+          "enum": ["route", "main", "module", "command", "export"],
+          "description": "route: a handler registered on an ingress the rule table recognizes (or the function holding a pathname comparison); main: a `main` function that is exported or called at the top level; module: the top-level code of a `bin` file or a file with a shebang; command: a CLI command handler (commander/cac/yargs/citty style `.action(fn)`, `.command(..., fn)`, `defineCommand({ run })`); export: an exported function a host calls by name (`activate`/`deactivate` in a file importing `vscode`)."
+        },
+        "label": { "type": "string", "description": "`GET /users`, `MATCH /x`, `main`, the file name, `command <name>`, or the export name." },
+        "protocol": { "enum": ["http", "ws", null] },
+        "unit": { "$ref": "#/$defs/unitId", "description": "The function the entry runs." },
+        "at": { "$ref": "#/$defs/at", "description": "Where the entry is registered or declared." },
+        "steps": { "type": "array", "items": { "$ref": "#/$defs/step" } }
+      }
+    },
+    "step": {
+      "oneOf": [{ "$ref": "#/$defs/call" }, { "$ref": "#/$defs/crossing" }]
+    },
+    "call": {
+      "type": "object",
+      "description": "A call to a function in the repository, in source order within its caller.",
+      "required": ["call", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "call": { "$ref": "#/$defs/unitId" },
+        "at": { "$ref": "#/$defs/at", "description": "The call site." },
+        "steps": { "type": "array", "items": { "$ref": "#/$defs/step" }, "description": "The callee's steps; absent when cut." },
+        "cut": {
+          "enum": ["cycle", "seen", "depth", "steps"],
+          "description": "Why the callee is not expanded here: it is on the current call path; it was expanded earlier in this entry; the depth limit; the step budget."
+        }
+      }
+    },
+    "crossing": {
+      "type": "object",
+      "description": "Where a path leaves the program, classified by the rule table.",
+      "required": ["boundary", "node", "label", "edge", "resolved", "at"],
+      "additionalProperties": false,
+      "properties": {
+        "boundary": { "enum": ["ingress", "store", "external", "network", "hardware"] },
+        "node": { "type": "string", "description": "Node id in the actual IR (adopted from the intent when a binding matches)." },
+        "label": { "type": "string", "description": "The intent label when bound, else the host, engine, route or resource name." },
+        "edge": { "enum": ["http", "ws", "reads", "writes", "unknown", "io"], "description": "`unknown`: a store access whose SQL verb or method the rules could not classify." },
+        "resolved": { "type": "boolean", "description": "False for `network unresolved` targets and `unknown` store access." },
+        "at": { "$ref": "#/$defs/at" }
+      }
+    }
+  }
+}

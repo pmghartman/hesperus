@@ -35,7 +35,7 @@ function golden(file: string, actual: string) {
     return;
   }
   assert.ok(fs.existsSync(file), `missing golden ${file}; run with UPDATE_GOLDEN=1`);
-  assert.equal(actual, fs.readFileSync(file, "utf8"), `golden mismatch: ${file}`);
+  assert.equal(actual, fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n"), `golden mismatch: ${file}`);
 }
 
 const FIXTURES = ["imports", "routes-express", "routes-bun", "http-out", "stores", "websockets", "io", "bindings"];

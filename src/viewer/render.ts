@@ -23,6 +23,9 @@ const KIND_ICON: Record<string, string> = {
   external: '<path d="M4.75 13.25h7a3 3 0 0 0 .5-5.96A4.25 4.25 0 0 0 4 6.5a3.4 3.4 0 0 0 .75 6.75z"/>',
   network: '<circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5M8 1.75c2.2 2.2 2.2 10.3 0 12.5M8 1.75c-2.2 2.2-2.2 10.3 0 12.5"/>',
   hardware: '<rect x="3.75" y="3.75" width="8.5" height="8.5" rx="1.25"/><rect x="6.25" y="6.25" width="3.5" height="3.5" class="fill"/><path d="M6 1.5v2.25M10 1.5v2.25M6 12.25v2.25M10 12.25v2.25M1.5 6h2.25M1.5 10h2.25M12.25 6h2.25M12.25 10h2.25"/>',
+  // flow mode: where a path starts, and one function on it
+  entry: '<circle cx="8" cy="8" r="6.25"/><path d="M6.25 5.25v5.5L10.75 8z" class="fill"/>',
+  function: '<path d="M4.25 2.25h7.5l-4 5.75 4 5.75h-7.5"/>',
 };
 
 export function esc(s: string): string {
@@ -42,6 +45,11 @@ export interface RenderOptions {
   graph: Graph;
   title: string;
   selected?: string | null;
+}
+
+/** `tint-N` for a node that carries a tint (flow mode: the component owning the function). */
+export function tintClass(n: VNode): string {
+  return n.tint === undefined ? "" : ` tint-${n.tint}`;
 }
 
 export function renderSvg(l: Layout, opts: RenderOptions): string {
@@ -66,7 +74,7 @@ export function renderSvg(l: Layout, opts: RenderOptions): string {
   for (const p of l.nodes) {
     const n = p.node;
     const container = isContainer(opts.graph, n.id);
-    const cls = `node kind-${n.kind} ${statusClass(n.status)}${container ? " container" : ""}${p.outside ? " outside" : ""}${opts.selected === n.id ? " selected" : ""}`;
+    const cls = `node kind-${n.kind} ${statusClass(n.status)}${tintClass(n)}${container ? " container" : ""}${p.outside ? " outside" : ""}${opts.selected === n.id ? " selected" : ""}`;
     const childCount = container ? [...opts.graph.nodes.values()].filter((c) => c.parent === n.id).length : 0;
     parts.push(`<g class="${cls}" data-id="${esc(n.id)}" data-kind="${n.kind}" data-container="${container}" transform="translate(${p.x},${p.y})" tabindex="0" role="button">`);
     parts.push(`<title>${esc(n.id)}${n.status ? ` · ${n.status}` : ""}${n.conflicts.map((c) => `\n${c.property}: intent ${c.intent}, actual ${c.actual}`).join("")}</title>`);
@@ -117,7 +125,11 @@ function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }
 
-export function renderLegend(mode: Mode): string {
+export function renderLegend(mode: Mode, owners: { label: string; tint: number }[] = []): string {
+  if (mode === "flow") {
+    const chips = owners.map((o) => `<li class="chip tint-${o.tint}"><span class="swatch"></span>${esc(o.label)}</li>`).join("");
+    return `<ul class="legend" data-mode="flow"><li class="chip flow-key">flow: entry → calls in source order → boundaries</li>${chips}<li class="chip unresolved-key"><span class="swatch dashed"></span>unresolved target</li></ul>`;
+  }
   const items: [string, string][] =
     mode === "unified"
       ? [

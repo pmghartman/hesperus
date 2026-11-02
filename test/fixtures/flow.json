@@ -1,0 +1,218 @@
+{
+  "flow": "0.1",
+  "generated": "hesperus-ts",
+  "root": "shop",
+  "limits": {
+    "depth": 8,
+    "steps": 400
+  },
+  "units": [
+    {
+      "id": "src/cli.ts#<module>",
+      "name": "<module>",
+      "file": "src/cli.ts",
+      "line": 1,
+      "owner": "shop.unbound.src"
+    },
+    {
+      "id": "src/cli.ts#main",
+      "name": "main",
+      "file": "src/cli.ts",
+      "line": 3,
+      "owner": "shop.unbound.src"
+    },
+    {
+      "id": "src/db/orders.ts#saveOrder",
+      "name": "saveOrder",
+      "file": "src/db/orders.ts",
+      "line": 3,
+      "owner": "shop.data"
+    },
+    {
+      "id": "src/db/users.ts#findUsers",
+      "name": "findUsers",
+      "file": "src/db/users.ts",
+      "line": 3,
+      "owner": "shop.data"
+    },
+    {
+      "id": "src/handlers/audit.ts#audit",
+      "name": "audit",
+      "file": "src/handlers/audit.ts",
+      "line": 2,
+      "owner": "shop.handlers"
+    },
+    {
+      "id": "src/handlers/orders.ts#createOrder",
+      "name": "createOrder",
+      "file": "src/handlers/orders.ts",
+      "line": 4,
+      "owner": "shop.handlers"
+    },
+    {
+      "id": "src/handlers/users.ts#listUsers",
+      "name": "listUsers",
+      "file": "src/handlers/users.ts",
+      "line": 3,
+      "owner": "shop.handlers"
+    },
+    {
+      "id": "src/pay/stripe.ts#charge",
+      "name": "charge",
+      "file": "src/pay/stripe.ts",
+      "line": 1,
+      "owner": "shop.pay"
+    },
+    {
+      "id": "src/server.ts#anonymous",
+      "name": "anonymous",
+      "file": "src/server.ts",
+      "line": 7,
+      "owner": "shop.server"
+    },
+    {
+      "id": "src/server.ts#health",
+      "name": "health",
+      "file": "src/server.ts",
+      "line": 10,
+      "owner": "shop.server"
+    }
+  ],
+  "entries": [
+    {
+      "id": "module:src/cli.ts#<module>",
+      "kind": "module",
+      "label": "cli.ts",
+      "protocol": null,
+      "unit": "src/cli.ts#<module>",
+      "at": "src/cli.ts:1",
+      "steps": [
+        {
+          "call": "src/cli.ts#main",
+          "at": "src/cli.ts:7",
+          "steps": [
+            {
+              "call": "src/db/users.ts#findUsers",
+              "at": "src/cli.ts:4",
+              "steps": [
+                {
+                  "boundary": "store",
+                  "node": "shop.db",
+                  "label": "Orders and users",
+                  "edge": "reads",
+                  "resolved": true,
+                  "at": "src/db/users.ts:4"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "route:src/handlers/users.ts#listUsers",
+      "kind": "route",
+      "label": "GET /users",
+      "protocol": "http",
+      "unit": "src/handlers/users.ts#listUsers",
+      "at": "src/server.ts:5",
+      "steps": [
+        {
+          "call": "src/db/users.ts#findUsers",
+          "at": "src/handlers/users.ts:4",
+          "steps": [
+            {
+              "boundary": "store",
+              "node": "shop.db",
+              "label": "Orders and users",
+              "edge": "reads",
+              "resolved": true,
+              "at": "src/db/users.ts:4"
+            }
+          ]
+        },
+        {
+          "call": "src/handlers/audit.ts#audit",
+          "at": "src/handlers/users.ts:5",
+          "steps": [
+            {
+              "boundary": "hardware",
+              "node": "shop.filesystem",
+              "label": "Filesystem",
+              "edge": "io",
+              "resolved": true,
+              "at": "src/handlers/audit.ts:3"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "route:src/handlers/orders.ts#createOrder",
+      "kind": "route",
+      "label": "POST /orders",
+      "protocol": "http",
+      "unit": "src/handlers/orders.ts#createOrder",
+      "at": "src/server.ts:6",
+      "steps": [
+        {
+          "call": "src/pay/stripe.ts#charge",
+          "at": "src/handlers/orders.ts:5",
+          "steps": [
+            {
+              "boundary": "external",
+              "node": "shop.stripe",
+              "label": "api.stripe.com",
+              "edge": "http",
+              "resolved": true,
+              "at": "src/pay/stripe.ts:2"
+            }
+          ]
+        },
+        {
+          "call": "src/db/orders.ts#saveOrder",
+          "at": "src/handlers/orders.ts:6",
+          "steps": [
+            {
+              "boundary": "store",
+              "node": "shop.db",
+              "label": "Orders and users",
+              "edge": "writes",
+              "resolved": true,
+              "at": "src/db/orders.ts:4"
+            }
+          ]
+        },
+        {
+          "call": "src/handlers/audit.ts#audit",
+          "at": "src/handlers/orders.ts:7",
+          "steps": [
+            {
+              "boundary": "hardware",
+              "node": "shop.filesystem",
+              "label": "Filesystem",
+              "edge": "io",
+              "resolved": true,
+              "at": "src/handlers/audit.ts:3"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "route:src/server.ts#anonymous",
+      "kind": "route",
+      "label": "GET /health",
+      "protocol": "http",
+      "unit": "src/server.ts#anonymous",
+      "at": "src/server.ts:7",
+      "steps": [
+        {
+          "call": "src/server.ts#health",
+          "at": "src/server.ts:8",
+          "steps": []
+        }
+      ]
+    }
+  ]
+}

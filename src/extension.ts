@@ -123,20 +123,20 @@ let lastMaster: string | undefined;
 
 async function loadData(context: vscode.ExtensionContext): Promise<any> {
   const root = workspaceRoot();
-  if (!root) return { type: "data", error: "Open a folder first.", intent: null, actual: null, unified: null, locations: {} };
+  if (!root) return { type: "data", error: "Open a folder first.", intent: null, actual: null, unified: null, flow: null, locations: {} };
   const active = vscode.window.activeTextEditor?.document;
   const activeHesp = active?.languageId === "hesperus" ? active.uri.fsPath : undefined;
   const configured = config("intent", "");
   // an open .hesp file or the setting decides; else the last master shown; else the one on disk
   const master = activeHesp || configured ? findMaster(root, activeHesp, configured) : lastMaster && fs.existsSync(lastMaster) ? lastMaster : findMaster(root, undefined, "");
   if (!master || !fs.existsSync(master)) {
-    return { type: "data", error: "No intent file. Open a .hesp file or set hesperus.intent.", intent: null, actual: null, unified: null, locations: {} };
+    return { type: "data", error: "No intent file. Open a .hesp file or set hesperus.intent.", intent: null, actual: null, unified: null, flow: null, locations: {} };
   }
   lastMaster = master;
   const hesp = hespPath();
   const intentRes = await run(hesp, ["ir", "--locations", master], root);
   if (intentRes.code === 127) {
-    return { type: "data", error: `Cannot run \`${hesp}\`: ${intentRes.stderr.trim()}. Set hesperus.hespPath.`, intent: null, actual: null, unified: null, locations: {}, intentPath: master };
+    return { type: "data", error: `Cannot run \`${hesp}\`: ${intentRes.stderr.trim()}. Set hesperus.hespPath.`, intent: null, actual: null, unified: null, flow: null, locations: {}, intentPath: master };
   }
   const error = intentRes.code !== 0 ? `hesp ir: ${intentRes.stderr.trim() || intentRes.stdout.trim()}` : undefined;
   const intent = intentRes.code === 0 ? JSON.parse(intentRes.stdout) : null;
@@ -160,8 +160,18 @@ async function loadData(context: vscode.ExtensionContext): Promise<any> {
       }
     }
   }
+  // the flow the extractor wrote beside the actual files (docs/flow.schema.json); unreadable means none
+  let flow: any = null;
+  const flowPath = path.join(actualDir, "flow.json");
+  if (fs.existsSync(flowPath)) {
+    try {
+      flow = JSON.parse(fs.readFileSync(flowPath, "utf8"));
+    } catch {
+      flow = null;
+    }
+  }
   const locations: Record<string, string> = intent?.locations ?? {};
-  return { type: "data", error, intent, actual, unified, intentPath: master, locations, actualLocations, masterDir: path.dirname(master), actualDir: path.dirname(actualMaster) };
+  return { type: "data", error, intent, actual, unified, flow, intentPath: master, locations, actualLocations, masterDir: path.dirname(master), actualDir: path.dirname(actualMaster) };
 }
 
 async function openViewer(context: vscode.ExtensionContext) {
@@ -297,7 +307,8 @@ async function emit(context: vscode.ExtensionContext) {
     vscode.window.showErrorMessage(`Hesperus: emit failed: ${res.stderr.trim()}`);
     return;
   }
-  vscode.window.showInformationMessage(`Hesperus: wrote ${res.stdout.trim().split("\n").length} actual files.`);
+  const flowWritten = fs.existsSync(path.resolve(root, config("actualDir", ".hesperus/actual"), "flow.json"));
+  vscode.window.showInformationMessage(`Hesperus: wrote ${res.stdout.trim().split("\n").length} actual files${flowWritten ? " and flow.json" : ""}.`);
   if (panel) panel.webview.postMessage(await loadData(context));
   status?.refresh();
 }

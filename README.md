@@ -47,6 +47,8 @@ The **Hesperus** icon in the activity bar opens the sidebar: the intent, the act
 
 Click a node to inspect it; double-click a container to drill down (edges aggregate at every level); Ctrl/Cmd-click opens its `.hesp` declaration; evidence links open the source line. `require` and `forbid` lines are checked against the code and listed in the inspector.
 
+4. **Flow**, the fourth mode, answers "what happens when a request comes in": Emit also writes `.hesperus/actual/flow.json`, which lists every entry point the extractor finds (route handlers from the ingress rules, `main`, `bin` and shebang modules, CLI command handlers, `activate` in a VS Code extension) with the functions each one reaches, in source order, down to the stores, hosts, filesystem and processes where the path leaves the program. Pick an entry in the inspector; the canvas draws it left to right, one column per call depth, functions tinted by the component that owns their file, boundaries dashed on the right; clicking a step opens its source line. Nothing is inferred: names come from declarations, order from the source, the boundaries from the same rule table as the actual, and a call is a step only when its callee resolves to a declaration in the repository. Shape: [`docs/flow.schema.json`](docs/flow.schema.json); limits: 8 calls deep, 400 steps per entry, repeats and cycles marked rather than expanded.
+
 Settings: `hesperus.intent` (master file; defaults to the one the open `.hesp` belongs to), `hesperus.sourceRoot` (the repository the actual files describe; defaults to the workspace), `hesperus.actualDir` (default `.hesperus/actual`). `hesperus.hespPath`, `hesperus.serverPath` and `hesperus.extractorPath` replace the bundled tools with your own.
 
 Agents get the same workflow from [`skill/SKILL.md`](skill/SKILL.md); each release also carries it as `hesperus.skill`, which Claude installs from the download. The command line is the same engine:
@@ -66,7 +68,7 @@ hesp diff intent.hesp .hesperus/actual/intent.hesp
 | `src/`, `media/`, `syntaxes/` | the extension: language client and the viewer |
 | `crates/hesperus-core`, `crates/hesp`, `crates/hesperus-lsp` | the language (lexer, parser, IR, printer, formatter, differ), the CLI and the language server, in Rust |
 | `hesperus-ts/` | the TypeScript extractor: a neutral fact stream plus a rule table (`src/rules.ts`); adding a framework is adding rows |
-| `docs/` | [the language spec](docs/SPEC.md) (every example is a test), [the IR schema](docs/ir.schema.json), [design decisions](docs/DECISIONS.md) |
+| `docs/` | [the language spec](docs/SPEC.md) (every example is a test), [the IR schema](docs/ir.schema.json), [the flow schema](docs/flow.schema.json), [design decisions](docs/DECISIONS.md) |
 
 Develop with `cargo test --workspace`, `npm test` here and in `hesperus-ts/`, `scripts/package-vsix.sh` to build the package for your machine and `scripts/package-skill.sh` for the skill bundle. Releasing is a button: Actions → **release** → Run workflow. The version is derived, not typed: one minor past the last release (or the next major when the box is checked), with the commit count as the patch number; the run stamps it into the files at build time, tests, builds all platforms plus the skill, publishes to the Marketplace and Open VSX, then tags and releases on GitHub.
 

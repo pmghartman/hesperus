@@ -1,6 +1,6 @@
-// The viewer's graph model: one shape for the three modes. Pure, no DOM, no vscode.
+// The viewer's graph model: one shape for the four modes. Pure, no DOM, no vscode.
 
-export type Mode = "intent" | "actual" | "unified";
+export type Mode = "intent" | "actual" | "unified" | "flow";
 export type Status = "match" | "intent-only" | "actual-only" | "conflict";
 
 export interface VNode {
@@ -14,6 +14,8 @@ export interface VNode {
   /** Evidence into the repository (`path:line`), from the actual side. */
   at: string[];
   detail: string[];
+  /** Flow mode: the colour slot of the component that owns the function (`tint-N` class). */
+  tint?: number;
 }
 
 export interface VEdge {

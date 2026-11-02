@@ -17,6 +17,8 @@ export const MAX_FIT_ZOOM = 1.25;
 export interface LayoutOptions {
   /** The viewport the layout should fill, in CSS pixels. Defaults to a large screen, so small graphs never fold. */
   viewport?: { width: number; height: number };
+  /** `false` keeps one column per rank (a pipeline reads left to right); default folds ranks to fit the viewport. */
+  fold?: boolean;
 }
 
 export interface Placed {
@@ -87,14 +89,14 @@ export function layout(view: View, opts: LayoutOptions = {}): Layout {
   const minRows = Math.max(1, ...ranks.map((c) => c.length));
   let best: { columns: VNode[][]; outside: VNode[][]; width: number; height: number; zoom: number } | null = null;
   for (let budget = minRows; budget <= Math.max(minRows, total); budget++) {
-    const columns = fold(ranks, budget);
+    const columns = opts.fold === false ? ranks.map((r) => [...r]) : fold(ranks, budget);
     const outside = chunk(view.outside, budget);
     const rows = Math.max(1, ...columns.map((c) => c.length), ...outside.map((c) => c.length));
     const width = Math.max(PAD * 2, PAD * 2 + (columns.length + outside.length) * CELL_W - GAP_X + (outside.length ? GAP_X : 0));
     const height = PAD * 2 + rows * CELL_H - GAP_Y;
     const zoom = Math.min(MAX_FIT_ZOOM, (viewport.width - 2 * PAD) / width, (viewport.height - 2 * PAD) / height);
     if (!best || zoom > best.zoom + 1e-9) best = { columns, outside, width, height, zoom };
-    if (columns.length === 1 && outside.length <= 1) break;
+    if ((columns.length === 1 || opts.fold === false) && outside.length <= 1) break;
   }
   const { columns, outside, width, height } = best!;
 

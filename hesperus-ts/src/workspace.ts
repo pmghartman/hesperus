@@ -27,6 +27,29 @@ export class Workspace {
     return this.fileSet.has(rel);
   }
 
+  /** The repository tsconfig's `baseUrl` and `paths`, for a compiler that should resolve the same specifiers. */
+  tsPaths(): { baseUrl: string; paths: Record<string, string[]> } {
+    return { baseUrl: this.baseUrl, paths: Object.fromEntries(this.paths.map((p) => [p.pattern, p.targets])) };
+  }
+
+  /** The source files `package.json` names as `bin` entries (built paths map back to their sources). */
+  binFiles(): string[] {
+    const pkgPath = path.join(this.root, "package.json");
+    if (!fs.existsSync(pkgPath)) return [];
+    try {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+      const bins: string[] = typeof pkg.bin === "string" ? [pkg.bin] : pkg.bin && typeof pkg.bin === "object" ? Object.values(pkg.bin).filter((v): v is string => typeof v === "string") : [];
+      const out: string[] = [];
+      for (const b of bins.sort()) {
+        const hit = this.resolveFile(path.posix.normalize(b.replace(/^\.\//, "")));
+        if (hit && !out.includes(hit)) out.push(hit);
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
   read(rel: string): string {
     return fs.readFileSync(path.join(this.root, rel), "utf8");
   }

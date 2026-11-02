@@ -1,0 +1,1 @@
+{ "name": "shop", "bin": { "shop": "dist/cli.js" } }

@@ -101,6 +101,12 @@ Flat sorted arrays of nodes (with `parent`) and edges, keyed by fully qualified 
 
 Edges whose target cannot be identified statically all point at `network unresolved` with `resolved: false`: outbound HTTP or WebSocket calls with dynamic URLs, and dynamic `import(expr)` / `require(expr)` with a non-literal specifier (a `calls` edge). One sink keeps the actual graph readable; the edge kind says what the code tried to do.
 
+## Flow is a separate artifact
+
+**Chosen**: `hesp emit` has the extractor write `flow.json` (schema `docs/flow.schema.json`) beside the actual files; the `.hesp` IR, the Rust differ and the goldens are untouched, and the viewer's Flow mode reads the file directly. Entry points are route handlers found by the existing ingress rules, `main`, `bin`/shebang modules, CLI command handlers and host-called exports; steps are calls whose callee resolves (through the TypeScript checker, then the workspace's own import resolution) to a declaration in the repository, in source position order; crossings are the findings of the same rule table, attributed to the function they sit in. Inline callbacks are transparent (their calls belong to the enclosing function); an inline route handler is a unit of its own. Bounded by a depth of 8 and 400 steps per entry; a callee already on the path is `cut: cycle`, one expanded earlier in the entry `cut: seen`.
+**Options**: function-level nodes in the IR (every `.hesp` file would gain hundreds of nodes and the diff would compare functions, which the intent never names); an ordering property on `calls` edges (the IR has no order and file-level edges cannot carry a sequence).
+**Why**: the intent describes components, not functions, so flow belongs next to the actual, not in the diff. The Rust side only passes `--flow <out>/flow.json` to the extractor, which keeps the change buildable without a toolchain.
+
 ## Edges between a node and its own ancestor
 
 The extractor emits them (a file bound to a subsystem that imports a file bound to one of its components yields `subsystem -> subsystem.component: calls`; a container's own code touching a boundary declared inside it yields `container -> container.boundary`). They are legal in the language, the differ keys them like any other edge, and the inspector lists them; the graph view folds edges to the visible level and so cannot draw an edge from a box to itself, which is the one place they stay invisible.
