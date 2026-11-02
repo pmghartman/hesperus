@@ -1,113 +1,55 @@
 ---
 name: hesperus
-description: Read and write Hesperus `.hesp` system descriptions. Use when a task mentions Hesperus, `.hesp` files, a system's intent vs actual architecture, `hesp check`, `hesp diff`, or asks what a repository's architecture should be or has drifted to.
+description: Answer "what happens when this request comes in", "what does this change affect" and "does this code break an architectural rule" for a TypeScript repository from its flow (entry points → calls in source order → stores, hosts, filesystem, processes). Use when a task mentions Hesperus, `.hesp` files, flow.json, entry points or blast radius, or before and after editing code in a repository that has a `.hesperus/` directory or a `.hesp` file.
 ---
 
 # Hesperus
 
-Hesperus describes a software system as a graph in `.hesp` files. Two descriptions exist for one system:
+Hesperus reads a TypeScript repository and writes its **flow**: every entry point (route handlers, `main`, `bin`/shebang modules, CLI command handlers, `activate` in a VS Code extension), the functions each one reaches in source order, and where each path leaves the program (a store, an external host, the filesystem, a process, the program's own ingress). Nothing is inferred: names come from declarations, order from source position, boundaries from a rule table, and a call is a step only when its callee resolves to a declaration in the repository.
 
-- **Intent** (`.hesp` files wherever the project keeps them, tracked in git): what the system *should* be. You may edit these.
-- **Actual** (`.hesperus/actual/*.hesp`, gitignored, header line `generated "hesperus-ts"`): what the code *is*, emitted by `hesp emit`. **Never edit a generated file.** Change the code or the intent instead and re-emit.
+The tool is `hesperus-ts` (`hesperus-ts` on `PATH`, `$HESPERUS_TS`, or `extractor/cli.js` inside the installed VS Code extension; run `.js` paths with `node`). The same questions are available as an MCP server: `hesperus-ts mcp <repo>` on stdio, tools `entries`, `flow`, `reaches`, `boundaries`, `check`, `dump`. Prefer the MCP tools when they are connected; the commands below are the same answers.
 
-`hesp diff intent.hesp .hesperus/actual/intent.hesp` merges them. It prints a summary line, then only the differences (`--all` adds the `=` matches), then every constraint: `ok` (a satisfied `require` adds `by <edge>`) or `x` with the offending edges. An edge the extractor could not resolve ends its line with the word `unresolved` (in the IR it is `resolved: false`; the viewer draws it dashed). It exits 0 unless a constraint fails. Read the statuses as:
+## The workflow
 
-| status | meaning | what you do |
-|---|---|---|
-| `match` (`=`) | declared and built | nothing |
-| `intent-only` (`-`) | declared, not built | **a task**: build it (or remove the declaration if the plan changed) |
-| `actual-only` (`+`) | built, never declared | **drift**: report it; add it to the intent only if it is wanted |
-| `conflict` (`!`) | both exist, `kind`/`protocol`/`host`/`engine` disagree | **drift**: report it; fix the code or the intent, whichever is wrong |
-| constraint `x` | a `forbid` has a witness or a `require` has none | **violation**: report it; it fails the build (`hesp diff` exits 1) |
+1. **Before touching a file**: `hesperus-ts reaches <repo> <file[:line]>` lists the entry points whose paths pass through it and the functions on the way. Read those entries with `flow` before changing shared code; a file under no entry point is reached by nothing the extractor can see (a test, dead code, or code reached only through something the rules do not know).
+2. **To learn what the program does**: `hesperus-ts entries <repo>`, then `hesperus-ts flow <repo> "<entry>"` for one of them (an id from `entries`, or a label like `POST /orders`). Read it top to bottom: each line is `function [component]  @call site -> declaration`, each `->` line is where the path leaves the program. `[cycle]`, `[seen]`, `[depth]`, `[steps]` mark callees not expanded there.
+3. **On your diff, before finishing**: `hesperus-ts boundaries <repo> --since <rev>` (`HEAD` for uncommitted work, the base branch for a PR) reports what the change newly reaches outside the program per entry point (a new host, a new store write, filesystem or process use), new or removed entry points, constraints whose result changed, and which entries each changed file sits under. Report every `+` line to the user: a new external host or store write that the task did not ask for is the finding.
+4. **Constraints**: `hesperus-ts check <repo>` prints each `require`/`forbid` line of the intent with `ok` or `x` and the witness sites; it exits 1 on a violation. Never leave a violation unreported.
 
-`hesp emit` also writes `.hesperus/actual/flow.json` (never edit it; shape in `docs/flow.schema.json`): the program's **flow**. `entries` lists every entry point found (`kind`: `route` with a label like `GET /users`, `main`, `module` for a `bin` or shebang file, `command` for a CLI handler, `export` for `activate` in a VS Code extension), each with `steps` in source order: `{ "call": "src/db/users.ts#findUsers", "at": "src/handlers/users.ts:4", "steps": [...] }` for a call into the repository and `{ "boundary": "store", "node": "shop.db", "edge": "reads", "at": "src/db/users.ts:3" }` where the path leaves the program. `units` maps each `file#name` to its declaration line and the actual node that owns the file. A `cut` of `cycle`, `seen`, `depth` or `steps` means the callee was not expanded there. Use it to answer "what happens when this request comes in" by reading one entry top to bottom; every `at` is a `path:line` to open. `hesperus-ts flow <repo> --intent <ir.json>` prints the same JSON without writing files. Nothing in it is inferred: names come from declarations, order from the source, boundaries from the same rules as the actual.
+Every answer carries `path:line`; open those lines rather than guessing. `--json` on any command gives the data; `--fresh` recomputes when the cached `.hesperus/actual/flow.json` might be stale (it is reused only while it is newer than every source file).
 
-Two nodes in actual files are synthesized by the extractor, not declared by anyone: `subsystem unbound` holds the code no intent `src` binds, one node per directory two levels deep (a directory with code in subdirectories is a subsystem, its subdirectories components; `unbound.scripts` means "add a `src:` binding for `scripts/**` to the right node, or it is genuinely stray code"), and `network unresolved` is the sink for edges whose target the extractor could not identify (dynamic URLs, dynamic imports). Do not declare either in the intent. Generated files also carry `at: ["path:line", ...]` evidence on nodes and edges; intent files never need it.
+## The intent file
 
-## After every edit
-
-```
-hesp fmt <dir-or-file>   # formats in place; never touches generated files
-hesp check <master>      # parses the master and every import; prints `ok (N nodes, N edges, N files)` and exits 0 when clean
-```
-
-`hesp fmt` keeps your order; it does not sort. Convention in the examples: imports, edges and constraints alphabetical. Labels (the quoted string after a name) are optional everywhere.
-
-Fix every diagnostic. Each one names a code (`E011`), a position and often a fix (`help: replace with ...`). Never leave a file that fails `hesp check`.
-
-## Syntax in one page
-
-```hesp
-hesperus 0.1 # every file starts with this line
-
-system shop "Web shop" { # the master's root: a system; one root per file
-  desc: "Free text, never diffed"
-  src: ["src/**", "lib/money.ts"] # binding: which code belongs here (globs)
-
-  import "./catalog.hesp" # splices that file's subsystem in as a child
-
-  component api # containers: system, subsystem, component
-  ingress web "Storefront" { # boundaries: ingress egress store external network hardware
-    protocol: http # http ws grpc tcp udp ssh other
-  }
-  store db {
-    engine: "postgres" # free string; the extractor emits postgres, mysql, sqlite, mongodb, redis, sql (query builders)
-  }
-  external stripe {
-    protocol: http
-    host: "api.stripe.com" # binds the detected external with this host
-  }
-  hardware filesystem # extractor names: filesystem, processes; network: unresolved
-
-  web -> api: http # edge kinds: calls reads writes http ws io (default calls)
-  api -> db: reads
-  api -> db: writes
-  api -> stripe: http
-  api -> filesystem: io
-
-  forbid web -> db # no edge from web (or anything inside) to db
-  require api -> db: writes # at least one such edge must exist in the code
-}
-```
-
-The master above imports `catalog.hesp`; the two files go together (a master whose import target is missing fails `hesp check` with E012):
+An optional `.hesp` file (tracked in git) names the parts of the system and states rules. It is read for three things, nothing else:
 
 ```hesp
 hesperus 0.1
 
-subsystem catalog "Product catalog" {
-  src: "src/catalog/**"
+system shop "Web shop" {
+  src: "src/**"
 
-  component listing
-  component search {
-    src: "src/catalog/search/**" # more specific globs win
+  component api {
+    src: "src/api/**"         # binding: functions in these files are shown under `api`
+  }
+  store db {
+    engine: "postgres"        # names the detected store `db` instead of `postgres`
+  }
+  external stripe {
+    protocol: http
+    host: "api.stripe.com"    # names the detected host
   }
 
-  listing -> search: calls
+  forbid api -> db: writes    # a rule: checked against every function by `check`
+  require api -> stripe: http
 }
 ```
 
-Rules that bite:
+`hesp init --lang ts <repo>` writes one from the code (a component per source directory, every store and host found); `hesp emit --lang ts <repo> --intent <master>` reads the code and writes `.hesperus/actual/flow.json` (gitignored; never edit it). `hesp fmt` and `hesp check <master>` keep the file tidy and valid; fix every diagnostic. Edges between components (`api -> db: reads`) are legal but no longer read: the flow shows what the code does, the intent only names and constrains it.
 
-- Ids are paths: `shop.catalog.search`. Edges name nodes by path, resolved from the enclosing block outward, so inside `catalog` write `search`, at the root write `catalog.search`; the fully qualified id always works.
-- A node must exist before an edge can name it; there is no implicit creation. `hesp check` says `E011` otherwise.
-- Comments start with `#`. Labels (the quoted string after the name) are free text and never diffed. A literal dollar sign in a string is written `\$` (a bare `$` means interpolation and is an error outside templates).
-- Boundary nodes (`ingress`, `store`, ...) hold no children.
-- Edge identity is `(from, to, kind)`: `api -> db: reads` and `api -> db: writes` are two edges.
-- Repetition only through `let x = [a, b]`, `template name(p) { ... }` called as `name($x)`, and `each x in list { ... }`, all at most 4 levels deep; templates may only call templates defined earlier in the file. Interpolate with `$p` or `${p}`.
-- Reserved words: `hesperus generated import require forbid let template each in true false`. Kind names (`store`, `network`) are fine as node names.
+## Reading flow.json directly
 
-## Starting from existing code
+Shape in `docs/flow.schema.json`. `entries[]` hold `steps` in source order: `{ "call": "src/db/users.ts#findUsers", "at": "src/handlers/users.ts:4", "steps": [...] }` for a call into the repository and `{ "boundary": "store", "node": "shop.db", "edge": "reads", "at": "src/db/users.ts:3" }` where the path leaves. `units[]` map each `file#name` to its lines and the component that owns the file; `components[]` carry the intent's names; `constraints[]` carry the results with witnesses.
 
-`hesp init --lang ts <repo>` writes `<repo name>.hesp` into the repository (`--dir` to put it elsewhere, `--name` to name the root system) describing the code as it is, then emits the actual and adds the actual's directory (`.hesperus/` by default) to the `.gitignore` beside the intent: it ends `hesp init: intent and actual match (N nodes and edges)`. It refuses to overwrite an existing file. The result is a starting point, not a design: rename components, group them into subsystems (keeping each `src` glob), add `desc` and constraints, then re-emit and diff.
+## What it does not see
 
-## Adding a subsystem
-
-1. Create `name.hesp` with `hesperus 0.1` and a `subsystem name "Label" { src: "path/**" ... }` root.
-2. Add `import "./name.hesp"` inside the master's `system` block.
-3. Add edges at the lowest block that contains both endpoints (cross-subsystem edges go in the master).
-4. Run `hesp fmt` and `hesp check` on the master. Then `hesp emit --lang ts <repo> --intent <master>` (`<repo>` is the root of the code the intent describes; output lands in `.hesperus/actual/` under the current directory, or `--out <dir>`) and `hesp diff <master> .hesperus/actual/<master name>` to see what the code already provides. `hesp emit` needs the TypeScript extractor: `hesperus-ts` on `PATH`, or `HESPERUS_TS=<path to hesperus-ts/dist/cli.js>` in the environment, or `--extractor <command>`.
-
-## Reading a diff for someone
-
-Summarize in this order: violations (constraints marked `x`), conflicts, actual-only nodes and edges (drift, grouped by subsystem), intent-only items (open work). Mention `unresolved` edges (dashed, `resolved: false`) as "the code reaches somewhere the extractor could not identify", not as drift to fix. Give counts from the first line of `hesp diff` output.
+Store and host detection is per file: `import { pool } from "./pool"; pool.query(...)` is not a store crossing because the origin is `./pool`, not `pg`; the crossing shows in the file that constructs the client. Calls through values the checker cannot resolve (dynamic dispatch, callbacks stored in maps) are not steps. Say so when a question depends on them.
