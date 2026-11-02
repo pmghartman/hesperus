@@ -97,8 +97,8 @@
       "properties": {
         "id": { "type": "string", "description": "`kind:unit`, with `@n` appended when one function serves several entries." },
         "kind": {
-          "enum": ["route", "main", "module", "command", "export"],
-          "description": "route: a handler registered on an ingress the rule table recognizes (or the function holding a pathname comparison); main: a `main` function that is exported or called at the top level; module: the top-level code of a `bin` file or a file with a shebang; command: a CLI command handler (commander/cac/yargs/citty style `.action(fn)`, `.command(..., fn)`, `defineCommand({ run })`); export: an exported function a host calls by name (`activate`/`deactivate` in a file importing `vscode`)."
+          "enum": ["route", "main", "module", "command", "export", "event"],
+          "description": "route: a handler registered on an ingress the rule table recognizes (a route call, a `routes` object, the function holding a pathname comparison), with router mount prefixes (`app.use(\"/api\", r)`) applied to its label; main: a `main` function that is exported or called at the top level; module: the top-level code of a `bin` file or a file with a shebang; command: a CLI command handler (commander/cac/yargs/citty style `.action(fn)`, `.command(..., fn)`, `defineCommand({ run })`); export: an exported function a host calls by name (`activate`/`deactivate` in a file importing `vscode`); event: a handler registered with `.on(name, fn)` on an emitter from events/eventemitter3/mitt/nanoevents/emittery/ws."
         },
         "label": { "type": "string", "description": "`GET /users`, `MATCH /x`, `main`, the file name, `command <name>`, or the export name." },
         "protocol": { "enum": ["http", "ws", null] },
@@ -122,6 +122,10 @@
         "cut": {
           "enum": ["cycle", "seen", "depth", "steps"],
           "description": "Why the callee is not expanded here: it is on the current call path; it was expanded earlier in this entry; the depth limit; the step budget."
+        },
+        "how": {
+          "enum": ["next", "timer", "event"],
+          "description": "Not a plain call: `next`, the next handler of a route's middleware chain (runs after the previous one, in registration order); `timer`, a function handed to setTimeout/setInterval/setImmediate/queueMicrotask/process.nextTick or a cron schedule; `event`, a handler registered under the name an `.emit(name)` names."
         }
       }
     },
@@ -131,7 +135,7 @@
       "required": ["boundary", "node", "label", "edge", "resolved", "at"],
       "additionalProperties": false,
       "properties": {
-        "boundary": { "enum": ["ingress", "store", "external", "network", "hardware"] },
+        "boundary": { "enum": ["ingress", "store", "external", "network", "hardware", "config"], "description": "`config`: a read of `process.env.X`, `Bun.env.X`, `import.meta.env.X` or `Deno.env.get(\"X\")`; the label is the variable, the node `<root>.env` (or the intent's `hardware env`), once per variable per function." },
         "node": { "type": "string", "description": "Node id in the actual IR (adopted from the intent when a binding matches)." },
         "label": { "type": "string", "description": "The intent label when bound, else the host, engine, route or resource name." },
         "edge": { "enum": ["http", "ws", "reads", "writes", "unknown", "io"], "description": "`unknown`: a store access whose SQL verb or method the rules could not classify." },

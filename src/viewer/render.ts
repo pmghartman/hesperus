@@ -18,6 +18,7 @@ const KIND_ICON: Record<string, string> = {
   external: '<path d="M4.75 13.25h7a3 3 0 0 0 .5-5.96A4.25 4.25 0 0 0 4 6.5a3.4 3.4 0 0 0 .75 6.75z"/>',
   network: '<circle cx="8" cy="8" r="6.25"/><path d="M1.75 8h12.5M8 1.75c2.2 2.2 2.2 10.3 0 12.5M8 1.75c-2.2 2.2-2.2 10.3 0 12.5"/>',
   hardware: '<rect x="3.75" y="3.75" width="8.5" height="8.5" rx="1.25"/><rect x="6.25" y="6.25" width="3.5" height="3.5" class="fill"/><path d="M6 1.5v2.25M10 1.5v2.25M6 12.25v2.25M10 12.25v2.25M1.5 6h2.25M1.5 10h2.25M12.25 6h2.25M12.25 10h2.25"/>',
+  config: '<path d="M3.25 4.5h9.5M3.25 8h9.5M3.25 11.5h9.5"/><circle cx="6" cy="4.5" r="1.5" class="fill"/><circle cx="10.5" cy="8" r="1.5" class="fill"/><circle cx="7" cy="11.5" r="1.5" class="fill"/>',
 };
 
 export function esc(s: string): string {

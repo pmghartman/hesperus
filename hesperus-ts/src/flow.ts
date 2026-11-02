@@ -11,7 +11,7 @@ import { Node, Project, SourceFile, ts } from "ts-morph";
 import { Bindings } from "./bindings.js";
 import { applyRulesIndexed, classifyUrl, Finding } from "./engine.js";
 import { adoptBoundary, fileOwners } from "./extract.js";
-import { factsWithNodes } from "./facts.js";
+import { Fact, factsWithNodes } from "./facts.js";
 import { EXTRACTOR, identify, Ir, IrConstraint, within } from "./ir.js";
 import { Workspace } from "./workspace.js";
 
@@ -63,10 +63,12 @@ export interface FlowCall {
   steps?: FlowStep[];
   /** Why the callee was not expanded here: on the current path, expanded earlier in this entry, past the depth limit, or past the step budget. */
   cut?: "cycle" | "seen" | "depth" | "steps";
+  /** Not a plain call: the next handler of a middleware chain, a function handed to a timer, or the handlers an event emit reaches. */
+  how?: "next" | "timer" | "event";
 }
 
 export interface FlowCrossing {
-  boundary: "ingress" | "store" | "external" | "network" | "hardware";
+  boundary: "ingress" | "store" | "external" | "network" | "hardware" | "config";
   /** Node id in the actual IR (adopted from the intent when it binds). */
   node: string;
   label: string;
@@ -80,8 +82,8 @@ export type FlowStep = FlowCall | FlowCrossing;
 export interface FlowEntry {
   /** `kind:unit`. */
   id: string;
-  /** Route handler, `main`, a `bin`/shebang module, a CLI command handler, or an exported function a host calls by name. */
-  kind: "route" | "main" | "module" | "command" | "export";
+  /** Route handler, `main`, a `bin`/shebang module, a CLI command handler, an exported function a host calls by name, or an event handler. */
+  kind: "route" | "main" | "module" | "command" | "export" | "event";
   label: string;
   protocol: "http" | "ws" | null;
   unit: string;
@@ -112,6 +114,17 @@ export interface FlowOptions {
 const CLI_MODULES = ["commander", "@commander-js/extra-typings", "cac", "yargs", "yargs/yargs", "citty", "clipanion", "sade", "meow"];
 /** Exported functions a host calls by name when the file imports the module. */
 const HOST_EXPORTS: { module: string; names: string[] }[] = [{ module: "vscode", names: ["activate", "deactivate"] }];
+/** Functions whose function argument runs later: the argument is a step marked `timer`. */
+const TIMERS: { module: string[]; callee: string[] }[] = [
+  { module: ["<global>"], callee: ["setTimeout", "setInterval", "setImmediate", "queueMicrotask"] },
+  { module: ["<global>"], callee: ["nextTick"] },
+  { module: ["node:timers", "timers", "node:timers/promises", "timers/promises"], callee: ["setTimeout", "setInterval", "setImmediate"] },
+  { module: ["node-cron", "cron", "croner"], callee: ["schedule", "CronJob", "Cron"] },
+];
+/** `.on(name, fn)` on these registers an event handler; `.emit(name)` reaches the handlers registered under that name anywhere in the repository. */
+const EVENT_MODULES = ["events", "node:events", "eventemitter3", "mitt", "nanoevents", "emittery", "ws"];
+/** `process.env.X`, `Bun.env.X`, `import.meta.env.X`, `Deno.env.get("X")`: a read of configuration. */
+const ENV_RECEIVERS = ["process.env", "Bun.env", "import.meta.env"];
 
 type Fn = Node;
 
@@ -305,83 +318,289 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
   };
 
   // ---- per file: calls and boundary crossings, each attributed to the unit it sits in
-  type Raw = { pos: number; node: Node; call?: Fn; crossing?: FlowCrossing };
+  type Raw = { pos: number; node: Node; call?: Fn; crossing?: FlowCrossing; how?: FlowCall["how"] };
   const rawByUnit = new Map<Fn | SourceFile, Raw[]>();
   const ingressFindings: { node: Node; finding: Extract<Finding, { kind: "ingress" }> }[] = [];
-  const perFile = new Map<SourceFile, { calls: Node[]; findings: { node: Node; finding: Finding }[] }>();
+  const perFile = new Map<SourceFile, { calls: Node[]; findings: { node: Node; finding: Finding }[]; envReads: { node: Node; name: string }[] }>();
+  /** The call/new/tagged fact behind a node, for its receiver origin. */
+  const factOf = new Map<Node, Fact>();
   for (const sf of files.values()) {
     debug(`facts ${relOf(sf)}`);
     const calls: Node[] = [];
+    const envReads: { node: Node; name: string }[] = [];
     sf.forEachDescendant((n) => {
-      if (Node.isCallExpression(n) || Node.isNewExpression(n)) calls.push(n);
+      if (Node.isCallExpression(n) || Node.isNewExpression(n)) {
+        calls.push(n);
+        // Deno.env.get("X")
+        const callee = n.getExpression();
+        if (Node.isCallExpression(n) && Node.isPropertyAccessExpression(callee) && callee.getExpression().getText() === "Deno.env" && callee.getName() === "get") {
+          const a0 = unwrap(n.getArguments()[0]);
+          if (a0 && Node.isStringLiteral(a0)) envReads.push({ node: n, name: a0.getLiteralText() });
+        }
+      } else if (Node.isPropertyAccessExpression(n) && ENV_RECEIVERS.includes(n.getExpression().getText())) envReads.push({ node: n, name: n.getName() });
+      else if (Node.isElementAccessExpression(n) && ENV_RECEIVERS.includes(n.getExpression().getText())) {
+        const a = unwrap(n.getArgumentExpression());
+        if (a && Node.isStringLiteral(a)) envReads.push({ node: n, name: a.getLiteralText() });
+      }
     });
     let findings: { node: Node; finding: Finding }[] = [];
     try {
       const facts = factsWithNodes(sf);
+      facts.facts.forEach((f, i) => {
+        if (f.kind === "call" || f.kind === "new" || f.kind === "tagged") factOf.set(facts.nodes[i], f);
+      });
       findings = applyRulesIndexed(facts)
         .filter(({ finding, fact }) => finding.kind !== "import" && facts.facts[fact].kind !== "import")
         .map(({ finding, fact }) => ({ node: facts.nodes[fact], finding }));
     } catch (err) {
       process.stderr.write(`hesperus-ts: flow skipping rules in ${relOf(sf)}: ${(err as Error).message}\n`);
     }
-    perFile.set(sf, { calls, findings });
+    perFile.set(sf, { calls, findings, envReads });
     for (const f of findings) if (f.finding.kind === "ingress") ingressFindings.push({ node: f.node, finding: f.finding });
   }
+  const originOf = (call: Node): { module: string; symbol: string } | null => {
+    const f = factOf.get(call);
+    return f && f.kind !== "import" && f.kind !== "compare" && f.kind !== "property" ? f.origin : null;
+  };
+  /** Is the receiver of this call an event emitter: by its import origin, or by the `new EventEmitter()` its declaration holds (in any file). */
+  const onEmitter = (c: Node): boolean => {
+    const o = originOf(c);
+    if (o && EVENT_MODULES.includes(o.module)) return true;
+    if (!Node.isCallExpression(c)) return false;
+    const callee = unwrap(c.getExpression());
+    if (!callee || !Node.isPropertyAccessExpression(callee)) return false;
+    const recv = unwrap(callee.getExpression());
+    if (!recv || !(Node.isIdentifier(recv) || Node.isPropertyAccessExpression(recv))) return false;
+    let sym = (Node.isPropertyAccessExpression(recv) ? recv.getNameNode() : recv).getSymbol();
+    if (sym && sym.getFlags() & ts.SymbolFlags.Alias) {
+      try {
+        sym = sym.getAliasedSymbol() ?? sym;
+      } catch {
+        // unresolvable
+      }
+    }
+    for (const d of sym?.getDeclarations() ?? []) {
+      if (!Node.isVariableDeclaration(d) && !Node.isPropertyDeclaration(d) && !Node.isPropertyAssignment(d)) continue;
+      const init = unwrap(d.getInitializer());
+      if (!init) continue;
+      const io = originOf(init);
+      if (io && EVENT_MODULES.includes(io.module)) return true;
+    }
+    return false;
+  };
+  const calleeName = (c: Node): string => {
+    if (!Node.isCallExpression(c) && !Node.isNewExpression(c)) return "";
+    const callee = unwrap(c.getExpression());
+    return callee && Node.isPropertyAccessExpression(callee) ? callee.getName() : callee && Node.isIdentifier(callee) ? callee.getText() : "";
+  };
 
   // ---- entries
-  const entries: { kind: FlowEntry["kind"]; label: string; protocol: FlowEntry["protocol"]; fn: Fn | SourceFile; at: string }[] = [];
-  const addEntry = (e: (typeof entries)[number]) => {
+  type Entry = { kind: FlowEntry["kind"]; label: string; protocol: FlowEntry["protocol"]; fn: Fn | SourceFile; at: string; chain?: Fn[] };
+  const entries: Entry[] = [];
+  const addEntry = (e: Entry) => {
     if (!entries.some((x) => x.fn === e.fn && x.label === e.label)) entries.push(e);
   };
-  const handlerFns = (arg: Node | undefined, protocol: "http" | "ws"): Fn[] => {
+  /** The function a handler argument names: an inline function, an identifier or a property (`users.list`). */
+  const fnOf = (a: Node | undefined): Fn | null => {
+    const n = unwrap(a);
+    if (!n) return null;
+    if (Node.isArrowFunction(n) || Node.isFunctionExpression(n)) return n;
+    if (Node.isPropertyAccessExpression(n)) return bySymbol(n.getNameNode(), false);
+    if (Node.isIdentifier(n)) return bySymbol(n, false) ?? byImport(n.getSourceFile(), n.getText(), null, false);
+    return null;
+  };
+  /** An object literal, following an identifier to the object its declaration is initialized with. */
+  const objectOf = (a: Node | undefined): Node | null => {
+    const n = unwrap(a);
+    if (!n) return null;
+    if (Node.isObjectLiteralExpression(n)) return n;
+    if (Node.isIdentifier(n) || Node.isPropertyAccessExpression(n)) {
+      let sym = (Node.isPropertyAccessExpression(n) ? n.getNameNode() : n).getSymbol();
+      if (sym && sym.getFlags() & ts.SymbolFlags.Alias) {
+        try {
+          sym = sym.getAliasedSymbol() ?? sym;
+        } catch {
+          // unresolvable
+        }
+      }
+      for (const d of sym?.getDeclarations() ?? []) {
+        if (Node.isVariableDeclaration(d) || Node.isPropertyAssignment(d)) {
+          const init = unwrap(d.getInitializer());
+          if (init && Node.isObjectLiteralExpression(init)) return init;
+        }
+      }
+      if (Node.isIdentifier(n)) {
+        // an import the checker could not follow
+        for (const imp of n.getSourceFile().getImportDeclarations()) {
+          const named = imp.getNamedImports().find((ni) => (ni.getAliasNode() ?? ni.getNameNode()).getText() === n.getText());
+          const exportName = named ? named.getNameNode().getText() : imp.getDefaultImport()?.getText() === n.getText() ? "default" : null;
+          if (!exportName) continue;
+          const target = ws.resolve(relOf(n.getSourceFile()), imp.getModuleSpecifierValue());
+          const tsf = target ? files.get(target) : undefined;
+          for (const d of tsf?.getExportedDeclarations().get(exportName) ?? []) {
+            if (Node.isVariableDeclaration(d)) {
+              const init = unwrap(d.getInitializer());
+              if (init && Node.isObjectLiteralExpression(init)) return init;
+            }
+          }
+        }
+      }
+    }
+    return null;
+  };
+  /** Handlers in a `Bun.serve({ routes })` / `{ "/path": fn | { GET: fn } }` object. */
+  const routeObjectHandlers = (obj: Node): { fn: Fn; label: string }[] => {
+    const out: { fn: Fn; label: string }[] = [];
+    if (!Node.isObjectLiteralExpression(obj)) return out;
+    for (const p of obj.getProperties()) {
+      if (!Node.isPropertyAssignment(p) && !Node.isMethodDeclaration(p)) continue;
+      const nameNode = p.getNameNode();
+      const route = Node.isStringLiteral(nameNode) || Node.isNoSubstitutionTemplateLiteral(nameNode) ? nameNode.getLiteralText() : p.getName();
+      if (!route.startsWith("/")) continue;
+      if (Node.isMethodDeclaration(p)) {
+        out.push({ fn: p, label: `ROUTE ${route}` });
+        continue;
+      }
+      const init = unwrap(p.getInitializer());
+      if (init && Node.isObjectLiteralExpression(init)) {
+        for (const q of init.getProperties()) {
+          if (Node.isMethodDeclaration(q)) out.push({ fn: q, label: `${q.getName().toUpperCase()} ${route}` });
+          else if (Node.isPropertyAssignment(q)) {
+            const fn = fnOf(q.getInitializer());
+            if (fn) out.push({ fn, label: `${q.getName().toUpperCase()} ${route}` });
+          } else if (Node.isShorthandPropertyAssignment(q)) {
+            const fn = declToFn(q, false);
+            if (fn) out.push({ fn, label: `${q.getName().toUpperCase()} ${route}` });
+          }
+        }
+        continue;
+      }
+      const fn = fnOf(p.getInitializer());
+      if (fn) out.push({ fn, label: `ROUTE ${route}` });
+    }
+    return out;
+  };
+  /** Handlers named by one argument of an ingress call: functions, `{ fetch, websocket: { ... }, routes: { ... } }` objects. */
+  const handlerFns = (arg: Node | undefined, protocol: "http" | "ws"): { fn: Fn; label?: string }[] => {
     const a = unwrap(arg);
     if (!a) return [];
-    if (Node.isArrowFunction(a) || Node.isFunctionExpression(a)) return [a];
-    if (Node.isIdentifier(a) || Node.isPropertyAccessExpression(a)) {
-      const fn = bySymbol(Node.isPropertyAccessExpression(a) ? a.getNameNode() : a, false) ?? (Node.isIdentifier(a) ? byImport(a.getSourceFile(), a.getText(), null, false) : null);
-      return fn ? [fn] : [];
-    }
     if (Node.isObjectLiteralExpression(a)) {
-      // `Bun.serve({ fetch, websocket: { message, open } })`, `createServer({ ... })`
-      const out: Fn[] = [];
-      const keys = protocol === "ws" ? ["websocket"] : ["fetch", "handler", "requestListener"];
+      const out: { fn: Fn; label?: string }[] = [];
+      const keys = protocol === "ws" ? ["websocket"] : ["fetch", "handler", "requestListener", "routes"];
       for (const p of a.getProperties()) {
         const name = Node.isPropertyAssignment(p) || Node.isMethodDeclaration(p) || Node.isShorthandPropertyAssignment(p) ? p.getName() : "";
         if (!keys.includes(name)) continue;
-        if (Node.isMethodDeclaration(p)) out.push(p);
+        if (name === "routes") {
+          const obj = Node.isPropertyAssignment(p) ? objectOf(p.getInitializer()) : Node.isShorthandPropertyAssignment(p) ? objectOf(p.getNameNode()) : null;
+          if (obj) out.push(...routeObjectHandlers(obj));
+          continue;
+        }
+        if (Node.isMethodDeclaration(p)) out.push({ fn: p });
         else if (Node.isPropertyAssignment(p)) {
           const init = unwrap(p.getInitializer());
           if (init && Node.isObjectLiteralExpression(init)) {
             for (const q of init.getProperties()) {
-              if (Node.isMethodDeclaration(q)) out.push(q);
+              if (Node.isMethodDeclaration(q)) out.push({ fn: q, label: `ws ${q.getName()}` });
               else if (Node.isPropertyAssignment(q)) {
-                const fn = declToFn(q, false) ?? handlerFns(q.getInitializer(), protocol)[0];
-                if (fn) out.push(fn);
+                const fn = fnOf(q.getInitializer());
+                if (fn) out.push({ fn, label: `ws ${q.getName()}` });
+              } else if (Node.isShorthandPropertyAssignment(q)) {
+                const fn = declToFn(q, false);
+                if (fn) out.push({ fn, label: `ws ${q.getName()}` });
               }
             }
-          } else out.push(...handlerFns(p.getInitializer(), protocol));
+          } else {
+            const fn = fnOf(p.getInitializer());
+            if (fn) out.push({ fn });
+          }
         } else if (Node.isShorthandPropertyAssignment(p)) {
           const fn = declToFn(p, false);
-          if (fn) out.push(fn);
+          if (fn) out.push({ fn });
         }
       }
       return out;
     }
-    return [];
+    const fn = fnOf(a);
+    return fn ? [{ fn }] : [];
+  };
+  // router mounts: `app.use("/api", r)` / `app.route("/api", r)` give the routes registered on `r` a prefix
+  const mountPrefix = new Map<Node, { prefix: string; on: Node | null }>(); // router declaration -> prefix and the parent router's declaration
+  const routerDecl = (receiver: Node | undefined): Node | null => {
+    const r = unwrap(receiver);
+    if (!r || !Node.isIdentifier(r)) return null;
+    let sym = r.getSymbol();
+    if (sym && sym.getFlags() & ts.SymbolFlags.Alias) {
+      try {
+        sym = sym.getAliasedSymbol() ?? sym;
+      } catch {
+        // unresolvable
+      }
+    }
+    return sym?.getDeclarations()?.find((d) => Node.isVariableDeclaration(d)) ?? null;
+  };
+  for (const { node } of ingressFindings) {
+    if (!Node.isCallExpression(node)) continue;
+    const name = calleeName(node);
+    if (name !== "use" && name !== "route") continue;
+    const args = node.getArguments();
+    const a0 = unwrap(args[0]);
+    if (!a0 || !Node.isStringLiteral(a0) || !a0.getLiteralText().startsWith("/")) continue;
+    const callee = unwrap(node.getExpression());
+    const parent = callee && Node.isPropertyAccessExpression(callee) ? routerDecl(callee.getExpression()) : null;
+    for (const a of args.slice(1)) {
+      const decl = routerDecl(a);
+      if (decl && !fnOf(a)) mountPrefix.set(decl, { prefix: a0.getLiteralText().replace(/\/$/, ""), on: parent });
+    }
+  }
+  const prefixOf = (call: Node): string => {
+    const callee = Node.isCallExpression(call) ? unwrap(call.getExpression()) : undefined;
+    let decl = callee && Node.isPropertyAccessExpression(callee) ? routerDecl(callee.getExpression()) : null;
+    let prefix = "";
+    for (let i = 0; i < 8 && decl; i++) {
+      const m = mountPrefix.get(decl);
+      if (!m) break;
+      prefix = m.prefix + prefix;
+      decl = m.on;
+    }
+    return prefix;
   };
   for (const { node, finding } of ingressFindings) {
     if (Node.isCallExpression(node) || Node.isNewExpression(node)) {
-      const fns: Fn[] = [];
-      for (const arg of node.getArguments()) fns.push(...handlerFns(arg, finding.protocol));
-      for (const fn of fns) {
-        if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) entryFns.add(fn);
-        addEntry({ kind: "route", label: finding.detail, protocol: finding.protocol, fn, at: at(node) });
-      }
+      const found: { fn: Fn; label?: string }[] = [];
+      for (const arg of node.getArguments()) found.push(...handlerFns(arg, finding.protocol));
+      if (!found.length) continue;
+      // a route with several handlers is one entry: the first handler, then the rest as the chain
+      const route = /^([A-Z]+) (\/.*)$/.exec(finding.detail);
+      const label = route ? `${route[1]} ${prefixOf(node)}${route[2]}` : finding.detail;
+      const plain = found.filter((h) => !h.label);
+      for (const h of found) if (Node.isArrowFunction(h.fn) || Node.isFunctionExpression(h.fn)) entryFns.add(h.fn);
+      if (plain.length) addEntry({ kind: "route", label, protocol: finding.protocol, fn: plain[0].fn, at: at(node), chain: plain.slice(1).map((h) => h.fn) });
+      for (const h of found) if (h.label) addEntry({ kind: "route", label: h.label, protocol: finding.protocol, fn: h.fn, at: at(node) });
     } else {
       // a pathname comparison: the function it sits in handles that route
       const fn = enclosingUnit(node) ?? node.getSourceFile();
       addEntry({ kind: "route", label: finding.detail, protocol: finding.protocol, fn, at: at(node) });
     }
+  }
+  // event handlers: `.on("name", fn)` on an emitter from a known module; `.emit("name")` reaches them
+  const eventHandlers = new Map<string, Fn[]>();
+  for (const [sf, { calls }] of perFile) {
+    for (const c of calls) {
+      if (!Node.isCallExpression(c)) continue;
+      const name = calleeName(c);
+      if (name !== "on" && name !== "once" && name !== "addListener") continue;
+      if (!onEmitter(c)) continue;
+      const a0 = unwrap(c.getArguments()[0]);
+      if (!a0 || !Node.isStringLiteral(a0)) continue;
+      const fn = fnOf(c.getArguments()[1]);
+      if (!fn) continue;
+      if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) entryFns.add(fn);
+      const ev = a0.getLiteralText();
+      if (!eventHandlers.has(ev)) eventHandlers.set(ev, []);
+      eventHandlers.get(ev)!.push(fn);
+      addEntry({ kind: "event", label: `on ${ev}`, protocol: null, fn, at: at(c) });
+    }
+    void sf;
   }
   // `bin` entries and shebang files: their top-level code runs first
   const moduleEntries = new Set<SourceFile>();
@@ -412,7 +631,7 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
         const name = callee && Node.isPropertyAccessExpression(callee) ? callee.getName() : callee && Node.isIdentifier(callee) ? callee.getText() : "";
         if (name === "action" || name === "command") {
           const fnArg = [...c.getArguments()].reverse().map((a) => unwrap(a)).find((a) => a && (Node.isArrowFunction(a) || Node.isFunctionExpression(a) || Node.isIdentifier(a)));
-          const fn = fnArg ? handlerFns(fnArg, "http")[0] : undefined;
+          const fn = fnArg ? fnOf(fnArg) : null;
           if (!fn) continue;
           if (Node.isArrowFunction(fn) || Node.isFunctionExpression(fn)) entryFns.add(fn);
           addEntry({ kind: "command", label: commandLabel(c), protocol: null, fn, at: at(c) });
@@ -450,12 +669,40 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
     };
     for (const c of calls) {
       const target = resolveCallee(c);
-      if (!target) continue;
-      push(enclosingUnit(c) ?? sf, { pos: c.getStart(), node: c, call: target });
+      if (target) {
+        push(enclosingUnit(c) ?? sf, { pos: c.getStart(), node: c, call: target });
+        continue;
+      }
+      if (!Node.isCallExpression(c) && !Node.isNewExpression(c)) continue;
+      const o = originOf(c);
+      const name = calleeName(c);
+      if (!o) continue;
+      // a function handed to a timer runs later; every function argument counts
+      if (o && TIMERS.some((t) => t.module.includes(o.module) && t.callee.includes(name) && (o.module !== "<global>" || name === "nextTick" ? true : o.symbol === name))) {
+        for (const a of c.getArguments()) {
+          const fn = fnOf(a);
+          if (fn && !(Node.isArrowFunction(fn) || Node.isFunctionExpression(fn))) push(enclosingUnit(c) ?? sf, { pos: c.getStart(), node: c, call: fn, how: "timer" });
+        }
+        continue;
+      }
+      // an emit reaches every handler registered under that name
+      if (name === "emit" && onEmitter(c)) {
+        const a0 = unwrap(c.getArguments()[0]);
+        if (a0 && Node.isStringLiteral(a0)) for (const fn of eventHandlers.get(a0.getLiteralText()) ?? []) push(enclosingUnit(c) ?? sf, { pos: c.getStart(), node: c, call: fn, how: "event" });
+      }
     }
     for (const { node, finding } of findings) {
       const crossing = crossingOf(finding, at(node));
       if (crossing) push(enclosingUnit(node) ?? sf, { pos: node.getStart(), node, crossing });
+    }
+    const envSeen = new Map<Fn | SourceFile, Set<string>>();
+    for (const { node, name } of perFile.get(sf)!.envReads) {
+      const unit = enclosingUnit(node) ?? sf;
+      if (!envSeen.has(unit)) envSeen.set(unit, new Set());
+      if (envSeen.get(unit)!.has(name)) continue;
+      envSeen.get(unit)!.add(name);
+      const b = adoptBoundary(bindings, "hardware", { name: "env" }, "env");
+      push(unit, { pos: node.getStart(), node, crossing: { boundary: "config", node: b.id, label: name, edge: "reads", resolved: true, at: at(node) } });
     }
   }
   for (const raws of rawByUnit.values()) raws.sort((a, b) => a.pos - b.pos);
@@ -499,37 +746,54 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
     debug(`walk ${e.kind} ${e.label}`);
     const unit = unitOf(e.fn);
     let budget = maxSteps;
+    let exhausted = false;
     const seen = new Set<Fn | SourceFile>([e.fn]);
     const passed = new Set<Fn | SourceFile>([e.fn]);
     const walk = (fn: Fn | SourceFile, depth: number, onPath: Set<Fn | SourceFile>): FlowStep[] => {
       const steps: FlowStep[] = [];
       for (const raw of rawByUnit.get(fn) ?? []) {
         if (raw.crossing) {
-          if (budget-- <= 0) break;
+          if (exhausted) break;
+          if (budget <= 1) {
+            // the last slot holds the marker, so an entry never exceeds its budget
+            exhausted = true;
+            steps.push({ call: unitOf(fn), at: raw.crossing.at, cut: "steps" });
+            break;
+          }
+          budget--;
           steps.push(raw.crossing);
           continue;
         }
+        if (exhausted) break;
         const callee = raw.call!;
-        const id = unitOf(callee);
-        const where = at(raw.node);
-        if (budget-- <= 0) {
-          steps.push({ call: id, at: where, cut: "steps" });
-          break;
-        }
-        passed.add(callee);
-        if (onPath.has(callee)) steps.push({ call: id, at: where, cut: "cycle" });
-        else if (seen.has(callee)) steps.push({ call: id, at: where, cut: "seen" });
-        else if (depth >= maxDepth) steps.push({ call: id, at: where, cut: "depth" });
-        else {
-          seen.add(callee);
-          onPath.add(callee);
-          steps.push({ call: id, at: where, steps: walk(callee, depth + 1, onPath) });
-          onPath.delete(callee);
-        }
+        const s = step(callee, at(raw.node), depth, onPath, raw.how);
+        steps.push(s);
+        if (exhausted) break;
       }
       return steps;
     };
-    const entry: FlowEntry = { id: `${e.kind}:${unit}`, kind: e.kind, label: e.label, protocol: e.protocol, unit, at: e.at, steps: walk(e.fn, 1, new Set([e.fn])) };
+    const step = (callee: Fn | SourceFile, where: string, depth: number, onPath: Set<Fn | SourceFile>, how?: FlowCall["how"]): FlowCall => {
+      const id = unitOf(callee);
+      const h = how ? { how } : {};
+      if (budget <= 1) {
+        exhausted = true;
+        return { call: id, at: where, cut: "steps", ...h };
+      }
+      budget--;
+      passed.add(callee);
+      if (onPath.has(callee)) return { call: id, at: where, cut: "cycle", ...h };
+      if (seen.has(callee)) return { call: id, at: where, cut: "seen", ...h };
+      if (depth >= maxDepth) return { call: id, at: where, cut: "depth", ...h };
+      seen.add(callee);
+      onPath.add(callee);
+      const inner = walk(callee, depth + 1, onPath);
+      onPath.delete(callee);
+      return { call: id, at: where, steps: inner, ...h };
+    };
+    const first = walk(e.fn, 1, new Set([e.fn]));
+    // a middleware chain: the next handlers run after the first, in registration order
+    for (const next of e.chain ?? []) if (!exhausted) first.push(step(next, e.at, 1, new Set([e.fn]), "next"));
+    const entry: FlowEntry = { id: `${e.kind}:${unit}`, kind: e.kind, label: e.label, protocol: e.protocol, unit, at: e.at, steps: first };
     out.push(entry);
     for (const fn of passed) {
       if (!entriesThrough.has(fn)) entriesThrough.set(fn, new Set());
@@ -616,15 +880,22 @@ export function writeFlow(f: Flow, file: string): void {
 function unitName(fn: Node): string {
   if (Node.isFunctionDeclaration(fn)) return fn.getName() ?? "default";
   if (Node.isMethodDeclaration(fn) || Node.isGetAccessorDeclaration(fn) || Node.isSetAccessorDeclaration(fn) || Node.isConstructorDeclaration(fn)) {
-    const own = Node.isConstructorDeclaration(fn) ? "constructor" : fn.getName();
+    const own = Node.isConstructorDeclaration(fn) ? "constructor" : Node.isMethodDeclaration(fn) ? keyName(fn) : fn.getName();
     return `${containerName(fn.getParent())}.${own}`;
   }
   const p = unwrapParent(fn);
   if (Node.isVariableDeclaration(p)) return p.getName();
   if (Node.isPropertyDeclaration(p)) return `${containerName(p.getParent())}.${p.getName()}`;
-  if (Node.isPropertyAssignment(p)) return `${containerName(p.getParent())}.${p.getName()}`;
+  if (Node.isPropertyAssignment(p)) return `${containerName(p.getParent())}.${keyName(p)}`;
   if (Node.isExportAssignment(p)) return "default";
   return "anonymous";
+}
+
+/** A property's key as written, without quotes. */
+function keyName(p: Node): string {
+  if (!Node.isPropertyAssignment(p) && !Node.isMethodDeclaration(p)) return "";
+  const n = p.getNameNode();
+  return Node.isStringLiteral(n) || Node.isNoSubstitutionTemplateLiteral(n) ? n.getLiteralText() : p.getName();
 }
 
 /** The name of a class or object literal: its declared name, the variable it initializes, else `<class>`/`<object>`. */

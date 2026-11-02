@@ -243,7 +243,7 @@ export function renderEntry(f: Flow, e: FlowEntry): string {
       if (isCrossing(s)) lines.push(`${indent}-> ${s.boundary} ${s.label} (${s.node}) ${s.edge}${s.resolved ? "" : " unresolved"}  @${s.at}`);
       else {
         const u = units.get(s.call);
-        lines.push(`${indent}${u?.name ?? s.call}${owner(s.call)}${s.cut ? ` [${s.cut}]` : ""}  @${s.at}${u ? ` -> ${u.file}:${u.line}` : ""}`);
+        lines.push(`${indent}${s.how ? `(${s.how}) ` : ""}${u?.name ?? s.call}${owner(s.call)}${s.cut ? ` [${s.cut}]` : ""}  @${s.at}${u ? ` -> ${u.file}:${u.line}` : ""}`);
         if (s.steps) walk(s.steps, indent + "  ");
       }
     }

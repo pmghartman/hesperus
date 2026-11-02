@@ -1,0 +1,334 @@
+{
+  "flow": "0.2",
+  "generated": "hesperus-ts",
+  "root": "rows",
+  "limits": {
+    "depth": 8,
+    "steps": 400
+  },
+  "components": [
+    {
+      "id": "rows.env",
+      "name": "env",
+      "label": null,
+      "kind": "config"
+    },
+    {
+      "id": "rows.hooks_example_com",
+      "name": "hooks_example_com",
+      "label": null,
+      "kind": "external"
+    },
+    {
+      "id": "rows.http",
+      "name": "http",
+      "label": null,
+      "kind": "ingress"
+    },
+    {
+      "id": "rows.postgres",
+      "name": "postgres",
+      "label": null,
+      "kind": "store"
+    },
+    {
+      "id": "rows.unbound.src",
+      "name": "src",
+      "label": null,
+      "kind": "component"
+    }
+  ],
+  "units": [
+    {
+      "id": "src/app.ts#anonymous",
+      "name": "anonymous",
+      "file": "src/app.ts",
+      "line": 11,
+      "end": 11,
+      "owner": "rows.unbound.src"
+    },
+    {
+      "id": "src/app.ts#sweep",
+      "name": "sweep",
+      "file": "src/app.ts",
+      "line": 13,
+      "end": 15,
+      "owner": "rows.unbound.src"
+    },
+    {
+      "id": "src/auth.ts#auth",
+      "name": "auth",
+      "file": "src/auth.ts",
+      "line": 1,
+      "end": 3,
+      "owner": "rows.unbound.src"
+    },
+    {
+      "id": "src/bun.ts#serve.fetch",
+      "name": "serve.fetch",
+      "file": "src/bun.ts",
+      "line": 5,
+      "end": 9,
+      "owner": "rows.unbound.src"
+    },
+    {
+      "id": "src/daemon.ts#<module>",
+      "name": "<module>",
+      "file": "src/daemon.ts",
+      "line": 1,
+      "end": 4,
+      "owner": "rows.unbound.src"
+    },
+    {
+      "id": "src/events.ts#onCreated",
+      "name": "onCreated",
+      "file": "src/events.ts",
+      "line": 3,
+      "end": 5,
+      "owner": "rows.unbound.src"
+    },
+    {
+      "id": "src/items.ts#create",
+      "name": "create",
+      "file": "src/items.ts",
+      "line": 6,
+      "end": 9,
+      "owner": "rows.unbound.src"
+    },
+    {
+      "id": "src/items.ts#list",
+      "name": "list",
+      "file": "src/items.ts",
+      "line": 3,
+      "end": 5,
+      "owner": "rows.unbound.src"
+    },
+    {
+      "id": "src/routes.ts#addUser",
+      "name": "addUser",
+      "file": "src/routes.ts",
+      "line": 8,
+      "end": 11,
+      "owner": "rows.unbound.src"
+    },
+    {
+      "id": "src/routes.ts#listUsers",
+      "name": "listUsers",
+      "file": "src/routes.ts",
+      "line": 5,
+      "end": 7,
+      "owner": "rows.unbound.src"
+    },
+    {
+      "id": "src/routes.ts#routes./api/status",
+      "name": "routes./api/status",
+      "file": "src/routes.ts",
+      "line": 2,
+      "end": 2,
+      "owner": "rows.unbound.src"
+    }
+  ],
+  "entries": [
+    {
+      "id": "route:src/items.ts#list",
+      "kind": "route",
+      "label": "GET /api/items",
+      "protocol": "http",
+      "unit": "src/items.ts#list",
+      "at": "src/app.ts:8",
+      "steps": [
+        {
+          "boundary": "store",
+          "node": "rows.postgres",
+          "label": "postgres",
+          "edge": "reads",
+          "resolved": true,
+          "at": "src/items.ts:4"
+        }
+      ]
+    },
+    {
+      "id": "route:src/auth.ts#auth",
+      "kind": "route",
+      "label": "POST /api/items",
+      "protocol": "http",
+      "unit": "src/auth.ts#auth",
+      "at": "src/app.ts:9",
+      "steps": [
+        {
+          "boundary": "config",
+          "node": "rows.env",
+          "label": "API_TOKEN",
+          "edge": "reads",
+          "resolved": true,
+          "at": "src/auth.ts:2"
+        },
+        {
+          "call": "src/items.ts#create",
+          "at": "src/app.ts:9",
+          "steps": [
+            {
+              "boundary": "store",
+              "node": "rows.postgres",
+              "label": "postgres",
+              "edge": "writes",
+              "resolved": true,
+              "at": "src/items.ts:7"
+            }
+          ],
+          "how": "next"
+        }
+      ]
+    },
+    {
+      "id": "route:src/app.ts#anonymous",
+      "kind": "route",
+      "label": "GET /health",
+      "protocol": "http",
+      "unit": "src/app.ts#anonymous",
+      "at": "src/app.ts:11",
+      "steps": []
+    },
+    {
+      "id": "event:src/app.ts#sweep",
+      "kind": "event",
+      "label": "on tick",
+      "protocol": null,
+      "unit": "src/app.ts#sweep",
+      "at": "src/app.ts:17",
+      "steps": [
+        {
+          "call": "src/events.ts#onCreated",
+          "at": "src/app.ts:14",
+          "steps": [
+            {
+              "boundary": "config",
+              "node": "rows.env",
+              "label": "PORT",
+              "edge": "reads",
+              "resolved": true,
+              "at": "src/events.ts:4"
+            }
+          ],
+          "how": "event"
+        }
+      ]
+    },
+    {
+      "id": "event:src/events.ts#onCreated",
+      "kind": "event",
+      "label": "on created",
+      "protocol": null,
+      "unit": "src/events.ts#onCreated",
+      "at": "src/app.ts:18",
+      "steps": [
+        {
+          "boundary": "config",
+          "node": "rows.env",
+          "label": "PORT",
+          "edge": "reads",
+          "resolved": true,
+          "at": "src/events.ts:4"
+        }
+      ]
+    },
+    {
+      "id": "route:src/bun.ts#serve.fetch",
+      "kind": "route",
+      "label": "Bun.serve",
+      "protocol": "http",
+      "unit": "src/bun.ts#serve.fetch",
+      "at": "src/bun.ts:2",
+      "steps": [
+        {
+          "boundary": "ingress",
+          "node": "rows.http",
+          "label": "MATCH /legacy",
+          "edge": "http",
+          "resolved": true,
+          "at": "src/bun.ts:7"
+        }
+      ]
+    },
+    {
+      "id": "route:src/routes.ts#listUsers",
+      "kind": "route",
+      "label": "GET /api/users",
+      "protocol": "http",
+      "unit": "src/routes.ts#listUsers",
+      "at": "src/bun.ts:2",
+      "steps": []
+    },
+    {
+      "id": "route:src/routes.ts#addUser",
+      "kind": "route",
+      "label": "POST /api/users",
+      "protocol": "http",
+      "unit": "src/routes.ts#addUser",
+      "at": "src/bun.ts:2",
+      "steps": [
+        {
+          "boundary": "external",
+          "node": "rows.hooks_example_com",
+          "label": "hooks.example.com",
+          "edge": "http",
+          "resolved": true,
+          "at": "src/routes.ts:9"
+        }
+      ]
+    },
+    {
+      "id": "route:src/routes.ts#routes./api/status",
+      "kind": "route",
+      "label": "ROUTE /api/status",
+      "protocol": "http",
+      "unit": "src/routes.ts#routes./api/status",
+      "at": "src/bun.ts:2",
+      "steps": []
+    },
+    {
+      "id": "route:src/bun.ts#serve.fetch@2",
+      "kind": "route",
+      "label": "MATCH /legacy",
+      "protocol": "http",
+      "unit": "src/bun.ts#serve.fetch",
+      "at": "src/bun.ts:7",
+      "steps": [
+        {
+          "boundary": "ingress",
+          "node": "rows.http",
+          "label": "MATCH /legacy",
+          "edge": "http",
+          "resolved": true,
+          "at": "src/bun.ts:7"
+        }
+      ]
+    },
+    {
+      "id": "module:src/daemon.ts#<module>",
+      "kind": "module",
+      "label": "daemon.ts",
+      "protocol": null,
+      "unit": "src/daemon.ts#<module>",
+      "at": "src/daemon.ts:1",
+      "steps": [
+        {
+          "call": "src/events.ts#onCreated",
+          "at": "src/daemon.ts:3",
+          "steps": [
+            {
+              "boundary": "config",
+              "node": "rows.env",
+              "label": "PORT",
+              "edge": "reads",
+              "resolved": true,
+              "at": "src/events.ts:4"
+            }
+          ],
+          "how": "timer"
+        }
+      ]
+    }
+  ],
+  "constraints": []
+}

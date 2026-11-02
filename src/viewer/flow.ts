@@ -25,7 +25,7 @@ export interface FlowUnit {
 }
 export interface FlowEntry {
   id: string;
-  kind: "route" | "main" | "module" | "command" | "export";
+  kind: "route" | "main" | "module" | "command" | "export" | "event";
   label: string;
   protocol: "http" | "ws" | null;
   unit: string;
@@ -33,8 +33,8 @@ export interface FlowEntry {
   steps: FlowStep[];
 }
 export type FlowStep =
-  | { call: string; at: string; steps?: FlowStep[]; cut?: "cycle" | "seen" | "depth" | "steps" }
-  | { boundary: "ingress" | "store" | "external" | "network" | "hardware"; node: string; label: string; edge: string; resolved: boolean; at: string };
+  | { call: string; at: string; steps?: FlowStep[]; cut?: "cycle" | "seen" | "depth" | "steps"; how?: "next" | "timer" | "event" }
+  | { boundary: "ingress" | "store" | "external" | "network" | "hardware" | "config"; node: string; label: string; edge: string; resolved: boolean; at: string };
 export interface FlowConstraint {
   rule: "require" | "forbid";
   from: string;
@@ -64,6 +64,7 @@ export const ENTRY_KIND_LABEL: Record<FlowEntry["kind"], string> = {
   module: "module (bin)",
   command: "command handler",
   export: "host export",
+  event: "event handler",
 };
 
 /** How many distinct tints the stylesheet defines. */
@@ -151,7 +152,7 @@ export function flowView(f: FlowJson, entryId: string | null): FlowView | null {
         continue;
       }
       const to = unitNode(s.call);
-      addEdge(from, to.id, "calls", s.at);
+      addEdge(from, to.id, s.how ?? "calls", s.at);
       if (s.steps) walk(to.id, s.steps);
     }
   };
@@ -169,7 +170,7 @@ export function flowView(f: FlowJson, entryId: string | null): FlowView | null {
 
 /** Entries grouped for the inspector: routes first, then the rest, each in flow order. */
 export function entryGroups(f: FlowJson): { kind: FlowEntry["kind"]; label: string; entries: FlowEntry[] }[] {
-  const kinds: FlowEntry["kind"][] = ["route", "command", "main", "module", "export"];
+  const kinds: FlowEntry["kind"][] = ["route", "event", "command", "main", "module", "export"];
   return kinds.map((k) => ({ kind: k, label: ENTRY_KIND_LABEL[k], entries: f.entries.filter((e) => e.kind === k) })).filter((g) => g.entries.length);
 }
 

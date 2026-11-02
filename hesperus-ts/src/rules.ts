@@ -54,8 +54,8 @@ export interface Rule {
   group: string;
 }
 
-const ROUTE_METHODS = ["get", "post", "put", "delete", "patch", "options", "head", "all", "use", "route"];
-const HTTP_FRAMEWORKS = ["express", "koa", "@koa/router", "koa-router", "hono", "fastify", "elysia", "polka", "restify", "itty-router", "@hapi/hapi", "h3", "oak"];
+export const ROUTE_METHODS = ["get", "post", "put", "delete", "patch", "options", "head", "all", "use", "route"];
+export const HTTP_FRAMEWORKS = ["express", "koa", "@koa/router", "koa-router", "hono", "fastify", "elysia", "polka", "restify", "itty-router", "@hapi/hapi", "h3", "oak"];
 const NODE_HTTP = ["http", "node:http", "https", "node:https", "http2", "node:http2"];
 const FS = ["fs", "node:fs", "fs/promises", "node:fs/promises", "fs-extra", "graceful-fs"];
 const PROC = ["child_process", "node:child_process", "execa", "cross-spawn", "zx"];
