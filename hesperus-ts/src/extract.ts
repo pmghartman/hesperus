@@ -63,12 +63,15 @@ export function extract(repoRoot: string, opts: ExtractOptions): Ir {
     return id;
   };
 
-  // which node owns each file
+  // which node owns each file; an unbound directory with code in its subdirectories is a
+  // subsystem, so the unbound tree mirrors the repository two levels deep
   const owner = new Map<string, string>();
   for (const f of ws.files) {
     const bound = bindings.bindFile(f);
     owner.set(f, bound ?? `${unboundId}.${unboundComponent(f)}`);
   }
+  const unboundOwners = new Set([...owner.values()].filter((id) => id.startsWith(`${unboundId}.`)));
+  const unboundKind = (id: string): NodeKind => ([...unboundOwners].some((o) => o.startsWith(`${id}.`)) ? "subsystem" : "component");
 
   // findings per file, in sorted file order
   for (const f of ws.files) {
@@ -77,11 +80,9 @@ export function extract(repoRoot: string, opts: ExtractOptions): Ir {
     if (intentNode) {
       ensureNode(from, intentNode.kind, { label: intentNode.label });
     } else {
-      const c = ensureNode(from, "component", { label: null });
-      const dir = f.includes("/") ? f.slice(0, f.lastIndexOf("/")) : ".";
+      const c = ensureNode(from, unboundKind(from), { label: null });
       const topDir = unboundDir(f);
       if (!c.src.includes(topDir)) c.src.push(topDir);
-      void dir;
     }
     let findings: Finding[];
     try {
@@ -107,7 +108,7 @@ export function extract(repoRoot: string, opts: ExtractOptions): Ir {
           const toIntent = bindings.nodes.get(to);
           if (toIntent) ensureNode(to, toIntent.kind, { label: toIntent.label });
           else {
-            const c = ensureNode(to, "component");
+            const c = ensureNode(to, unboundKind(to));
             const topDir = unboundDir(target);
             if (!c.src.includes(topDir)) c.src.push(topDir);
           }
@@ -175,11 +176,18 @@ export function extract(repoRoot: string, opts: ExtractOptions): Ir {
   return canonicalize(ir);
 }
 
-/** Component name for an unbound file: its first two path segments, `root` for top-level files. */
+/**
+ * Node path for an unbound file: its first two directory segments as nested names
+ * (`apps/web/x.ts` is `apps.web`, a component `web` inside a subsystem `apps`), `root`
+ * for top-level files.
+ */
 export function unboundComponent(file: string): string {
   const parts = file.split("/");
   if (parts.length === 1) return "root";
-  return identify(parts.slice(0, Math.min(2, parts.length - 1)).join("_"));
+  return parts
+    .slice(0, Math.min(2, parts.length - 1))
+    .map((p) => identify(p))
+    .join(".");
 }
 
 function unboundDir(file: string): string {

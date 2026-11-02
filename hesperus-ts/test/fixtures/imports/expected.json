@@ -77,10 +77,23 @@
       "at": []
     },
     {
-      "id": "app.unbound.tools_gen",
-      "kind": "component",
-      "name": "tools_gen",
+      "id": "app.unbound.tools",
+      "kind": "subsystem",
+      "name": "tools",
       "parent": "app.unbound",
+      "label": null,
+      "desc": null,
+      "src": [],
+      "protocol": null,
+      "host": null,
+      "engine": null,
+      "at": []
+    },
+    {
+      "id": "app.unbound.tools.gen",
+      "kind": "component",
+      "name": "gen",
+      "parent": "app.unbound.tools",
       "label": null,
       "desc": null,
       "src": [

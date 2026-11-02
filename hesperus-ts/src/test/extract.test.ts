@@ -74,8 +74,10 @@ test("imports: edges follow every resolution path, type-only imports are ignored
   assert.deepEqual(apiWeb.at, ["src/api/handler.ts:5", "src/api/handler.ts:8"]);
   const apiLib = ir.edges.find((e) => e.from === "app.api" && e.to === "app.lib")!;
   assert.deepEqual(apiLib.at, ["src/api/handler.ts:2", "src/api/handler.ts:6"]);
-  assert.ok(ir.nodes.find((n) => n.id === "app.unbound.tools_gen" && n.src[0] === "tools/gen/**"));
-  assert.ok(ir.nodes.find((n) => n.id === "app.unbound.scripts"));
+  // unbound code mirrors the directory tree two levels deep: `tools/gen/*` is a component inside the subsystem `tools`
+  assert.ok(ir.nodes.find((n) => n.id === "app.unbound.tools" && n.kind === "subsystem"));
+  assert.ok(ir.nodes.find((n) => n.id === "app.unbound.tools.gen" && n.kind === "component" && n.src[0] === "tools/gen/**"));
+  assert.ok(ir.nodes.find((n) => n.id === "app.unbound.scripts" && n.kind === "component"));
 });
 
 test("routes: express and Bun servers become one http ingress with route evidence", () => {
@@ -194,7 +196,8 @@ test("url and sql classification, unbound naming", () => {
   assert.equal(sqlAccess("CREATE TABLE t"), "writes");
   assert.equal(sqlAccess("whatever"), "unknown");
   assert.equal(unboundComponent("scripts/build.ts"), "scripts");
-  assert.equal(unboundComponent("apps/web/tests/x.ts"), "apps_web");
+  assert.equal(unboundComponent("apps/web/tests/x.ts"), "apps.web");
+  assert.equal(unboundComponent("my-app/web/x.ts"), "my_app.web");
   assert.equal(unboundComponent("index.ts"), "root");
   assert.equal(unboundComponent("a/b.ts"), "a");
 });

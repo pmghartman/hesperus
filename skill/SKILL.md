@@ -20,7 +20,7 @@ Hesperus describes a software system as a graph in `.hesp` files. Two descriptio
 | `conflict` (`!`) | both exist, `kind`/`protocol`/`host`/`engine` disagree | **drift**: report it; fix the code or the intent, whichever is wrong |
 | constraint `x` | a `forbid` has a witness or a `require` has none | **violation**: report it; it fails the build (`hesp diff` exits 1) |
 
-Two nodes in actual files are synthesized by the extractor, not declared by anyone: `subsystem unbound` holds one component per directory of code no intent `src` binds (`unbound.scripts` means "add a `src:` binding for `scripts/**` to the right node, or it is genuinely stray code"), and `network unresolved` is the sink for edges whose target the extractor could not identify (dynamic URLs, dynamic imports). Do not declare either in the intent. Generated files also carry `at: ["path:line", ...]` evidence on nodes and edges; intent files never need it.
+Two nodes in actual files are synthesized by the extractor, not declared by anyone: `subsystem unbound` holds the code no intent `src` binds, one node per directory two levels deep (a directory with code in subdirectories is a subsystem, its subdirectories components; `unbound.scripts` means "add a `src:` binding for `scripts/**` to the right node, or it is genuinely stray code"), and `network unresolved` is the sink for edges whose target the extractor could not identify (dynamic URLs, dynamic imports). Do not declare either in the intent. Generated files also carry `at: ["path:line", ...]` evidence on nodes and edges; intent files never need it.
 
 ## After every edit
 

@@ -126,7 +126,7 @@ Boundary kinds (the last six) cannot contain nodes (E030).
 
 Unknown keys are E007; keys on the wrong kind are E008; wrong value types are E009; an unknown protocol is E023.
 
-`src` is a **binding**: a list of path globs (`*`, `**`, `?`, `{a,b}`) relative to the repository root. The extractor assigns every source file to the bound node whose glob has the longest literal prefix match (ties: the deeper node, then the longer pattern); files that match nothing go to the `unbound` subsystem. Bindings are intent-only; the extractor copies none of them into actual files, except that each component of the synthesized `unbound` subsystem carries the directory glob it was grouped by, so a reader can turn it into a binding.
+`src` is a **binding**: a list of path globs (`*`, `**`, `?`, `{a,b}`) relative to the repository root. The extractor assigns every source file to the bound node whose glob has the longest literal prefix match (ties: the deeper node, then the longer pattern); files that match nothing go to the `unbound` subsystem, grouped by directory two levels deep: `apps/web/x.ts` lands in `unbound.apps.web`, a component inside a subsystem `apps`; a directory with no code in subdirectories is a component; top-level files land in `unbound.root`. Bindings are intent-only; the extractor copies none of them into actual files, except that each node of the synthesized `unbound` subsystem carries the directory glob it was grouped by, so a reader can turn it into a binding.
 
 `at` is **evidence**: `"path:line"` into the repository, written by extractors so viewers can jump to source. The differ ignores it.
 

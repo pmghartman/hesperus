@@ -31,7 +31,8 @@ pub fn intent_from_actual(actual: &Ir) -> Ir {
     let mut moved: BTreeMap<String, String> = BTreeMap::new();
     for n in actual.nodes.iter().filter(|n| n.parent.as_deref() == Some(bucket.as_str())) {
         let mut name = identifier(&n.name);
-        while taken.contains(&format!("{root}.{name}")) {
+        // a child may not share the root's name (E033), nor an id a boundary already holds
+        while name == root || taken.contains(&format!("{root}.{name}")) {
             name.push_str("_src");
         }
         let id = format!("{root}.{name}");

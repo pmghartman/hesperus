@@ -64,10 +64,11 @@ function render() {
   }
   if (!focus || !g.nodes.has(focus)) focus = g.root;
   const view = viewAt(g, focus);
-  const l = layout(view);
-  const svg = renderSvg(l, { mode, graph: g, title: focus, selected });
-  root.innerHTML = `${toolbar(g)}${errorBox}<div class="canvas" tabindex="0"><div class="stage">${svg}</div></div>${inspector ? `<aside class="inspector">${renderInspector(g)}</aside>` : ""}<footer class="statusbar">${renderLegend(mode)}<span class="hint">click: select · double-click: drill down · <kbd>⌘</kbd>/<kbd>ctrl</kbd> click: open .hesp · drag: pan · <kbd>⌘</kbd> wheel: zoom</span></footer>`;
+  // the shell first, so the layout can fold to the canvas it will be shown in
+  root.innerHTML = `${toolbar(g)}${errorBox}<div class="canvas" tabindex="0"><div class="stage"></div></div>${inspector ? `<aside class="inspector">${renderInspector(g)}</aside>` : ""}<footer class="statusbar">${renderLegend(mode)}<span class="hint">click: select · double-click: drill down · <kbd>⌘</kbd>/<kbd>ctrl</kbd> click: open .hesp · wheel: zoom · drag or <kbd>shift</kbd> wheel: pan</span></footer>`;
   const canvas = root.querySelector<HTMLDivElement>(".canvas")!;
+  const l = layout(view, { viewport: { width: canvas.clientWidth || 800, height: canvas.clientHeight || 600 } });
+  root.querySelector<HTMLDivElement>(".stage")!.innerHTML = renderSvg(l, { mode, graph: g, title: focus, selected });
   if (fitOnNextRender) {
     fit(canvas, l.width, l.height);
     fitOnNextRender = false;
@@ -149,6 +150,7 @@ function bind(g: Graph | null) {
           return;
         case "inspector":
           inspector = !inspector;
+          fitOnNextRender = true;
           render();
           return;
       }
@@ -229,15 +231,17 @@ function bind(g: Graph | null) {
     drag = null;
     canvas.classList.remove("panning");
   });
+  // wheel zooms about the pointer (a trackpad pinch arrives as a ctrl-wheel); shift-wheel pans
   canvas.addEventListener(
     "wheel",
     (ev) => {
       ev.preventDefault();
-      if (ev.ctrlKey || ev.metaKey) {
-        zoomAt(ev.deltaY < 0 ? 1.1 : 1 / 1.1, canvas, ev.clientX, ev.clientY);
-      } else {
-        pan = { x: pan.x - ev.deltaX, y: pan.y - ev.deltaY };
+      if (ev.shiftKey) {
+        pan = ev.deltaX ? { x: pan.x - ev.deltaX, y: pan.y - ev.deltaY } : { x: pan.x - ev.deltaY, y: pan.y };
         applyTransform();
+      } else {
+        const factor = Math.exp(-ev.deltaY * (ev.deltaMode === 1 ? 0.05 : 0.0015));
+        zoomAt(factor, canvas, ev.clientX, ev.clientY);
       }
     },
     { passive: false },
@@ -251,10 +255,23 @@ function bind(g: Graph | null) {
       render();
     } else if (ev.key.toLowerCase() === "i") {
       inspector = !inspector;
+      fitOnNextRender = true;
       render();
     }
   });
 }
+
+// the layout folds to the canvas, so a resized panel gets a fresh layout and fit
+let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+window.addEventListener("resize", () => {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    resizeTimer = null;
+    if (!data) return;
+    fitOnNextRender = true;
+    render();
+  }, 120);
+});
 
 function zoomAt(factor: number, canvas: HTMLElement | null, cx?: number, cy?: number) {
   const rect = canvas?.getBoundingClientRect();
