@@ -1,8 +1,8 @@
-// Deterministic layered layout for one zoom level. Ranks are longest-path distances over
-// the visible edges (cycles broken in sorted order); a rank's nodes stack vertically in
-// kind-then-name order. Consecutive ranks fold into one column when that lets the whole
-// picture show larger in the viewport, so a long chain becomes a grid instead of a strip.
-// Outside nodes sit in columns of their own on the right.
+// Deterministic layered layout. Ranks are longest-path distances over the visible edges
+// (cycles broken in sorted order); a rank's nodes stack vertically in the order the view
+// gives them (call order for a flow). With `fold`, consecutive ranks merge into one column
+// when that lets the whole picture show larger in the viewport; a flow keeps one column per
+// call depth. Outside nodes (boundaries) sit in columns of their own on the right.
 
 import { cmp, VEdge, VNode, View } from "./model.js";
 
@@ -79,7 +79,7 @@ export function layout(view: View, opts: LayoutOptions = {}): Layout {
   for (const n of view.nodes) {
     const r = rank.get(n.id)!;
     if (!byRank.has(r)) byRank.set(r, []);
-    byRank.get(r)!.push(n); // already in kind/name order from the view
+    byRank.get(r)!.push(n); // already in the view's order
   }
   const ranks = [...byRank.keys()].sort((a, b) => a - b).map((r) => byRank.get(r)!);
 

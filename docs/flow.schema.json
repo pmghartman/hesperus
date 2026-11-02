@@ -1,13 +1,13 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://hesperus.dev/schema/flow-0.1.json",
-  "title": "Hesperus flow 0.1",
+  "$id": "https://hesperus.dev/schema/flow-0.2.json",
+  "title": "Hesperus flow 0.2",
   "description": "What happens when a program is entered: for each entry point, the functions it reaches in source order and where each path leaves the program. Emitted by an extractor next to the actual IR (`.hesperus/actual/flow.json`), read by the viewer's Flow mode. Separate from the IR: nothing here is diffed. Nothing is inferred: names come from declarations, order from source position, boundaries from the same rule table as the actual, and a call is a step only when its callee resolves to a declaration in the repository.",
   "type": "object",
-  "required": ["flow", "generated", "root", "limits", "units", "entries"],
+  "required": ["flow", "generated", "root", "limits", "components", "units", "entries", "constraints"],
   "additionalProperties": false,
   "properties": {
-    "flow": { "const": "0.1", "description": "Format version." },
+    "flow": { "const": "0.2", "description": "Format version." },
     "generated": { "type": "string", "description": "Name of the extractor." },
     "root": { "type": "string", "description": "Root node id of the actual IR this flow belongs to." },
     "limits": {
@@ -19,6 +19,21 @@
         "steps": { "type": "integer", "minimum": 1, "description": "Steps recorded per entry before the rest is cut with `steps`." }
       }
     },
+    "components": {
+      "type": "array",
+      "description": "Every node the flow names (owners of units, boundaries, constraint ends), as the intent names them; sorted by id.",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "label", "kind"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "label": { "type": ["string", "null"] },
+          "kind": { "type": "string", "description": "The intent node's kind, or the boundary kind of the crossing that named it." }
+        }
+      }
+    },
     "units": {
       "type": "array",
       "description": "Every function the entries reach, sorted by id.",
@@ -28,6 +43,35 @@
       "type": "array",
       "description": "Entry points in evidence order (path, then line).",
       "items": { "$ref": "#/$defs/entry" }
+    },
+    "constraints": {
+      "type": "array",
+      "description": "The intent's `require` and `forbid` lines checked against every function in the repository, reached by an entry or not. A witness is a site inside `from` that reaches `to`: a crossing to a boundary within `to` with the edge kind (any kind when null; `unknown` store access counts for `reads` and `writes`), or a call to a function owned by a node within `to` (kind `calls` or null).",
+      "items": {
+        "type": "object",
+        "required": ["rule", "from", "to", "kind", "satisfied", "witnesses"],
+        "additionalProperties": false,
+        "properties": {
+          "rule": { "enum": ["require", "forbid"] },
+          "from": { "type": "string" },
+          "to": { "type": "string" },
+          "kind": { "type": ["string", "null"] },
+          "satisfied": { "type": "boolean", "description": "`require`: at least one witness; `forbid`: none." },
+          "witnesses": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "required": ["at", "entries"],
+              "additionalProperties": false,
+              "properties": {
+                "at": { "$ref": "#/$defs/at" },
+                "entries": { "type": "array", "items": { "type": "string" }, "description": "Ids of the entries whose paths pass through the function holding the site; empty when no entry reaches it." }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -35,13 +79,14 @@
     "unitId": { "type": "string", "pattern": "^.+#.+$", "description": "`file#name`: `Class.method` for methods, `<module>` for a file's top-level code, `anonymous` for an inline handler; `@line` is appended when a file declares the name twice." },
     "unit": {
       "type": "object",
-      "required": ["id", "name", "file", "line", "owner"],
+      "required": ["id", "name", "file", "line", "end", "owner"],
       "additionalProperties": false,
       "properties": {
         "id": { "$ref": "#/$defs/unitId" },
         "name": { "type": "string", "description": "Declared name as written in the code." },
         "file": { "type": "string" },
-        "line": { "type": "integer", "minimum": 1, "description": "Line of the declaration." },
+        "line": { "type": "integer", "minimum": 1, "description": "First line of the declaration." },
+        "end": { "type": "integer", "minimum": 1, "description": "Last line of the declaration." },
         "owner": { "type": "string", "description": "Id of the actual node that owns the file: the intent node whose `src` binds it, else the unbound node for its directory. The same bindings the actual IR uses." }
       }
     },

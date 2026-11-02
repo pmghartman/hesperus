@@ -1,4 +1,4 @@
-/* Hesperus viewer: VS Code theme tokens throughout, with fallbacks for a dark default. */
+/* Hesperus flow viewer: VS Code theme tokens throughout, with fallbacks for a dark default. */
 :root {
   --fg: var(--vscode-foreground, #cccccc);
   --fg-muted: var(--vscode-descriptionForeground, #9d9d9d);
@@ -20,11 +20,9 @@
   --font: var(--vscode-font-family, -apple-system, "Segoe UI", system-ui, sans-serif);
   --mono: var(--vscode-editor-font-family, ui-monospace, Menlo, monospace);
   --size: var(--vscode-font-size, 13px);
-  --status-match: var(--vscode-testing-iconPassed, #73c991);
-  --status-intent-only: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
-  --status-actual-only: var(--vscode-gitDecoration-deletedResourceForeground, #f14c4c);
-  --status-conflict: var(--vscode-charts-purple, #b180d7);
   --status-none: var(--vscode-charts-blue, #3794ff);
+  --status-ok: var(--vscode-testing-iconPassed, #73c991);
+  --status-violation: var(--vscode-gitDecoration-deletedResourceForeground, #f14c4c);
   --grid: color-mix(in srgb, var(--fg) 6%, transparent);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 14px rgba(0, 0, 0, 0.18);
 }
@@ -58,11 +56,6 @@ code { font-family: var(--mono); font-size: 0.92em; background: color-mix(in srg
 .summary .chip { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: 10px; background: color-mix(in srgb, var(--fg) 7%, transparent); color: var(--fg); font-variant-numeric: tabular-nums; }
 .summary .chip b { font-weight: 600; }
 .summary .chip .swatch, .legend .swatch { width: 8px; height: 8px; border-radius: 50%; background: var(--status-none); display: inline-block; }
-.status-match > .swatch { background: var(--status-match); }
-.status-intent-only > .swatch { background: var(--status-intent-only); }
-.status-actual-only > .swatch { background: var(--status-actual-only); }
-.status-conflict > .swatch { background: var(--status-conflict); }
-.summary .chip.violations { color: var(--status-actual-only); }
 .toolbar .tool { appearance: none; border: 1px solid transparent; background: transparent; color: var(--fg-muted); width: 26px; height: 26px; border-radius: 5px; cursor: pointer; font: inherit; font-size: 14px; line-height: 1; display: inline-grid; place-items: center; }
 .toolbar .tool:hover { background: var(--bg-hover); color: var(--fg); }
 .toolbar .tool.active { color: var(--fg); border-color: var(--border); }
@@ -90,7 +83,6 @@ svg .node .name { fill: var(--fg); font-weight: 600; font-size: 12.5px; }
 svg .node .sub { fill: var(--fg-muted); font-size: 11px; }
 svg .node .badge.count rect { fill: var(--badge-bg); }
 svg .node .badge.count text { fill: var(--badge-fg); font-size: 10.5px; font-weight: 600; }
-svg .node .badge.conflict { fill: var(--status-conflict); font-weight: 700; font-size: 12px; }
 svg .node .status-dot { fill: var(--status-none); }
 svg .edge .hit { fill: none; stroke: transparent; stroke-width: 12; }
 svg .edge .line { fill: none; stroke: var(--status-none); stroke-width: 1.5; opacity: 0.75; transition: opacity 120ms, stroke-width 120ms; }
@@ -100,19 +92,6 @@ svg .edge-label rect { fill: var(--bg); stroke: var(--border); stroke-width: 1; 
 svg .edge-label text { fill: var(--fg-muted); font-size: 10.5px; font-family: var(--mono); }
 svg .edge:hover .edge-label text, svg .edge.connected .edge-label text { fill: var(--fg); }
 svg marker path { fill: var(--status-none); }
-svg marker.status-match path { fill: var(--status-match); }
-svg marker.status-intent-only path { fill: var(--status-intent-only); }
-svg marker.status-actual-only path { fill: var(--status-actual-only); }
-svg marker.status-conflict path { fill: var(--status-conflict); }
-svg .status-match .accent, svg .status-match .status-dot { fill: var(--status-match); }
-svg .status-intent-only .accent, svg .status-intent-only .status-dot { fill: var(--status-intent-only); }
-svg .status-actual-only .accent, svg .status-actual-only .status-dot { fill: var(--status-actual-only); }
-svg .status-conflict .accent, svg .status-conflict .status-dot { fill: var(--status-conflict); }
-svg .edge.status-match .line { stroke: var(--status-match); }
-svg .edge.status-intent-only .line { stroke: var(--status-intent-only); }
-svg .edge.status-actual-only .line { stroke: var(--status-actual-only); }
-svg .edge.status-conflict .line { stroke: var(--status-conflict); }
-svg .node.status-intent-only .card { stroke-dasharray: 6 3; }
 
 /* flow mode: functions tinted by the component that owns their file; the entry stands out */
 :root {
@@ -138,6 +117,8 @@ svg .node.kind-entry .accent { width: 6px; }
 svg .node.kind-entry .glyph .fill { fill: var(--status-none); }
 svg.mode-flow .node.kind-function .glyph { stroke-width: 1.6; }
 .legend .chip.flow-key { color: var(--fg-muted); }
+.crumb.muted { font-family: var(--mono); font-size: 11px; font-weight: 400; }
+.inspector .entries .via { display: block; font-size: 11px; padding-left: 6px; }
 .inspector .entries li { display: block; padding: 2px 0; }
 .inspector .entries a { display: flex; gap: 8px; align-items: baseline; padding: 2px 6px; border-radius: 4px; color: var(--fg); }
 .inspector .entries a:hover { background: var(--bg-hover); text-decoration: none; }
@@ -164,11 +145,6 @@ svg.mode-flow .node.kind-function .glyph { stroke-width: 1.6; }
 .inspector li .kind { font-family: var(--mono); color: var(--fg-muted); font-size: 11px; }
 .inspector .evidence a { font-family: var(--mono); font-size: 11px; }
 .inspector .pill { display: inline-block; padding: 0 7px; border-radius: 9px; font-size: 10.5px; font-weight: 600; color: var(--bg); background: var(--status-none); }
-.pill.status-match { background: var(--status-match); }
-.pill.status-intent-only { background: var(--status-intent-only); }
-.pill.status-actual-only { background: var(--status-actual-only); }
-.pill.status-conflict { background: var(--status-conflict); }
-.inspector .constraint.violated { color: var(--status-actual-only); }
 .inspector .constraint.ok { color: var(--fg-muted); }
 .inspector .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .inspector .actions a { font-size: 11px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 4px; }

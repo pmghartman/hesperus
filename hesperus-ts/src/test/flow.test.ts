@@ -79,6 +79,22 @@ test("flow fixture: two routes reach a store and an external host through two le
   assert.equal(owners["src/pay/stripe.ts#charge"], "shop.pay");
   assert.equal(owners["src/cli.ts#main"], "shop.unbound.src");
   assert.equal(f.units.find((u) => u.id === "src/server.ts#anonymous")!.line, 7);
+  assert.equal(f.units.find((u) => u.id === "src/server.ts#anonymous")!.end, 9);
+  // constraints are checked over every function, with the entries that pass each witness
+  assert.deepEqual(
+    f.constraints.map((c) => `${c.rule} ${c.from} -> ${c.to}${c.kind ? `: ${c.kind}` : ""} = ${c.satisfied ? "ok" : "x"} ${c.witnesses.map((w) => `${w.at}[${w.entries.join(",")}]`).join(" ")}`.trim()),
+    [
+      "forbid shop.data -> shop.db: writes = x src/db/orders.ts:4[route:src/handlers/orders.ts#createOrder]",
+      "forbid shop.handlers -> shop.db = ok",
+      "require shop.pay -> shop.stripe: http = ok src/pay/stripe.ts:2[route:src/handlers/orders.ts#createOrder]",
+      "require shop.server -> shop.pay = x",
+    ],
+  );
+  // components carry the intent's names for owners and boundaries
+  assert.deepEqual(
+    f.components.map((c) => `${c.id}:${c.kind}${c.label ? `:${c.label}` : ""}`),
+    ["shop.data:component", "shop.db:store:Orders and users", "shop.filesystem:hardware", "shop.handlers:component", "shop.pay:component", "shop.server:component", "shop.stripe:external", "shop.unbound.src:component", "shop.web:ingress"],
+  );
 });
 
 test("flow is bounded: cycles, repeats and the depth limit are cut and marked", () => {

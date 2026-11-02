@@ -1,7 +1,7 @@
 {
   "name": "hesperus-vscode",
   "displayName": "Hesperus",
-  "description": "Hesperus system descriptions: syntax, language server, and a viewer that diffs intent against the code",
+  "description": "What happens when a request comes in: every entry point of a TypeScript repository, the code it reaches, and where each path leaves the program",
   "version": "0.1.0",
   "publisher": "pmghartman",
   "license": "Apache-2.0",
@@ -51,7 +51,7 @@
       },
       {
         "command": "hesperus.emit",
-        "title": "Hesperus: Emit Actual From Code",
+        "title": "Hesperus: Emit From Code",
         "icon": "$(sync)"
       },
       {
@@ -89,7 +89,7 @@
       },
       {
         "view": "hesperus.status",
-        "contents": "This workspace has no Hesperus intent yet.\n[Create Intent From Code](command:hesperus.init)\nDescribes the code as it is now, so intent and actual start matched and every change after shows as a difference.\nOr write a .hesp file by hand: [see how](https://github.com/pmghartman/hesperus#use).",
+        "contents": "This workspace has no Hesperus intent yet.\n[Create Intent From Code](command:hesperus.init)\nNames a component per source directory and every store and host found, then reads the flow of the code.\nOr write a .hesp file by hand: [see how](https://github.com/pmghartman/hesperus#use).",
         "when": "workbenchState != empty"
       }
     ],

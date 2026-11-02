@@ -1,17 +1,74 @@
 {
-  "flow": "0.1",
+  "flow": "0.2",
   "generated": "hesperus-ts",
   "root": "shop",
   "limits": {
     "depth": 8,
     "steps": 400
   },
+  "components": [
+    {
+      "id": "shop.data",
+      "name": "data",
+      "label": null,
+      "kind": "component"
+    },
+    {
+      "id": "shop.db",
+      "name": "db",
+      "label": "Orders and users",
+      "kind": "store"
+    },
+    {
+      "id": "shop.filesystem",
+      "name": "filesystem",
+      "label": null,
+      "kind": "hardware"
+    },
+    {
+      "id": "shop.handlers",
+      "name": "handlers",
+      "label": null,
+      "kind": "component"
+    },
+    {
+      "id": "shop.pay",
+      "name": "pay",
+      "label": null,
+      "kind": "component"
+    },
+    {
+      "id": "shop.server",
+      "name": "server",
+      "label": null,
+      "kind": "component"
+    },
+    {
+      "id": "shop.stripe",
+      "name": "stripe",
+      "label": null,
+      "kind": "external"
+    },
+    {
+      "id": "shop.unbound.src",
+      "name": "src",
+      "label": null,
+      "kind": "component"
+    },
+    {
+      "id": "shop.web",
+      "name": "web",
+      "label": null,
+      "kind": "ingress"
+    }
+  ],
   "units": [
     {
       "id": "src/cli.ts#<module>",
       "name": "<module>",
       "file": "src/cli.ts",
       "line": 1,
+      "end": 8,
       "owner": "shop.unbound.src"
     },
     {
@@ -19,6 +76,7 @@
       "name": "main",
       "file": "src/cli.ts",
       "line": 3,
+      "end": 6,
       "owner": "shop.unbound.src"
     },
     {
@@ -26,6 +84,7 @@
       "name": "saveOrder",
       "file": "src/db/orders.ts",
       "line": 3,
+      "end": 6,
       "owner": "shop.data"
     },
     {
@@ -33,6 +92,7 @@
       "name": "findUsers",
       "file": "src/db/users.ts",
       "line": 3,
+      "end": 6,
       "owner": "shop.data"
     },
     {
@@ -40,6 +100,7 @@
       "name": "audit",
       "file": "src/handlers/audit.ts",
       "line": 2,
+      "end": 4,
       "owner": "shop.handlers"
     },
     {
@@ -47,6 +108,7 @@
       "name": "createOrder",
       "file": "src/handlers/orders.ts",
       "line": 4,
+      "end": 9,
       "owner": "shop.handlers"
     },
     {
@@ -54,6 +116,7 @@
       "name": "listUsers",
       "file": "src/handlers/users.ts",
       "line": 3,
+      "end": 7,
       "owner": "shop.handlers"
     },
     {
@@ -61,6 +124,7 @@
       "name": "charge",
       "file": "src/pay/stripe.ts",
       "line": 1,
+      "end": 4,
       "owner": "shop.pay"
     },
     {
@@ -68,6 +132,7 @@
       "name": "anonymous",
       "file": "src/server.ts",
       "line": 7,
+      "end": 9,
       "owner": "shop.server"
     },
     {
@@ -75,6 +140,7 @@
       "name": "health",
       "file": "src/server.ts",
       "line": 10,
+      "end": 12,
       "owner": "shop.server"
     }
   ],
@@ -213,6 +279,54 @@
           "steps": []
         }
       ]
+    }
+  ],
+  "constraints": [
+    {
+      "rule": "forbid",
+      "from": "shop.data",
+      "to": "shop.db",
+      "kind": "writes",
+      "satisfied": false,
+      "witnesses": [
+        {
+          "at": "src/db/orders.ts:4",
+          "entries": [
+            "route:src/handlers/orders.ts#createOrder"
+          ]
+        }
+      ]
+    },
+    {
+      "rule": "forbid",
+      "from": "shop.handlers",
+      "to": "shop.db",
+      "kind": null,
+      "satisfied": true,
+      "witnesses": []
+    },
+    {
+      "rule": "require",
+      "from": "shop.pay",
+      "to": "shop.stripe",
+      "kind": "http",
+      "satisfied": true,
+      "witnesses": [
+        {
+          "at": "src/pay/stripe.ts:2",
+          "entries": [
+            "route:src/handlers/orders.ts#createOrder"
+          ]
+        }
+      ]
+    },
+    {
+      "rule": "require",
+      "from": "shop.server",
+      "to": "shop.pay",
+      "kind": null,
+      "satisfied": false,
+      "witnesses": []
     }
   ]
 }

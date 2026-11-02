@@ -12,10 +12,12 @@ import { Bindings } from "./bindings.js";
 import { applyRulesIndexed, classifyUrl, Finding } from "./engine.js";
 import { adoptBoundary, fileOwners } from "./extract.js";
 import { factsWithNodes } from "./facts.js";
-import { EXTRACTOR, identify, Ir } from "./ir.js";
+import { EXTRACTOR, identify, Ir, IrConstraint, within } from "./ir.js";
 import { Workspace } from "./workspace.js";
 
-export const FLOW_VERSION = "0.1";
+export const FLOW_VERSION = "0.2";
+/** Witness sites kept per constraint. */
+export const MAX_WITNESSES = 20;
 /** Calls followed from an entry before a step is cut with `cut: "depth"`. */
 export const FLOW_MAX_DEPTH = 8;
 /** Steps recorded per entry before the rest is cut with `cut: "steps"`. */
@@ -28,8 +30,28 @@ export interface FlowUnit {
   name: string;
   file: string;
   line: number;
-  /** The actual node that owns the file (an intent binding or the unbound node). */
+  /** Last line of the declaration. */
+  end: number;
+  /** The node that owns the file (an intent binding or the unbound node). */
   owner: string;
+}
+
+/** A node that owns units or ends paths, as the intent names it. */
+export interface FlowComponent {
+  id: string;
+  name: string;
+  label: string | null;
+  kind: string;
+}
+
+export interface FlowConstraint {
+  rule: "require" | "forbid";
+  from: string;
+  to: string;
+  kind: string | null;
+  satisfied: boolean;
+  /** Sites where code inside `from` reaches `to`, with the entries whose paths pass through each. */
+  witnesses: { at: string; entries: string[] }[];
 }
 
 export interface FlowCall {
@@ -73,8 +95,10 @@ export interface Flow {
   generated: string;
   root: string;
   limits: { depth: number; steps: number };
+  components: FlowComponent[];
   units: FlowUnit[];
   entries: FlowEntry[];
+  constraints: FlowConstraint[];
 }
 
 export interface FlowOptions {
@@ -165,10 +189,11 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
     const name = Node.isSourceFile(fn) ? "<module>" : unitName(fn);
     let id = `${file}#${name}`;
     const line = Node.isSourceFile(fn) ? 1 : fn.getStartLineNumber();
+    const end = Node.isSourceFile(fn) ? fn.getEndLineNumber() : fn.getEndLineNumber();
     if (takenIds.has(id) && takenIds.get(id) !== fn) id = `${id}@${line}`;
     takenIds.set(id, fn);
     unitIds.set(fn, id);
-    unitById.set(id, { id, name, file, line, owner: owner.get(file) ?? `${root}.unbound.root` });
+    unitById.set(id, { id, name, file, line, end, owner: owner.get(file) ?? `${root}.unbound.root` });
     return id;
   };
 
@@ -467,13 +492,15 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
     }
   }
 
-  // ---- walk each entry, in source order, bounded
+  // ---- walk each entry, in source order, bounded; remember which entries pass each unit
   const out: FlowEntry[] = [];
+  const entriesThrough = new Map<Fn | SourceFile, Set<string>>();
   for (const e of entries) {
     debug(`walk ${e.kind} ${e.label}`);
     const unit = unitOf(e.fn);
     let budget = maxSteps;
     const seen = new Set<Fn | SourceFile>([e.fn]);
+    const passed = new Set<Fn | SourceFile>([e.fn]);
     const walk = (fn: Fn | SourceFile, depth: number, onPath: Set<Fn | SourceFile>): FlowStep[] => {
       const steps: FlowStep[] = [];
       for (const raw of rawByUnit.get(fn) ?? []) {
@@ -489,6 +516,7 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
           steps.push({ call: id, at: where, cut: "steps" });
           break;
         }
+        passed.add(callee);
         if (onPath.has(callee)) steps.push({ call: id, at: where, cut: "cycle" });
         else if (seen.has(callee)) steps.push({ call: id, at: where, cut: "seen" });
         else if (depth >= maxDepth) steps.push({ call: id, at: where, cut: "depth" });
@@ -501,24 +529,76 @@ export function flow(repoRoot: string, opts: FlowOptions): Flow {
       }
       return steps;
     };
-    out.push({ id: `${e.kind}:${unit}`, kind: e.kind, label: e.label, protocol: e.protocol, unit, at: e.at, steps: walk(e.fn, 1, new Set([e.fn])) });
+    const entry: FlowEntry = { id: `${e.kind}:${unit}`, kind: e.kind, label: e.label, protocol: e.protocol, unit, at: e.at, steps: walk(e.fn, 1, new Set([e.fn])) };
+    out.push(entry);
+    for (const fn of passed) {
+      if (!entriesThrough.has(fn)) entriesThrough.set(fn, new Set());
+      entriesThrough.get(fn)!.add(entry.id);
+    }
   }
   out.sort((a, b) => evidenceOrder(a.at, b.at) || cmp(a.label, b.label) || cmp(a.id, b.id));
   // entries with the same kind and unit but different labels (two routes, one handler) keep distinct ids
   const ids = new Map<string, number>();
+  const renamed = new Map<string, string>();
   for (const e of out) {
     const n = ids.get(e.id) ?? 0;
     ids.set(e.id, n + 1);
-    if (n > 0) e.id = `${e.id}@${n + 1}`;
+    if (n > 0) {
+      const old = e.id;
+      e.id = `${e.id}@${n + 1}`;
+      renamed.set(old, e.id);
+    }
   }
+  // (a renamed entry shares its unit with the first one, so the per-unit entry sets already name both)
+  void renamed;
+
+  // ---- constraints: `from -> to [: kind]` over every unit in the repository, reached or not
+  const constraints: FlowConstraint[] = (opts.intent?.constraints ?? []).map((c: IrConstraint) => {
+    const witnesses: { at: string; entries: string[] }[] = [];
+    for (const [fn, raws] of rawByUnit) {
+      const file = relOf(fn.getSourceFile());
+      const ownerId = owner.get(file) ?? `${root}.unbound.root`;
+      if (!within(ownerId, c.from)) continue;
+      for (const raw of raws) {
+        let hit = false;
+        if (raw.crossing) hit = within(raw.crossing.node, c.to) && (c.kind === null || c.kind === raw.crossing.edge || (c.kind === "reads" && raw.crossing.edge === "unknown") || (c.kind === "writes" && raw.crossing.edge === "unknown"));
+        else {
+          const calleeFile = relOf(raw.call!.getSourceFile());
+          const calleeOwner = owner.get(calleeFile) ?? `${root}.unbound.root`;
+          hit = !within(calleeOwner, c.from) && within(calleeOwner, c.to) && (c.kind === null || c.kind === "calls");
+        }
+        if (!hit) continue;
+        const where = at(raw.node);
+        if (witnesses.some((w) => w.at === where)) continue;
+        witnesses.push({ at: where, entries: [...(entriesThrough.get(fn) ?? [])].sort() });
+      }
+    }
+    witnesses.sort((a, b) => evidenceOrder(a.at, b.at));
+    return { rule: c.rule, from: c.from, to: c.to, kind: c.kind, satisfied: c.rule === "require" ? witnesses.length > 0 : witnesses.length === 0, witnesses: witnesses.slice(0, MAX_WITNESSES) };
+  });
+  constraints.sort((a, b) => cmp(a.rule, b.rule) || cmp(a.from, b.from) || cmp(a.to, b.to) || cmp(a.kind ?? "", b.kind ?? ""));
+
+  // ---- components: every owner and boundary the flow names, as the intent names them
+  const named = new Map<string, string>(); // id -> kind when known from a crossing
+  for (const u of unitById.values()) if (!named.has(u.owner)) named.set(u.owner, "");
+  for (const c of constraints) for (const id of [c.from, c.to]) if (!named.has(id)) named.set(id, "");
+  for (const raws of rawByUnit.values()) for (const raw of raws) if (raw.crossing) named.set(raw.crossing.node, raw.crossing.boundary);
+  const components: FlowComponent[] = [...named.keys()].sort().map((id) => {
+    const n = bindings.nodes.get(id);
+    const name = id.slice(id.lastIndexOf(".") + 1);
+    const kind = n?.kind ?? named.get(id) ?? "";
+    return { id, name, label: n?.label ?? (id === `${root}.unbound` ? "Code no intent node binds" : null), kind: kind || (id === root ? "system" : id.startsWith(`${root}.unbound.`) ? (name === "unbound" ? "subsystem" : "component") : "component") };
+  });
 
   return {
     flow: FLOW_VERSION,
     generated: EXTRACTOR,
     root,
     limits: { depth: maxDepth, steps: maxSteps },
+    components,
     units: [...unitById.values()].sort((a, b) => cmp(a.id, b.id)),
     entries: out,
+    constraints,
   };
 }
 
